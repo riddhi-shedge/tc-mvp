@@ -141,6 +141,55 @@ def test_ingestion_inbox_table_exists_and_anon_blocked(db):
         assert anon.table("ingestion_inbox").select("*").limit(5).execute().data == []
 
 
+def test_ingestion_attachment_storage_round_trip(db):
+    """The private bucket accepts an upload and returns the same synthetic
+    bytes; anon cannot read it. Cleaned up afterward."""
+    from app.ingestion.inbox_repo import BUCKET, SupabaseInboxRepo
+
+    repo = SupabaseInboxRepo()
+    path = repo.store_attachment(
+        source="email",
+        filename="integration-synthetic.pdf",
+        content_base64="UERGLXN5bnRoZXRpYw==",  # b"PDF-synthetic"
+    )
+    try:
+        assert db.storage.from_(BUCKET).download(path) == b"PDF-synthetic"
+        anon_key = os.environ.get("SUPABASE_ANON_KEY")
+        if anon_key:
+            from supabase import create_client
+
+            anon = create_client(os.environ["SUPABASE_URL"], anon_key)
+            with pytest.raises(Exception):
+                anon.storage.from_(BUCKET).download(path)
+    finally:
+        db.storage.from_(BUCKET).remove([path])
+
+
+def test_needs_manual_status_and_new_columns(db):
+    """The Phase 3 queue columns + enum value exist on the live schema."""
+    row = (
+        db.table("ingestion_inbox")
+        .insert(
+            {
+                "from_email": "pytest-synthetic@example.test",
+                "to_email": "deal-synthetic@example.test",
+                "subject": "integration synthetic",
+                "status": "needs_manual",
+                "needs_manual_reason": "no readable attachment on the email",
+                "detected_doc_type": "unknown",
+                "source": "email",
+            }
+        )
+        .execute()
+        .data[0]
+    )
+    try:
+        assert row["status"] == "needs_manual"
+        assert row["attachment_count"] == 0
+    finally:
+        db.table("ingestion_inbox").delete().eq("id", row["id"]).execute()
+
+
 def test_anon_key_reads_nothing(txn):
     """RLS deny-by-default: the anon key must not see SOR rows (frontend safety)."""
     anon_key = os.environ.get("SUPABASE_ANON_KEY")

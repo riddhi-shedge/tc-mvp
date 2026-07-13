@@ -75,7 +75,9 @@ def postmark_inbound(
                 "Name": attachment_name,
                 "ContentType": "application/pdf",
                 "ContentLength": 4321,
-                "Content": "JVBERi1zeW50aGV0aWM=",  # synthetic bytes; must NOT be stored
+                # base64("PDF-synthetic") — synthetic bytes; stored ONLY in the
+                # (fake) private bucket, never on the inbox row or in logs.
+                "Content": "UERGLXN5bnRoZXRpYw==",
             }
         ],
     }

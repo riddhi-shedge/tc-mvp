@@ -16,7 +16,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from app.contracts.payload import Payload
-from app.master.auth import TCUser, require_tc
+from app.common.auth import TCUser, require_tc
 from app.master.repo import (
     MasterRepo,
     MessageNotSendable,

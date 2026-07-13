@@ -57,6 +57,26 @@ export function Deal({ id, onBack }: { id: string; onBack: () => void }) {
       {error && <p className="error">{error}</p>}
 
       <div className="card">
+        <h2>Documents</h2>
+        {state.documents.length === 0 && <p className="muted">No documents yet.</p>}
+        {state.documents.length > 0 && (
+          <table>
+            <tbody>
+              {state.documents.map((d) => (
+                <tr key={d.id}>
+                  <td>{d.doc_type ?? "unknown"}</td>
+                  <td className="muted">{d.external_ref}</td>
+                  <td>
+                    <span className="badge">{d.status}</span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      <div className="card">
         <h2>Extraction review (stub extractor — Phase 4 makes this real)</h2>
         {fields.length === 0 && <p className="muted">No extracted fields yet.</p>}
         {fields.length > 0 && (

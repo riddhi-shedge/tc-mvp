@@ -1,14 +1,26 @@
-import { useCallback, useEffect, useState } from "react";
+import { ChangeEvent, useCallback, useEffect, useState } from "react";
 import { api, InboxItem, TransactionSummary } from "../lib/api";
 
-/** HITL screen: pending inbound emails from the dedicated deal address.
- *  Nothing commits to the SOR until the TC confirms here. */
+const DOC_TYPE_LABELS: Record<string, string> = {
+  purchase_agreement: "Purchase agreement",
+  proof_of_funds: "Proof of funds",
+  disclosure: "Disclosure",
+  inspection_report: "Inspection report",
+  unknown: "Unknown — pick a type",
+};
+
+/** HITL screen: pending inbound documents from the dedicated deal address plus
+ *  the manual-upload fallback. The agent detects and suggests; nothing commits
+ *  to the SOR until the TC confirms here. */
 export function Inbox({ onOpenDeal }: { onOpenDeal: (id: string) => void }) {
   const [items, setItems] = useState<InboxItem[]>([]);
   const [transactions, setTransactions] = useState<TransactionSummary[]>([]);
   const [decisions, setDecisions] = useState<Record<string, string>>({});
+  const [docTypes, setDocTypes] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  const [uploadName, setUploadName] = useState<string | null>(null);
+  const [uploadB64, setUploadB64] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     try {
@@ -27,14 +39,18 @@ export function Inbox({ onOpenDeal }: { onOpenDeal: (id: string) => void }) {
     void refresh();
   }, [refresh]);
 
+  function decisionFor(item: InboxItem): string {
+    return decisions[item.id] ?? item.suggestion?.transaction_id ?? "new";
+  }
+
   async function confirm(item: InboxItem) {
-    const decision = decisions[item.id] ?? "new";
     setBusy(item.id);
     setError(null);
     try {
+      const docType = docTypes[item.id];
       const result = await api.post<{ transaction_id: string }>(
         `/ingestion/inbox/${item.id}/confirm`,
-        { decision },
+        { decision: decisionFor(item), ...(docType ? { doc_type: docType } : {}) },
       );
       await refresh();
       onOpenDeal(result.transaction_id);
@@ -45,42 +61,173 @@ export function Inbox({ onOpenDeal }: { onOpenDeal: (id: string) => void }) {
     }
   }
 
+  async function dismiss(item: InboxItem) {
+    setBusy(item.id);
+    try {
+      await api.post(`/ingestion/inbox/${item.id}/dismiss`);
+      await refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Dismiss failed");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  function onFilePicked(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = reader.result as string;
+      setUploadB64(dataUrl.split(",", 2)[1] ?? null);
+      setUploadName(file.name);
+    };
+    reader.readAsDataURL(file);
+  }
+
+  async function uploadManual() {
+    if (!uploadName || !uploadB64) return;
+    setBusy("upload");
+    setError(null);
+    try {
+      await api.post("/ingestion/manual-upload", {
+        filename: uploadName,
+        content_base64: uploadB64,
+      });
+      setUploadName(null);
+      setUploadB64(null);
+      await refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Upload failed");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  const pending = items.filter((i) => i.status === "pending");
+  const needsManual = items.filter((i) => i.status === "needs_manual");
+
   return (
     <>
       <div className="card">
         <h2>Inbound — dedicated deal address</h2>
-        {items.length === 0 && <p className="muted">No pending emails.</p>}
-        {items.map((item) => (
-          <div key={item.id} className="row" style={{ marginBottom: "0.75rem" }}>
+        {pending.length === 0 && <p className="muted">No pending documents.</p>}
+        {pending.map((item) => (
+          <div key={item.id} className="row" style={{ marginBottom: "0.9rem" }}>
             <div>
-              <strong>{item.subject ?? "(no subject)"}</strong>
+              <strong>{item.subject ?? "(no subject)"}</strong>{" "}
+              <span className="badge">
+                {DOC_TYPE_LABELS[item.detected_doc_type ?? "unknown"] ?? item.detected_doc_type}
+              </span>
+              {item.source === "manual" && <span className="badge"> manual upload</span>}
               <div className="muted">
                 from {item.from_email}
-                {item.attachment_name ? ` · ${item.attachment_name}` : " · no attachment"}
+                {item.attachment_name ? ` · ${item.attachment_name}` : ""}
+                {item.attachment_count > 1 ? ` (+${item.attachment_count - 1} more)` : ""}
               </div>
+              {item.suggestion && (
+                <div className="muted">Suggested: {item.suggestion.reason}</div>
+              )}
             </div>
             <div>
               <label>New deal, or attach to which existing?</label>
               <select
-                value={decisions[item.id] ?? "new"}
+                value={decisionFor(item)}
                 onChange={(e) => setDecisions({ ...decisions, [item.id]: e.target.value })}
               >
                 <option value="new">Create new deal</option>
                 {transactions.map((t) => (
                   <option key={t.id} value={t.id}>
-                    {t.property_address ?? t.id}
+                    {(t.property_address ?? t.id) +
+                      (item.suggestion?.transaction_id === t.id ? " (suggested)" : "")}
                   </option>
                 ))}
               </select>
+              {item.detected_doc_type === "unknown" && (
+                <>
+                  <label>Document type</label>
+                  <select
+                    value={docTypes[item.id] ?? ""}
+                    onChange={(e) => setDocTypes({ ...docTypes, [item.id]: e.target.value })}
+                  >
+                    <option value="">(choose)</option>
+                    {Object.entries(DOC_TYPE_LABELS)
+                      .filter(([k]) => k !== "unknown")
+                      .map(([k, v]) => (
+                        <option key={k} value={k}>
+                          {v}
+                        </option>
+                      ))}
+                  </select>
+                </>
+              )}
             </div>
-            <div style={{ flex: "0 0 auto" }}>
-              <button disabled={busy === item.id} onClick={() => void confirm(item)}>
+            <div style={{ flex: "0 0 auto", display: "flex", gap: "0.4rem" }}>
+              <button
+                disabled={
+                  busy === item.id ||
+                  (item.detected_doc_type === "unknown" && !docTypes[item.id])
+                }
+                title={
+                  item.detected_doc_type === "unknown" && !docTypes[item.id]
+                    ? "Pick a document type first"
+                    : undefined
+                }
+                onClick={() => void confirm(item)}
+              >
                 Confirm
+              </button>
+              <button
+                className="secondary"
+                disabled={busy === item.id}
+                onClick={() => void dismiss(item)}
+              >
+                Dismiss
               </button>
             </div>
           </div>
         ))}
         {error && <p className="error">{error}</p>}
+      </div>
+
+      {needsManual.length > 0 && (
+        <div className="card">
+          <h2>Needs manual upload (unreadable)</h2>
+          {needsManual.map((item) => (
+            <div key={item.id} className="row" style={{ marginBottom: "0.6rem" }}>
+              <div>
+                <strong>{item.subject ?? "(no subject)"}</strong>
+                <div className="muted">
+                  from {item.from_email} — {item.needs_manual_reason}
+                </div>
+              </div>
+              <div style={{ flex: "0 0 auto" }}>
+                <button
+                  className="secondary"
+                  disabled={busy === item.id}
+                  onClick={() => void dismiss(item)}
+                >
+                  Dismiss
+                </button>
+              </div>
+            </div>
+          ))}
+          <p className="muted">Upload the readable copy below, then confirm it.</p>
+        </div>
+      )}
+
+      <div className="card">
+        <h2>Manual upload (fallback)</h2>
+        <div className="row">
+          <div>
+            <input type="file" accept="application/pdf" onChange={onFilePicked} />
+          </div>
+          <div style={{ flex: "0 0 auto" }}>
+            <button disabled={!uploadB64 || busy === "upload"} onClick={() => void uploadManual()}>
+              Upload{uploadName ? ` ${uploadName}` : ""}
+            </button>
+          </div>
+        </div>
       </div>
 
       <div className="card">

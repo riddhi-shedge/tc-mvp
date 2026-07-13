@@ -221,6 +221,8 @@ class InMemoryRepo:
             "id": str(uuid.uuid4()),
             "transaction_id": transaction_id,
             "external_ref": payload.document_id,
+            "doc_type": payload.document_type,
+            "storage_path": payload.document_storage_ref,
             "status": "pending",
         }
         self.documents[doc["id"]] = doc

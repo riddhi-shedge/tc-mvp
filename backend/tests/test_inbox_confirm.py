@@ -128,6 +128,120 @@ def test_payload_failure_after_create_points_tc_at_orphan_transaction(
     assert len(repo.transactions) == 1
 
 
+def test_confirm_with_doc_type_override(client, tc_headers, repo):
+    """The TC corrects an 'unknown' detection at confirm time (never guessed)."""
+    txn_id = client.post(
+        "/transactions", json={"property_address": "9 Existing Ct"}, headers=tc_headers
+    ).json()["id"]
+    body = postmark_inbound(subject="Documents (synthetic)", attachment_name="scan001.pdf")
+    item_id = client.post(WEBHOOK_URL, json=body).json()["id"]
+
+    r = client.post(
+        f"/ingestion/inbox/{item_id}/confirm",
+        json={"decision": txn_id, "doc_type": "disclosure"},
+        headers=tc_headers,
+    )
+    assert r.status_code == 200
+    doc = repo.get_full_state(txn_id)["documents"][0]
+    assert doc["doc_type"] == "disclosure"
+
+
+def test_non_pa_payload_carries_no_stub_fields(client, tc_headers, repo):
+    """§5 fields come from a purchase agreement; other docs attach field-less
+    until Phase 4's real extraction."""
+    txn_id = client.post(
+        "/transactions", json={"property_address": "9 Existing Ct"}, headers=tc_headers
+    ).json()["id"]
+    item_id = client.post(
+        WEBHOOK_URL,
+        json=postmark_inbound(
+            subject="Proof of funds (synthetic)", attachment_name="pof-synthetic.pdf"
+        ),
+    ).json()["id"]
+    client.post(
+        f"/ingestion/inbox/{item_id}/confirm", json={"decision": txn_id}, headers=tc_headers
+    )
+    state = repo.get_full_state(txn_id)
+    assert state["extracted_fields"] == []
+    assert state["documents"][0]["doc_type"] == "proof_of_funds"
+
+
+def test_confirm_unknown_without_doc_type_is_422(client, tc_headers, repo):
+    """Never guess: an unclassified document can't enter the SOR."""
+    txn_id = client.post(
+        "/transactions", json={"property_address": "9 Existing Ct"}, headers=tc_headers
+    ).json()["id"]
+    body = postmark_inbound(subject="Documents (synthetic)", attachment_name="scan001.pdf")
+    item_id = client.post(WEBHOOK_URL, json=body).json()["id"]
+    r = client.post(
+        f"/ingestion/inbox/{item_id}/confirm", json={"decision": txn_id}, headers=tc_headers
+    )
+    assert r.status_code == 422
+    assert "doc_type" in r.json()["detail"]
+    assert repo.payloads == {}
+
+
+def test_confirm_with_invalid_doc_type_is_422(client, tc_headers):
+    item_id = _inbound_item(client)
+    r = client.post(
+        f"/ingestion/inbox/{item_id}/confirm",
+        json={"decision": "new", "doc_type": "totally-made-up"},
+        headers=tc_headers,
+    )
+    assert r.status_code == 422
+
+
+def test_failed_confirm_releases_the_claim(client, tc_headers, repo, inbox):
+    """After a master failure mid-confirm the item is back to 'pending' —
+    claimed during the attempt, released on failure, retryable by the TC."""
+    from app.ingestion.routes import get_master_client
+    from app.main import app
+    from tests.fake_inbox import FakeMasterClient
+
+    class FailingCreateClient(FakeMasterClient):
+        def create_transaction(self, *, token, property_address):
+            return 502, {"detail": "synthetic master outage"}
+
+    app.dependency_overrides[get_master_client] = lambda: FailingCreateClient(repo)
+    item_id = _inbound_item(client)
+    r = client.post(
+        f"/ingestion/inbox/{item_id}/confirm", json={"decision": "new"}, headers=tc_headers
+    )
+    assert r.status_code == 502
+    assert inbox.items[item_id]["status"] == "pending"
+
+    app.dependency_overrides[get_master_client] = lambda: FakeMasterClient(repo)
+    assert (
+        client.post(
+            f"/ingestion/inbox/{item_id}/confirm", json={"decision": "new"}, headers=tc_headers
+        ).status_code
+        == 200
+    )
+
+
+def test_processing_item_cannot_be_confirmed_again(client, tc_headers, inbox):
+    """A claimed (in-flight) item rejects a concurrent confirm."""
+    item_id = _inbound_item(client)
+    assert inbox.claim(item_id) is not None
+    r = client.post(
+        f"/ingestion/inbox/{item_id}/confirm", json={"decision": "new"}, headers=tc_headers
+    )
+    assert r.status_code == 409
+    assert "processed" in r.json()["detail"]
+
+
+def test_dismiss_closes_pending_item(client, tc_headers, inbox):
+    item_id = _inbound_item(client)
+    assert client.post(f"/ingestion/inbox/{item_id}/dismiss", headers=tc_headers).status_code == 200
+    assert inbox.items[item_id]["status"] == "ignored"
+    # And it can't be dismissed or confirmed again.
+    assert client.post(f"/ingestion/inbox/{item_id}/dismiss", headers=tc_headers).status_code == 409
+    r = client.post(
+        f"/ingestion/inbox/{item_id}/confirm", json={"decision": "new"}, headers=tc_headers
+    )
+    assert r.status_code == 409
+
+
 def test_double_confirm_is_409(client, tc_headers):
     item_id = _inbound_item(client)
     first = client.post(

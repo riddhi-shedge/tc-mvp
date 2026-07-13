@@ -12,6 +12,8 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
+from app.contracts.documents import DocType
+
 # Sentinel used in `Payload.transaction_id` when ingestion cannot (and must not)
 # assume an existing transaction. A NEW payload requires TC confirmation before
 # the master creates anything.
@@ -39,6 +41,10 @@ class Payload(BaseModel):
     transaction_id: str = Field(min_length=1)
     party_id: str | None = Field(default=None, min_length=1)
     extracted_fields: list[ExtractedField] = Field(default_factory=list)
+    # Which document, concretely (Phase 3): detected/TC-confirmed type and the
+    # ingestion-side storage reference. Optional — older payloads stay valid.
+    document_type: DocType | None = None
+    document_storage_ref: str | None = Field(default=None, min_length=1)
 
     @property
     def is_new_transaction(self) -> bool:

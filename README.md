@@ -24,8 +24,14 @@ API (all routes except the webhook require a Supabase TC session JWT with MFA/aa
 - `POST /transactions/{id}/timeline/stub` — hardcoded Phase 2 timeline (real CA rules: Phase 5).
 - `POST /transactions/{id}/messages/draft-stub` — stub lender draft (real drafting: Phase 6).
 - `POST /transactions/{id}/messages/{mid}/approve-and-send` — human approval; **fake** send (audit only).
-- `POST /ingestion/webhooks/postmark?token=…` — inbound parse (dedicated deal address only).
-- `GET /ingestion/inbox` / `POST /ingestion/inbox/{id}/confirm` — HITL "new deal or which existing?".
+- `POST /ingestion/webhooks/postmark` — inbound parse (dedicated deal address only;
+  token via `X-Webhook-Token` header or `?token=`). Detects doc type, stores the
+  attachment in the private `ingestion-attachments` bucket; unreadable → `needs_manual`.
+- `GET /ingestion/inbox` — the queue (pending + needs-manual) with routing
+  *suggestions* (transaction id in subject → sender history → address match).
+- `POST /ingestion/inbox/{id}/confirm` — HITL "new deal or which existing?"
+  (optional `doc_type` correction); `/dismiss` closes an item.
+- `POST /ingestion/manual-upload` — TC-authed fallback for unreadable emails/scans.
 
 ## Frontend (Phase 2 — walking-skeleton screens)
 

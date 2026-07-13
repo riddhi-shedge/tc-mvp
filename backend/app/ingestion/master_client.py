@@ -22,9 +22,12 @@ class HttpMasterClient:
             base_url or os.environ.get("MASTER_API_BASE", "http://localhost:8000")
         ).rstrip("/")
 
-    def _post(self, path: str, *, token: str, json: dict[str, Any]) -> tuple[int, dict[str, Any]]:
+    def _request(
+        self, method: str, path: str, *, token: str, json: dict[str, Any] | None = None
+    ) -> tuple[int, Any]:
         try:
-            r = httpx.post(
+            r = httpx.request(
+                method,
                 f"{self._base}{path}",
                 json=json,
                 headers={"Authorization": f"Bearer {token}"},
@@ -38,15 +41,21 @@ class HttpMasterClient:
         except ValueError:
             return r.status_code, {"detail": f"master API returned non-JSON ({r.status_code})"}
 
+    def list_transactions(self, *, token: str) -> tuple[int, Any]:
+        return self._request("GET", "/transactions", token=token)
+
     def create_transaction(
         self, *, token: str, property_address: str
     ) -> tuple[int, dict[str, Any]]:
-        return self._post("/transactions", token=token, json={"property_address": property_address})
+        return self._request(
+            "POST", "/transactions", token=token, json={"property_address": property_address}
+        )
 
     def write_payload(
         self, *, token: str, transaction_id: str, payload: Payload
     ) -> tuple[int, dict[str, Any]]:
-        return self._post(
+        return self._request(
+            "POST",
             f"/transactions/{transaction_id}/payloads",
             token=token,
             json=payload.model_dump(),

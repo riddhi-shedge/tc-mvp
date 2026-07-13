@@ -40,7 +40,21 @@ export interface InboxItem {
   from_email: string;
   subject: string | null;
   attachment_name: string | null;
+  attachment_count: number;
+  detected_doc_type: string | null;
+  status: "pending" | "needs_manual";
+  needs_manual_reason: string | null;
+  source: "email" | "manual";
+  suggestion: { transaction_id: string; reason: string } | null;
   created_at: string;
+}
+
+export interface DealDocument {
+  id: string;
+  external_ref: string | null;
+  doc_type: string | null;
+  storage_path: string | null;
+  status: string;
 }
 
 export interface TransactionSummary {
@@ -90,6 +104,7 @@ export interface AuditRow {
 export interface FullState {
   transaction: { id: string; status: string };
   property: { address: string } | null;
+  documents: DealDocument[];
   extracted_fields: ExtractedField[];
   deadlines: Deadline[];
   tasks: Task[];

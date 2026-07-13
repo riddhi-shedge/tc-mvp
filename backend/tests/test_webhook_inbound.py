@@ -46,12 +46,14 @@ def test_valid_inbound_stores_pending_item(client, inbox):
     assert item["attachment_size"] == 4321
 
 
-def test_attachment_content_is_never_stored(client, inbox):
-    """Phase 2 stores attachment METADATA only — no document content anywhere."""
+def test_attachment_content_is_never_on_the_row(client, inbox):
+    """Document content lives only in the private bucket — the queue row (which
+    the TC's browser sees) carries metadata + the storage path, never bytes."""
     r = client.post(URL, json=postmark_inbound())
     item = inbox.items[r.json()["id"]]
     for value in item.values():
-        assert value != "JVBERi1zeW50aGV0aWM="
+        assert value != "UERGLXN5bnRoZXRpYw=="  # the base64 payload
+        assert value != "PDF-synthetic"  # the decoded bytes as text
     assert "content" not in {k.lower() for k in item} - {"attachment_content_type"}
 
 
@@ -77,6 +79,64 @@ def test_attachment_count_recorded(client, inbox):
     # marks that more existed rather than dropping them silently.
     assert item["attachment_count"] == 2
     assert item["attachment_name"] == "synthetic-signed-rpa.pdf"
+
+
+def test_attachment_file_is_stored_in_ingestion_storage(client, inbox):
+    """Phase 3: the real agent retains the file (private bucket) for Phase 4
+    extraction; the inbox ROW still carries only the storage path."""
+    r = client.post(URL, json=postmark_inbound())
+    item = inbox.items[r.json()["id"]]
+    assert item["storage_path"] is not None
+    assert inbox.files[item["storage_path"]] == b"PDF-synthetic"  # decoded fixture bytes
+    assert item["status"] == "pending"
+
+
+def test_doc_type_detected_on_arrival(client, inbox):
+    r = client.post(URL, json=postmark_inbound())
+    assert inbox.items[r.json()["id"]]["detected_doc_type"] == "purchase_agreement"
+    pof = postmark_inbound(
+        subject="Proof of funds (synthetic)", attachment_name="pof-synthetic.pdf"
+    )
+    r2 = client.post(URL, json=pof)
+    assert inbox.items[r2.json()["id"]]["detected_doc_type"] == "proof_of_funds"
+
+
+def test_email_without_attachment_needs_manual(client, inbox):
+    body = postmark_inbound()
+    body["Attachments"] = []
+    r = client.post(URL, json=body)
+    item = inbox.items[r.json()["id"]]
+    assert item["status"] == "needs_manual"
+    assert "no readable attachment" in item["needs_manual_reason"]
+    assert item["storage_path"] is None
+    assert inbox.files == {}
+
+
+def test_non_pdf_attachment_needs_manual(client, inbox):
+    body = postmark_inbound(attachment_name="scan.jpg")
+    body["Attachments"][0]["ContentType"] = "image/jpeg"
+    r = client.post(URL, json=body)
+    item = inbox.items[r.json()["id"]]
+    assert item["status"] == "needs_manual"
+    assert "not a PDF" in item["needs_manual_reason"]
+
+
+def test_undecodable_attachment_content_needs_manual(client, inbox):
+    body = postmark_inbound()
+    body["Attachments"][0]["Content"] = "not-valid-base64!!!"
+    r = client.post(URL, json=body)
+    item = inbox.items[r.json()["id"]]
+    assert item["status"] == "needs_manual"
+    assert "decoded" in item["needs_manual_reason"]
+
+
+def test_storage_outage_returns_503_so_postmark_retries(client, inbox):
+    """If the bucket is down the webhook must NOT drop the email into
+    needs_manual (the content would be lost) — 5xx makes Postmark redeliver."""
+    inbox.fail_storage = True
+    r = client.post(URL, json=postmark_inbound())
+    assert r.status_code == 503
+    assert inbox.items == {}
 
 
 def test_webhook_never_touches_the_master(client, inbox, repo):
