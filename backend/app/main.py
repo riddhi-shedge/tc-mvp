@@ -5,17 +5,29 @@ extraction review, approval/send) are added in later Stage C phases.
 """
 
 import logging
+import os
 
 from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from postgrest.exceptions import APIError
 
+from app.ingestion.routes import router as ingestion_router
 from app.master.routes import router as master_router
 
 logger = logging.getLogger("tc_mvp")
 
 app = FastAPI(title="tc-mvp")
 app.include_router(master_router)
+app.include_router(ingestion_router)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[os.environ.get("FRONTEND_ORIGIN", "http://localhost:5173")],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["Authorization", "Content-Type"],
+)
 
 
 @app.exception_handler(APIError)

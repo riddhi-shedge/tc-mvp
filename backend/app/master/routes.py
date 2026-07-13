@@ -17,7 +17,12 @@ from pydantic import BaseModel, Field
 
 from app.contracts.payload import Payload
 from app.master.auth import TCUser, require_tc
-from app.master.repo import MasterRepo, SupabaseRepo
+from app.master.repo import (
+    MasterRepo,
+    MessageNotSendable,
+    SupabaseRepo,
+    TimelineAlreadyExists,
+)
 
 router = APIRouter()
 
@@ -50,6 +55,83 @@ def create_transaction(
     repo: MasterRepo = Depends(get_repo),
 ) -> dict[str, Any]:
     return repo.create_transaction(property_address=body.property_address, actor=tc.actor)
+
+
+@router.get("/transactions")
+def list_transactions(
+    tc: TCUser = Depends(require_tc),
+    repo: MasterRepo = Depends(get_repo),
+) -> list[dict[str, Any]]:
+    return repo.list_transactions()
+
+
+class ConfirmFieldsRequest(BaseModel):
+    field_ids: list[str] = Field(min_length=1)
+
+
+@router.post("/transactions/{transaction_id}/fields/confirm")
+def confirm_fields(
+    transaction_id: str,
+    body: ConfirmFieldsRequest,
+    tc: TCUser = Depends(require_tc),
+    repo: MasterRepo = Depends(get_repo),
+) -> dict[str, Any]:
+    if not repo.transaction_exists(transaction_id):
+        raise HTTPException(status_code=404, detail="Transaction not found")
+    count = repo.confirm_fields(
+        transaction_id=transaction_id, field_ids=body.field_ids, actor=tc.actor
+    )
+    return {"confirmed": count}
+
+
+@router.post("/transactions/{transaction_id}/timeline/stub", status_code=201)
+def create_stub_timeline(
+    transaction_id: str,
+    tc: TCUser = Depends(require_tc),
+    repo: MasterRepo = Depends(get_repo),
+) -> dict[str, Any]:
+    if not repo.transaction_exists(transaction_id):
+        raise HTTPException(status_code=404, detail="Transaction not found")
+    try:
+        return repo.create_stub_timeline(transaction_id=transaction_id, actor=tc.actor)
+    except TimelineAlreadyExists:
+        raise HTTPException(
+            status_code=409, detail="A timeline already exists for this transaction"
+        ) from None
+
+
+@router.post("/transactions/{transaction_id}/messages/draft-stub", status_code=201)
+def create_stub_draft(
+    transaction_id: str,
+    tc: TCUser = Depends(require_tc),
+    repo: MasterRepo = Depends(get_repo),
+) -> dict[str, Any]:
+    if not repo.transaction_exists(transaction_id):
+        raise HTTPException(status_code=404, detail="Transaction not found")
+    return repo.create_stub_draft(transaction_id=transaction_id, actor=tc.actor)
+
+
+@router.post("/transactions/{transaction_id}/messages/{message_id}/approve-and-send")
+def approve_and_send(
+    transaction_id: str,
+    message_id: str,
+    tc: TCUser = Depends(require_tc),
+    repo: MasterRepo = Depends(get_repo),
+) -> dict[str, Any]:
+    """The human approval (Rule 3). Phase 2's send is FAKE — audit-log only."""
+    if not repo.transaction_exists(transaction_id):
+        raise HTTPException(status_code=404, detail="Transaction not found")
+    try:
+        result = repo.approve_and_send_fake(
+            transaction_id=transaction_id, message_id=message_id, actor=tc.actor
+        )
+    except MessageNotSendable:
+        raise HTTPException(
+            status_code=409, detail="Message is not a draft — cannot approve/send again"
+        ) from None
+    if result is None:
+        raise HTTPException(status_code=404, detail="Message not found")
+    return result
 
 
 @router.get("/transactions/{transaction_id}")

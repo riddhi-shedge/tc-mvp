@@ -8,15 +8,49 @@ Supabase service-role key: backend only, never exposed to a frontend.
 from __future__ import annotations
 
 import os
+from datetime import date, datetime, timedelta, timezone
 from typing import Any, Protocol
 
 from app.contracts.payload import Payload
+
+
+class TimelineAlreadyExists(Exception):
+    """A (stub) timeline was already generated for this transaction."""
+
+
+class MessageNotSendable(Exception):
+    """The message is not in 'draft' state — it cannot be approved and sent."""
+
+
+# Hardcoded Phase 2 timeline — clearly labeled stub; real CA rules are Phase 5
+# and come only from ca-rules-researcher + human verification.
+_STUB_TIMELINE = (
+    ("Earnest money deposit due (stub)", "Confirm earnest money deposited (stub)", 3),
+    ("Inspection contingency ends (stub)", "Schedule general inspection (stub)", 17),
+    ("Close of escrow (stub)", "Confirm closing preparations (stub)", 30),
+)
+
+_STUB_DRAFT_SUBJECT = "Lender status check-in (stub)"
+_STUB_DRAFT_BODY = (
+    "Hi (stub lender contact),\n\n"
+    "Checking in on loan progress for the deal at the subject property. Could "
+    "you share the current status of the application and any items you need "
+    "from the buyers?\n\nThanks,\n(stub) — Phase 2 walking skeleton draft; real "
+    "drafting arrives in Phase 6"
+)
+_STUB_DRAFT_WHY = (
+    "Stub rationale: a signed purchase agreement was ingested and confirmed, so "
+    "the first §11 follow-up is a lender status request. Real drafting with a "
+    "deal-state-specific WHY arrives in Phase 6."
+)
 
 
 class MasterRepo(Protocol):
     """Interface the API depends on; tests substitute an in-memory fake."""
 
     def create_transaction(self, *, property_address: str, actor: str) -> dict[str, Any]: ...
+
+    def list_transactions(self) -> list[dict[str, Any]]: ...
 
     def transaction_exists(self, transaction_id: str) -> bool: ...
 
@@ -27,6 +61,16 @@ class MasterRepo(Protocol):
     ) -> dict[str, Any]: ...
 
     def get_full_state(self, transaction_id: str) -> dict[str, Any] | None: ...
+
+    def confirm_fields(self, *, transaction_id: str, field_ids: list[str], actor: str) -> int: ...
+
+    def create_stub_timeline(self, *, transaction_id: str, actor: str) -> dict[str, Any]: ...
+
+    def create_stub_draft(self, *, transaction_id: str, actor: str) -> dict[str, Any]: ...
+
+    def approve_and_send_fake(
+        self, *, transaction_id: str, message_id: str, actor: str
+    ) -> dict[str, Any] | None: ...
 
 
 _CHILD_TABLES = (
@@ -101,6 +145,22 @@ class SupabaseRepo:
             self._db.table("transactions").delete().eq("id", txn["id"]).execute()
             raise
         return {**txn, "property": prop}
+
+    def list_transactions(self) -> list[dict[str, Any]]:
+        txns = (
+            self._db.table("transactions").select("*").order("created_at", desc=True).execute().data
+        )
+        if not txns:
+            return []
+        props = {
+            p["transaction_id"]: p
+            for p in self._db.table("properties")
+            .select("transaction_id, address")
+            .in_("transaction_id", [t["id"] for t in txns])
+            .execute()
+            .data
+        }
+        return [{**t, "property_address": (props.get(t["id"]) or {}).get("address")} for t in txns]
 
     def transaction_exists(self, transaction_id: str) -> bool:
         rows = (
@@ -180,6 +240,171 @@ class SupabaseRepo:
             self._db.table("documents").delete().eq("id", doc["id"]).execute()
             raise
         return row
+
+    def confirm_fields(self, *, transaction_id: str, field_ids: list[str], actor: str) -> int:
+        updated = (
+            self._db.table("extracted_fields")
+            .update({"confirmed": True})
+            .eq("transaction_id", transaction_id)
+            .in_("id", field_ids)
+            .execute()
+            .data
+        )
+        count = len(updated)
+        if count:
+            self._audit(
+                transaction_id=transaction_id,
+                actor=actor,
+                action="field.confirmed",
+                entity_type="extracted_field",
+                entity_id=None,
+                details={"count": count, "field_ids": [f["id"] for f in updated]},
+            )
+        return count
+
+    def create_stub_timeline(self, *, transaction_id: str, actor: str) -> dict[str, Any]:
+        existing = (
+            self._db.table("deadlines")
+            .select("id")
+            .eq("transaction_id", transaction_id)
+            .limit(1)
+            .execute()
+            .data
+        )
+        if existing:
+            raise TimelineAlreadyExists
+        today = date.today()
+        deadlines: list[dict[str, Any]] = []
+        tasks: list[dict[str, Any]] = []
+        try:
+            for deadline_name, task_title, days in _STUB_TIMELINE:
+                deadline = (
+                    self._db.table("deadlines")
+                    .insert(
+                        {
+                            "transaction_id": transaction_id,
+                            "name": deadline_name,
+                            "due_date": (today + timedelta(days=days)).isoformat(),
+                        }
+                    )
+                    .execute()
+                    .data[0]
+                )
+                task = (
+                    self._db.table("tasks")
+                    .insert(
+                        {
+                            "transaction_id": transaction_id,
+                            "deadline_id": deadline["id"],
+                            "title": task_title,
+                        }
+                    )
+                    .execute()
+                    .data[0]
+                )
+                deadlines.append(deadline)
+                tasks.append(task)
+            self._audit(
+                transaction_id=transaction_id,
+                actor=actor,
+                action="timeline.stub_generated",
+                entity_type="deadline",
+                entity_id=None,
+                details={"deadlines": len(deadlines), "tasks": len(tasks), "stub": True},
+            )
+        except Exception:
+            self._db.table("deadlines").delete().eq("transaction_id", transaction_id).execute()
+            raise
+        return {"deadlines": deadlines, "tasks": tasks}
+
+    def create_stub_draft(self, *, transaction_id: str, actor: str) -> dict[str, Any]:
+        message = (
+            self._db.table("messages")
+            .insert(
+                {
+                    "transaction_id": transaction_id,
+                    "subject": _STUB_DRAFT_SUBJECT,
+                    "body": _STUB_DRAFT_BODY,
+                    "status": "draft",
+                }
+            )
+            .execute()
+            .data[0]
+        )
+        try:
+            self._audit(
+                transaction_id=transaction_id,
+                actor=actor,
+                action="message.drafted",
+                entity_type="message",
+                entity_id=message["id"],
+                details={"stub": True},
+            )
+        except Exception:
+            self._db.table("messages").delete().eq("id", message["id"]).execute()
+            raise
+        return {"message": message, "why": _STUB_DRAFT_WHY}
+
+    def approve_and_send_fake(
+        self, *, transaction_id: str, message_id: str, actor: str
+    ) -> dict[str, Any] | None:
+        rows = (
+            self._db.table("messages")
+            .select("*")
+            .eq("id", message_id)
+            .eq("transaction_id", transaction_id)
+            .execute()
+            .data
+        )
+        if not rows:
+            return None
+        if rows[0]["status"] != "draft":
+            raise MessageNotSendable
+        # Rule 3 shape: the human Approval row is recorded FIRST; only then may
+        # the message transition draft -> approved -> sent. The send is FAKE —
+        # nothing leaves the system in Phase 2 (no Postmark call anywhere).
+        approval = (
+            self._db.table("approvals")
+            .insert(
+                {
+                    "transaction_id": transaction_id,
+                    "message_id": message_id,
+                    "approved_by": actor,
+                }
+            )
+            .execute()
+            .data[0]
+        )
+        self._db.table("messages").update({"status": "approved"}).eq("id", message_id).execute()
+        self._audit(
+            transaction_id=transaction_id,
+            actor=actor,
+            action="message.approved",
+            entity_type="message",
+            entity_id=message_id,
+            details={"approval_id": approval["id"]},
+        )
+        sent = (
+            self._db.table("messages")
+            .update(
+                {
+                    "status": "sent",
+                    "sent_at": datetime.now(timezone.utc).isoformat(),
+                }
+            )
+            .eq("id", message_id)
+            .execute()
+            .data[0]
+        )
+        self._audit(
+            transaction_id=transaction_id,
+            actor=actor,
+            action="message.sent",
+            entity_type="message",
+            entity_id=message_id,
+            details={"fake": True},
+        )
+        return {"message": sent, "approval": approval}
 
     def get_full_state(self, transaction_id: str) -> dict[str, Any] | None:
         txns = self._db.table("transactions").select("*").eq("id", transaction_id).execute().data

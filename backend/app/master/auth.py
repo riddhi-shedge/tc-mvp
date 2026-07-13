@@ -14,7 +14,7 @@ import jwt
 from fastapi import Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
-_bearer = HTTPBearer(auto_error=False)
+bearer_scheme = HTTPBearer(auto_error=False)
 
 
 @dataclass(frozen=True)
@@ -33,7 +33,7 @@ def _unauthorized(detail: str) -> HTTPException:
 
 
 def require_tc(
-    credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
 ) -> TCUser:
     if credentials is None:
         raise _unauthorized("Missing bearer token")

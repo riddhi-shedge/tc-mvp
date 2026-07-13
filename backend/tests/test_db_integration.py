@@ -130,6 +130,17 @@ def test_properties_state_must_be_ca(db, txn):
         db.table("properties").update({"state": "NV"}).eq("transaction_id", txn["id"]).execute()
 
 
+def test_ingestion_inbox_table_exists_and_anon_blocked(db):
+    """Part (a)'s queue table exists; RLS keeps the anon key out of it too."""
+    db.table("ingestion_inbox").select("*").limit(0).execute()
+    anon_key = os.environ.get("SUPABASE_ANON_KEY")
+    if anon_key:
+        from supabase import create_client
+
+        anon = create_client(os.environ["SUPABASE_URL"], anon_key)
+        assert anon.table("ingestion_inbox").select("*").limit(5).execute().data == []
+
+
 def test_anon_key_reads_nothing(txn):
     """RLS deny-by-default: the anon key must not see SOR rows (frontend safety)."""
     anon_key = os.environ.get("SUPABASE_ANON_KEY")

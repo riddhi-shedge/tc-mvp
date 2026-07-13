@@ -15,11 +15,30 @@ set -a; source ../.env; set +a
 .venv/bin/uvicorn app.main:app --reload
 ```
 
-API (all routes require a Supabase TC session JWT with MFA/aal2):
+API (all routes except the webhook require a Supabase TC session JWT with MFA/aal2):
 
-- `POST /transactions` — TC creates a deal (HITL act).
+- `POST /transactions` — TC creates a deal (HITL act). `GET /transactions` lists deals.
 - `POST /transactions/{id}/payloads` — the only deal-data write path (validated Payload).
 - `GET /transactions/{id}` — full deal state, including the audit trail.
+- `POST /transactions/{id}/fields/confirm` — extraction-review confirm.
+- `POST /transactions/{id}/timeline/stub` — hardcoded Phase 2 timeline (real CA rules: Phase 5).
+- `POST /transactions/{id}/messages/draft-stub` — stub lender draft (real drafting: Phase 6).
+- `POST /transactions/{id}/messages/{mid}/approve-and-send` — human approval; **fake** send (audit only).
+- `POST /ingestion/webhooks/postmark?token=…` — inbound parse (dedicated deal address only).
+- `GET /ingestion/inbox` / `POST /ingestion/inbox/{id}/confirm` — HITL "new deal or which existing?".
+
+## Frontend (Phase 2 — walking-skeleton screens)
+
+```bash
+cd frontend
+cp .env.example .env    # fill VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY (anon only!)
+npm install
+npm run dev             # http://localhost:5173 (backend on :8000)
+```
+
+Screens: TC login (password + TOTP MFA enroll/challenge to reach aal2) → Inbox
+(HITL confirm) → Deal (extraction review → confirm → stub timeline → AI panel →
+Approve & Send, which fakes the send and writes the audit trail).
 
 Schema lives in `supabase/migrations/` (applied to the dev project;
 `supabase_migrations.schema_migrations` tracks versions).
