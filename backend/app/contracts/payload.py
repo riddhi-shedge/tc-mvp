@@ -20,7 +20,9 @@ NEW_TRANSACTION = "new"
 
 class ExtractedField(BaseModel):
     """One value read from a document, with a confidence score and a confirmed
-    flag. Deadline-driving fields must be confirmed before the timeline builds."""
+    flag. Deadline-driving fields must be confirmed before the timeline builds.
+    (Which fields are deadline-driving is classified by the master from the
+    verified §5 list in Phase 4 — it is not part of the ingestion contract.)"""
 
     name: str = Field(min_length=1)
     value: str
@@ -35,7 +37,7 @@ class Payload(BaseModel):
     document_id: str = Field(min_length=1)
     # A real transaction id, or the NEW_TRANSACTION sentinel.
     transaction_id: str = Field(min_length=1)
-    party_id: str | None = None
+    party_id: str | None = Field(default=None, min_length=1)
     extracted_fields: list[ExtractedField] = Field(default_factory=list)
 
     @property

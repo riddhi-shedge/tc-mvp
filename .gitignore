@@ -35,6 +35,10 @@ Thumbs.db
 .vscode/
 *.swp
 
+# ---- Supabase CLI local state ----
+supabase/.temp/
+supabase/.branches/
+
 # ---- Project scratch (intermediate files, never deliverables) ----
 .tmp/
 tmp/

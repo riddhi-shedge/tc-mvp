@@ -1,5 +1,8 @@
 fastapi
 uvicorn[standard]
 pydantic
+supabase
+pyjwt
+httpx
 pytest
 ruff
