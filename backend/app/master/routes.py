@@ -15,9 +15,11 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from app.contracts.payload import Payload
 from app.common.auth import TCUser, require_tc
+from app.contracts.fields import EXTRACTABLE_FIELD_NAMES
+from app.contracts.payload import Payload
 from app.master.repo import (
+    DeadlineFieldsUnconfirmed,
     MasterRepo,
     MessageNotSendable,
     SupabaseRepo,
@@ -94,6 +96,16 @@ def create_stub_timeline(
         raise HTTPException(status_code=404, detail="Transaction not found")
     try:
         return repo.create_stub_timeline(transaction_id=transaction_id, actor=tc.actor)
+    except DeadlineFieldsUnconfirmed as exc:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "BLOCKED: the timeline cannot build until every deadline-driving "
+                "field is TC-confirmed (§11 step 4). Unconfirmed or not yet "
+                f"extracted: {', '.join(exc.field_names)}. Confirm them — or "
+                "enter missing ones manually — first."
+            ),
+        ) from None
     except TimelineAlreadyExists:
         raise HTTPException(
             status_code=409, detail="A timeline already exists for this transaction"
@@ -175,6 +187,17 @@ def write_payload(
             detail=(
                 "Rule 2: money-movement/wiring fields are never extracted or "
                 f"stored. Rejected field name(s): {', '.join(money_fields)}"
+            ),
+        )
+    # Defense in depth: only names from the human-verified §5 list may enter
+    # the SOR, regardless of which client wrote the payload.
+    unknown_fields = sorted({f.name for f in payload.extracted_fields} - EXTRACTABLE_FIELD_NAMES)
+    if unknown_fields:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "Field name(s) outside the verified §5 extraction list: "
+                f"{', '.join(unknown_fields)}"
             ),
         )
     if not repo.transaction_exists(transaction_id):

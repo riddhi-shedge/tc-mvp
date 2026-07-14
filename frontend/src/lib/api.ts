@@ -5,9 +5,13 @@ const API_BASE: string = import.meta.env.VITE_API_BASE ?? "http://localhost:8000
 export class ApiError extends Error {
   constructor(
     public status: number,
-    detail: string,
+    public detail: unknown,
   ) {
-    super(detail);
+    super(
+      typeof detail === "string"
+        ? detail
+        : ((detail as { message?: string })?.message ?? "Request failed"),
+    );
   }
 }
 
@@ -70,7 +74,57 @@ export interface ExtractedField {
   value: string;
   confidence: number;
   confirmed: boolean;
+  deadline_driving: boolean;
 }
+
+export interface ExtractionErrorDetail {
+  message: string;
+  reasons: string[];
+  manual_fields_required: boolean;
+}
+
+export function asExtractionError(err: unknown): ExtractionErrorDetail | null {
+  if (err instanceof ApiError && err.status === 422 && typeof err.detail === "object") {
+    const d = err.detail as Partial<ExtractionErrorDetail>;
+    if (Array.isArray(d.reasons)) return d as ExtractionErrorDetail;
+  }
+  return null;
+}
+
+// Mirror of the verified §5 v2 list (backend app/contracts/fields.py is the
+// source of truth; the backend validates names regardless).
+export const S5_FIELD_NAMES = [
+  "buyer_names",
+  "seller_names",
+  "property_address",
+  "apn",
+  "purchase_price",
+  "initial_deposit_amount",
+  "increased_deposit_amount",
+  "loan_amount",
+  "financing_type",
+  "down_payment",
+  "all_cash",
+  "acceptance_date",
+  "close_of_escrow",
+  "possession_date",
+  "emd_due_days",
+  "inspection_contingency_days",
+  "loan_contingency_days",
+  "appraisal_contingency_days",
+  "insurance_contingency_days",
+  "disclosure_delivery_days",
+  "verification_of_funds_days",
+  "loan_contingency_present",
+  "appraisal_contingency_present",
+  "inspection_contingency_present",
+  "insurance_contingency_present",
+  "buyer_agent",
+  "listing_agent",
+  "escrow_holder",
+  "title_company",
+  "lender_contact",
+] as const;
 
 export interface Deadline {
   id: string;

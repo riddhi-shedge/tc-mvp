@@ -96,6 +96,17 @@ def test_money_wiring_field_names_are_rejected(client, tc_headers, repo):
     assert repo.documents == {}
 
 
+def test_field_names_outside_s5_list_are_rejected(client, tc_headers, repo):
+    """Defense in depth at the master: only verified §5 names enter the SOR."""
+    txn_id = _create_txn(client, tc_headers)
+    bad = _payload(txn_id)
+    bad["extracted_fields"].append({"name": "made_up_field", "value": "x", "confidence": 0.5})
+    r = client.post(f"/transactions/{txn_id}/payloads", json=bad, headers=tc_headers)
+    assert r.status_code == 422
+    assert "§5" in r.json()["detail"]
+    assert repo.payloads == {}
+
+
 def test_party_from_another_transaction_is_409(client, tc_headers, repo):
     txn_a = _create_txn(client, tc_headers)
     txn_b = _create_txn(client, tc_headers)

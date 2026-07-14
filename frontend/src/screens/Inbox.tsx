@@ -1,5 +1,11 @@
 import { ChangeEvent, useCallback, useEffect, useState } from "react";
-import { api, InboxItem, TransactionSummary } from "../lib/api";
+import {
+  api,
+  asExtractionError,
+  InboxItem,
+  S5_FIELD_NAMES,
+  TransactionSummary,
+} from "../lib/api";
 
 const DOC_TYPE_LABELS: Record<string, string> = {
   purchase_agreement: "Purchase agreement",
@@ -21,6 +27,10 @@ export function Inbox({ onOpenDeal }: { onOpenDeal: (id: string) => void }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [uploadName, setUploadName] = useState<string | null>(null);
   const [uploadB64, setUploadB64] = useState<string | null>(null);
+  // Manual field-entry fallback (open per item after an extraction 422)
+  const [manualFor, setManualFor] = useState<string | null>(null);
+  const [manualReasons, setManualReasons] = useState<string[]>([]);
+  const [manualRows, setManualRows] = useState<{ name: string; value: string }[]>([]);
 
   const refresh = useCallback(async () => {
     try {
@@ -43,19 +53,35 @@ export function Inbox({ onOpenDeal }: { onOpenDeal: (id: string) => void }) {
     return decisions[item.id] ?? item.suggestion?.transaction_id ?? "new";
   }
 
-  async function confirm(item: InboxItem) {
+  async function confirm(item: InboxItem, manualFields?: { name: string; value: string }[]) {
     setBusy(item.id);
     setError(null);
     try {
       const docType = docTypes[item.id];
       const result = await api.post<{ transaction_id: string }>(
         `/ingestion/inbox/${item.id}/confirm`,
-        { decision: decisionFor(item), ...(docType ? { doc_type: docType } : {}) },
+        {
+          decision: decisionFor(item),
+          ...(docType ? { doc_type: docType } : {}),
+          ...(manualFields?.length ? { manual_fields: manualFields } : {}),
+        },
       );
+      setManualFor(null);
       await refresh();
       onOpenDeal(result.transaction_id);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Confirm failed");
+      const extraction = asExtractionError(err);
+      if (extraction?.manual_fields_required) {
+        // §4 error state: extraction refused to guess — open manual entry.
+        setManualFor(item.id);
+        setManualReasons(extraction.reasons);
+        setManualRows([
+          { name: "property_address", value: "" },
+          { name: "close_of_escrow", value: "" },
+        ]);
+      } else {
+        setError(err instanceof Error ? err.message : "Confirm failed");
+      }
     } finally {
       setBusy(null);
     }
@@ -187,6 +213,71 @@ export function Inbox({ onOpenDeal }: { onOpenDeal: (id: string) => void }) {
             </div>
           </div>
         ))}
+        {manualFor && (
+          <div className="why" style={{ borderLeftColor: "#b35c00" }}>
+            <strong>Extraction needs your help — enter the fields manually.</strong>
+            <ul>
+              {manualReasons.map((reason, i) => (
+                <li key={i}>{reason}</li>
+              ))}
+            </ul>
+            {manualRows.map((row, i) => (
+              <div className="row" key={i} style={{ marginBottom: "0.4rem" }}>
+                <div>
+                  <select
+                    value={row.name}
+                    onChange={(e) => {
+                      const rows = [...manualRows];
+                      rows[i] = { ...rows[i], name: e.target.value };
+                      setManualRows(rows);
+                    }}
+                  >
+                    {S5_FIELD_NAMES.map((n) => (
+                      <option key={n} value={n}>
+                        {n}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <input
+                    placeholder="value as written on the document"
+                    value={row.value}
+                    onChange={(e) => {
+                      const rows = [...manualRows];
+                      rows[i] = { ...rows[i], value: e.target.value };
+                      setManualRows(rows);
+                    }}
+                  />
+                </div>
+              </div>
+            ))}
+            <div style={{ display: "flex", gap: "0.4rem", marginTop: "0.5rem" }}>
+              <button
+                className="secondary"
+                onClick={() => setManualRows([...manualRows, { name: "purchase_price", value: "" }])}
+              >
+                + field
+              </button>
+              <button
+                disabled={busy !== null || manualRows.every((r) => !r.value.trim())}
+                onClick={() => {
+                  const item = pending.find((i) => i.id === manualFor);
+                  if (item)
+                    void confirm(
+                      item,
+                      manualRows.filter((r) => r.value.trim()),
+                    );
+                }}
+              >
+                Confirm with manual fields
+              </button>
+              <button className="secondary" onClick={() => setManualFor(null)}>
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
         {error && <p className="error">{error}</p>}
       </div>
 

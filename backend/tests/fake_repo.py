@@ -10,14 +10,17 @@ import uuid
 from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
+from app.contracts.fields import DEADLINE_DRIVING
 from app.contracts.payload import Payload
 from app.master.repo import (
     _STUB_DRAFT_BODY,
     _STUB_DRAFT_SUBJECT,
     _STUB_DRAFT_WHY,
     _STUB_TIMELINE,
+    DeadlineFieldsUnconfirmed,
     MessageNotSendable,
     TimelineAlreadyExists,
+    _deadline_gate_violations,
 )
 
 
@@ -122,6 +125,14 @@ class InMemoryRepo:
         return len(confirmed_ids)
 
     def create_stub_timeline(self, *, transaction_id: str, actor: str) -> dict[str, Any]:
+        rows = [
+            {"name": f["name"], "confirmed": f["confirmed"]}
+            for f in self.extracted_fields
+            if f["transaction_id"] == transaction_id
+        ]
+        violations = _deadline_gate_violations(rows)
+        if violations:
+            raise DeadlineFieldsUnconfirmed(violations)
         if any(d["transaction_id"] == transaction_id for d in self.deadlines):
             raise TimelineAlreadyExists
         today = date.today()
@@ -241,6 +252,8 @@ class InMemoryRepo:
                     "payload_id": row["id"],
                     "transaction_id": transaction_id,
                     **field.model_dump(),
+                    # Stamped from the human-verified §5 list, never trusted.
+                    "deadline_driving": field.name in DEADLINE_DRIVING,
                 }
             )
         self._audit(
@@ -252,6 +265,9 @@ class InMemoryRepo:
             details={
                 "document_external_ref": payload.document_id,
                 "field_count": len(payload.extracted_fields),
+                "fields_confirmed_on_write": sum(
+                    1 for f in payload.extracted_fields if f.confirmed
+                ),
             },
         )
         return row

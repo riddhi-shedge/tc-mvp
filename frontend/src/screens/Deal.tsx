@@ -38,6 +38,7 @@ export function Deal({ id, onBack }: { id: string; onBack: () => void }) {
 
   const fields = state.extracted_fields;
   const unconfirmed = fields.filter((f) => !f.confirmed);
+  const unconfirmedDeadline = unconfirmed.filter((f) => f.deadline_driving);
   const draft: Message | undefined = state.messages.find((m) => m.status === "draft");
   const sent = state.messages.filter((m) => m.status === "sent");
 
@@ -77,7 +78,7 @@ export function Deal({ id, onBack }: { id: string; onBack: () => void }) {
       </div>
 
       <div className="card">
-        <h2>Extraction review (stub extractor — Phase 4 makes this real)</h2>
+        <h2>Extraction review (Claude — §5 fields with per-field confidence)</h2>
         {fields.length === 0 && <p className="muted">No extracted fields yet.</p>}
         {fields.length > 0 && (
           <>
@@ -93,7 +94,10 @@ export function Deal({ id, onBack }: { id: string; onBack: () => void }) {
               <tbody>
                 {fields.map((f) => (
                   <tr key={f.id}>
-                    <td>{f.name}</td>
+                    <td>
+                      {f.name}
+                      {f.deadline_driving && <span className="badge draft"> deadline</span>}
+                    </td>
                     <td>{f.value}</td>
                     <td>
                       <span className={`conf ${f.confidence >= 0.7 ? "high" : "low"}`}>
@@ -127,10 +131,17 @@ export function Deal({ id, onBack }: { id: string; onBack: () => void }) {
 
       <div className="card">
         <h2>Timeline (hardcoded stub — real CA rules arrive in Phase 5)</h2>
+        {unconfirmedDeadline.length > 0 && (
+          <div className="why" style={{ borderLeftColor: "#b35c00" }}>
+            Timeline BLOCKED: {unconfirmedDeadline.length} deadline-driving field
+            {unconfirmedDeadline.length > 1 ? "s" : ""} unconfirmed (
+            {unconfirmedDeadline.map((f) => f.name).join(", ")}). Confirm them above first.
+          </div>
+        )}
         {state.deadlines.length === 0 ? (
           <button
             className="secondary"
-            disabled={busy || unconfirmed.length > 0 || fields.length === 0}
+            disabled={busy || unconfirmedDeadline.length > 0 || fields.length === 0}
             onClick={() => void run(() => api.post(`/transactions/${id}/timeline/stub`))}
           >
             Generate stub timeline

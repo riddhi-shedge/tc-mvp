@@ -41,6 +41,11 @@ class InMemoryInboxRepo:
         self.files[path] = content
         return path
 
+    def download_attachment(self, path: str) -> bytes:
+        if self.fail_storage or path not in self.files:
+            raise StorageUnavailable("attachment store failed (SyntheticOutage)")
+        return self.files[path]
+
     def add_item(
         self,
         *,

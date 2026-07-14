@@ -4,5 +4,7 @@ pydantic
 supabase
 pyjwt
 httpx
+anthropic
+pypdf
 pytest
 ruff

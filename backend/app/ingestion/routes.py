@@ -20,14 +20,21 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from fastapi.security import HTTPAuthorizationCredentials
 from pydantic import BaseModel, Field
 
+from app.common.auth import TCUser, bearer_scheme, require_tc
 from app.contracts.documents import UNKNOWN_DOC_TYPE, DocType
-from app.contracts.payload import NEW_TRANSACTION, Payload
+from app.contracts.fields import EXTRACTABLE_FIELD_NAMES
+from app.contracts.payload import NEW_TRANSACTION, ExtractedField, Payload
 from app.ingestion.detector import check_readability, detect_doc_type
+from app.ingestion.extractor import (
+    ClaudeExtractor,
+    ExtractionBlocked,
+    ExtractionFailed,
+    Extractor,
+)
 from app.ingestion.inbox_repo import InboxRepo, StorageUnavailable, SupabaseInboxRepo
 from app.ingestion.master_client import HttpMasterClient
+from app.ingestion.precheck import precheck_pdf
 from app.ingestion.routing import suggest_transaction
-from app.ingestion.stub_extractor import stub_extract
-from app.common.auth import TCUser, bearer_scheme, require_tc
 
 router = APIRouter(prefix="/ingestion")
 
@@ -48,6 +55,15 @@ def _default_master_client() -> HttpMasterClient:
 
 def get_master_client() -> HttpMasterClient:
     return _default_master_client()
+
+
+@lru_cache(maxsize=1)
+def _default_extractor() -> ClaudeExtractor:
+    return ClaudeExtractor()
+
+
+def get_extractor() -> Extractor:
+    return _default_extractor()
 
 
 def _tc_token(credentials: HTTPAuthorizationCredentials | None) -> str:
@@ -233,11 +249,92 @@ def list_inbox(
 # ---- HITL confirm / dismiss ---------------------------------------------------
 
 
+class ManualFieldEntry(BaseModel):
+    name: str = Field(min_length=1)
+    value: str = Field(min_length=1)
+
+
 class ConfirmRequest(BaseModel):
     # "new" (NEW_TRANSACTION) or an existing transaction id — the TC's HITL call.
     decision: str = Field(min_length=1)
     # TC's correction/confirmation of the detected type (e.g. for 'unknown').
     doc_type: DocType | None = None
+    # Manual field-entry fallback (bad scans / failed extraction): the TC types
+    # the §5 values. Typing them IS the confirmation — they land confirmed.
+    manual_fields: list[ManualFieldEntry] | None = None
+
+
+def _manual_extracted_fields(entries: list[ManualFieldEntry]) -> list[ExtractedField]:
+    invalid = sorted({e.name for e in entries} - EXTRACTABLE_FIELD_NAMES)
+    if invalid:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"manual_fields contains names outside the verified §5 list: {', '.join(invalid)}"
+            ),
+        )
+    return [
+        ExtractedField(name=e.name, value=e.value, confidence=1.0, confirmed=True) for e in entries
+    ]
+
+
+def _extraction_error(message: str, reasons: list[str]) -> HTTPException:
+    """§4 never-silently-guess states: structured 422 the UI can act on."""
+    return HTTPException(
+        status_code=422,
+        detail={
+            "message": message,
+            "reasons": reasons,
+            "manual_fields_required": True,
+        },
+    )
+
+
+def _extract_pa_fields(
+    item: dict[str, Any], inbox: InboxRepo, extractor: Extractor
+) -> list[ExtractedField]:
+    """Run pre-check + real extraction for a purchase agreement. Raises the
+    structured 422 for every §4 error state; never guesses."""
+    storage_path = item.get("storage_path")
+    if not storage_path:
+        raise _extraction_error(
+            "No stored document for this item", ["no attachment file is stored"]
+        )
+    try:
+        pdf_bytes = inbox.download_attachment(storage_path)
+    except StorageUnavailable:
+        # Same retryable semantics as the webhook path for the same failure.
+        raise HTTPException(
+            status_code=503, detail="Attachment store unavailable; try again shortly"
+        ) from None
+    reasons = precheck_pdf(pdf_bytes, expect_purchase_agreement=True)
+    if reasons:
+        raise _extraction_error(
+            "The document failed pre-checks — extraction was not attempted", reasons
+        )
+    try:
+        result = extractor.extract(pdf_bytes=pdf_bytes, doc_type="purchase_agreement")
+    except ExtractionBlocked as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from None
+    except ExtractionFailed as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from None
+    if result.doc_looks_like != "purchase_agreement":
+        raise _extraction_error(
+            "Wrong document type",
+            [
+                f"the document reads as '{result.doc_looks_like}', not a purchase "
+                "agreement — correct doc_type, or dismiss this item"
+            ],
+        )
+    if not result.signature_detected:
+        raise _extraction_error(
+            "No executed-signature indicators found",
+            [
+                "the document does not appear to be a signed copy — verify it is "
+                "executed; to proceed deliberately, enter the fields manually"
+            ],
+        )
+    return result.fields
 
 
 @router.post("/inbox/{item_id}/confirm")
@@ -248,6 +345,7 @@ def confirm_inbox_item(
     credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
     inbox: InboxRepo = Depends(get_inbox_repo),
     master: HttpMasterClient = Depends(get_master_client),
+    extractor: Extractor = Depends(get_extractor),
 ) -> dict[str, Any]:
     item = inbox.get(item_id)
     if item is None:
@@ -280,23 +378,43 @@ def confirm_inbox_item(
     if inbox.claim(item_id) is None:
         raise HTTPException(status_code=409, detail="Inbox item already handled")
     try:
-        stub_fields, stub_address = stub_extract(item)
+        # §5 fields come only from a purchase agreement (real extraction,
+        # Phase 4). Other doc types attach field-less. Manual entry skips
+        # extraction: the TC's typed values are the confirmed truth.
+        if doc_type != "purchase_agreement":
+            if body.manual_fields:
+                raise HTTPException(
+                    status_code=422,
+                    detail=(
+                        "manual_fields apply only to purchase agreements — "
+                        f"this item is a {doc_type}"
+                    ),
+                )
+            fields: list[ExtractedField] = []
+        elif body.manual_fields:
+            fields = _manual_extracted_fields(body.manual_fields)
+        else:
+            fields = _extract_pa_fields(item, inbox, extractor)
+
+        address = next(
+            (f.value for f in fields if f.name == "property_address"),
+            "(address pending confirmation)",
+        )
 
         if body.decision == NEW_TRANSACTION:
             # §11 step 2: a new deal is proposed from a purchase agreement; the
             # TC may still create one from another doc type, but only explicitly.
-            status, data = master.create_transaction(token=token, property_address=stub_address)
+            status, data = master.create_transaction(token=token, property_address=address)
             if status >= 400:
                 raise HTTPException(status_code=status, detail=data.get("detail", "master error"))
             transaction_id = data["id"]
         else:
             transaction_id = body.decision
 
-        # §5 fields come from a purchase agreement; real extraction is Phase 4.
         payload = Payload(
             document_id=f"inbox-{item_id}",
             transaction_id=transaction_id,
-            extracted_fields=stub_fields if doc_type == "purchase_agreement" else [],
+            extracted_fields=fields,
             document_type=doc_type,
             document_storage_ref=item.get("storage_path"),
         )

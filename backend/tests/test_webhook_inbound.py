@@ -5,7 +5,12 @@ only ever writes ingestion's own queue — never the SOR. Dedicated-inbox rule:
 mail not addressed to the deal address is ignored, not stored.
 """
 
-from tests.conftest import WEBHOOK_TOKEN, postmark_inbound
+from tests.conftest import (
+    SYNTHETIC_PA_B64,
+    SYNTHETIC_PA_BYTES,
+    WEBHOOK_TOKEN,
+    postmark_inbound,
+)
 
 URL = f"/ingestion/webhooks/postmark?token={WEBHOOK_TOKEN}"
 
@@ -43,7 +48,7 @@ def test_valid_inbound_stores_pending_item(client, inbox):
     assert item["subject"] == "Signed RPA — 123 Stub St (synthetic)"
     assert item["attachment_name"] == "synthetic-signed-rpa.pdf"
     assert item["attachment_content_type"] == "application/pdf"
-    assert item["attachment_size"] == 4321
+    assert item["attachment_size"] == len(SYNTHETIC_PA_BYTES)
 
 
 def test_attachment_content_is_never_on_the_row(client, inbox):
@@ -52,8 +57,8 @@ def test_attachment_content_is_never_on_the_row(client, inbox):
     r = client.post(URL, json=postmark_inbound())
     item = inbox.items[r.json()["id"]]
     for value in item.values():
-        assert value != "UERGLXN5bnRoZXRpYw=="  # the base64 payload
-        assert value != "PDF-synthetic"  # the decoded bytes as text
+        assert value != SYNTHETIC_PA_B64  # the base64 payload
+        assert value != SYNTHETIC_PA_BYTES  # the raw bytes
     assert "content" not in {k.lower() for k in item} - {"attachment_content_type"}
 
 
@@ -87,7 +92,7 @@ def test_attachment_file_is_stored_in_ingestion_storage(client, inbox):
     r = client.post(URL, json=postmark_inbound())
     item = inbox.items[r.json()["id"]]
     assert item["storage_path"] is not None
-    assert inbox.files[item["storage_path"]] == b"PDF-synthetic"  # decoded fixture bytes
+    assert inbox.files[item["storage_path"]] == SYNTHETIC_PA_BYTES
     assert item["status"] == "pending"
 
 

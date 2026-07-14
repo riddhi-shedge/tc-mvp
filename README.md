@@ -30,7 +30,15 @@ API (all routes except the webhook require a Supabase TC session JWT with MFA/aa
 - `GET /ingestion/inbox` — the queue (pending + needs-manual) with routing
   *suggestions* (transaction id in subject → sender history → address match).
 - `POST /ingestion/inbox/{id}/confirm` — HITL "new deal or which existing?"
-  (optional `doc_type` correction); `/dismiss` closes an item.
+  (optional `doc_type` correction). For purchase agreements this runs the real
+  extraction pipeline: pypdf pre-check → Claude (§5 fields with per-field
+  confidence, whitelist-enforced). Pre-check/type/signature failures return a
+  structured 422 (`manual_fields_required`) — pass `manual_fields` to enter
+  values by hand (they land confirmed). `/dismiss` closes an item.
+  **ZDR gate:** extraction refuses to run unless `SYNTHETIC_ONLY=true` or
+  `ZDR_CONFIRMED=true` — no real client document until ZDR is confirmed.
+- The timeline is BLOCKED (409, with the field names) until every
+  deadline-driving §5 field on the deal is TC-confirmed.
 - `POST /ingestion/manual-upload` — TC-authed fallback for unreadable emails/scans.
 
 ## Frontend (Phase 2 — walking-skeleton screens)

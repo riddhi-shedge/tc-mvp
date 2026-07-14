@@ -50,6 +50,12 @@ class InboxRepo(Protocol):
         needs_manual_reason: str | None = None,
     ) -> dict[str, Any]: ...
 
+    def download_attachment(self, path: str) -> bytes:
+        """Fetch stored attachment bytes for extraction (part a internal only —
+        content never crosses to the master or the frontend). Raises
+        StorageUnavailable on failure."""
+        ...
+
     def list_open(self) -> list[dict[str, Any]]:
         """Pending + needs_manual items — the queue the TC works through."""
         ...
@@ -140,6 +146,12 @@ class SupabaseInboxRepo:
             .execute()
             .data[0]
         )
+
+    def download_attachment(self, path: str) -> bytes:
+        try:
+            return self._db.storage.from_(BUCKET).download(path)
+        except Exception as exc:
+            raise StorageUnavailable(f"attachment store failed ({type(exc).__name__})") from exc
 
     def list_open(self) -> list[dict[str, Any]]:
         return (

@@ -54,7 +54,7 @@ def test_pa_creates_deal_and_pof_routes_to_it(client, tc_headers, repo, inbox):
     assert state["tasks"] == []
     # §5 fields came only from the PA; the POF payload carried none.
     payload_fields = {len(p["raw"]["extracted_fields"]) for p in state["payloads"]}
-    assert payload_fields == {6, 0}
+    assert payload_fields == {12, 0}
 
 
 def test_unreadable_email_falls_back_to_manual_upload(client, tc_headers, repo, inbox):

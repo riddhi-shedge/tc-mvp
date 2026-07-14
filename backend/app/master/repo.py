@@ -11,11 +11,38 @@ import os
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Protocol
 
+from app.contracts.fields import DEADLINE_DRIVING
 from app.contracts.payload import Payload
 
 
 class TimelineAlreadyExists(Exception):
     """A (stub) timeline was already generated for this transaction."""
+
+
+class DeadlineFieldsUnconfirmed(Exception):
+    """The timeline may not build while any deadline-driving field is
+    unconfirmed — or MISSING entirely (an omitted field is not a confirmed
+    field; §11 step 4 / Prompt 4). Carries field NAMES only — never values
+    (logging discipline)."""
+
+    def __init__(self, field_names: list[str]) -> None:
+        self.field_names = field_names
+        super().__init__(", ".join(field_names))
+
+
+def _deadline_gate_violations(rows: list[dict[str, Any]]) -> list[str]:
+    """Given a transaction's extracted-field rows ({name, confirmed}), return
+    the deadline-driving names that block the timeline: unconfirmed rows plus
+    names with no row at all. Applies only once ANY field row exists (a deal
+    with no extraction yet — e.g. created manually — is not gated on §5
+    coverage; Phase 5's real timeline needs the values regardless)."""
+    if not rows:
+        return []
+    confirmed = {r["name"] for r in rows if r["confirmed"]}
+    present = {r["name"] for r in rows}
+    unconfirmed = {r["name"] for r in rows if r["name"] in DEADLINE_DRIVING} - confirmed
+    missing = DEADLINE_DRIVING - present
+    return sorted(unconfirmed | missing)
 
 
 class MessageNotSendable(Exception):
@@ -222,7 +249,12 @@ class SupabaseRepo:
                         {
                             "payload_id": row["id"],
                             "transaction_id": transaction_id,
-                            **field.model_dump(),
+                            # Stamped from the human-verified §5 list — the
+                            # payload's own flag is never trusted for this.
+                            **{
+                                **field.model_dump(),
+                                "deadline_driving": field.name in DEADLINE_DRIVING,
+                            },
                         }
                         for field in payload.extracted_fields
                     ]
@@ -236,6 +268,10 @@ class SupabaseRepo:
                 details={
                     "document_external_ref": payload.document_id,
                     "field_count": len(payload.extracted_fields),
+                    # Manual TC-entered fields arrive already confirmed.
+                    "fields_confirmed_on_write": sum(
+                        1 for f in payload.extracted_fields if f.confirmed
+                    ),
                 },
             )
         except Exception:
@@ -265,6 +301,18 @@ class SupabaseRepo:
         return count
 
     def create_stub_timeline(self, *, transaction_id: str, actor: str) -> dict[str, Any]:
+        # The confirmation gate (Prompt 4): no unconfirmed OR missing
+        # deadline-driving field may ever create a Deadline/Task.
+        rows = (
+            self._db.table("extracted_fields")
+            .select("name, confirmed")
+            .eq("transaction_id", transaction_id)
+            .execute()
+            .data
+        )
+        violations = _deadline_gate_violations(rows)
+        if violations:
+            raise DeadlineFieldsUnconfirmed(violations)
         existing = (
             self._db.table("deadlines")
             .select("id")
