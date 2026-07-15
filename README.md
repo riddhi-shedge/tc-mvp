@@ -39,6 +39,23 @@ API (all routes except the webhook require a Supabase TC session JWT with MFA/aa
   `ZDR_CONFIRMED=true` — no real client document until ZDR is confirmed.
 - The timeline is BLOCKED (409, with the field names) until every
   deadline-driving §5 field on the deal is TC-confirmed.
+- `POST /transactions/{id}/compliance-result` — the compliance service (part c)
+  persists computed deadlines/tasks/risk-flags/draft-reminders. Service-token
+  auth (`X-Compliance-Token`); idempotent per deal; drafts land `draft` (Rule 3).
+
+## Compliance / timeline service (Phase 5 — structure)
+
+Part (c) computes deadlines/tasks/risk-flags from **human-verified** CA rules.
+The mechanics (calendar/roll date math, the seven §6 risk flags, draft
+reminders) are complete and tested against a **synthetic** ruleset; the real CA
+rule VALUES are walled off in `backend/app/compliance/ca_rules.py` and the
+service **hard-stops (`RulesNotVerified`)** until a human verifies
+`docs/ca-rules-verification.md`, fills `VERIFIED_RULESET`, and sets
+`CA_RULES_VERIFIED=true`. No unverified CA number lives in the code.
+
+Scheduling (MVP): call `app.compliance.service.run_for_transaction(txn_id,
+client)` per open deal on an interval (cron / APScheduler — no Kafka, §13). The
+runner reads state and writes results only through the master API.
 - `POST /ingestion/manual-upload` — TC-authed fallback for unreadable emails/scans.
 
 ## Frontend (Phase 2 — walking-skeleton screens)

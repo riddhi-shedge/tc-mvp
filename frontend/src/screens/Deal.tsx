@@ -39,7 +39,8 @@ export function Deal({ id, onBack }: { id: string; onBack: () => void }) {
   const fields = state.extracted_fields;
   const unconfirmed = fields.filter((f) => !f.confirmed);
   const unconfirmedDeadline = unconfirmed.filter((f) => f.deadline_driving);
-  const draft: Message | undefined = state.messages.find((m) => m.status === "draft");
+  const drafts: Message[] = state.messages.filter((m) => m.status === "draft");
+  const hasStubDraft = drafts.some((m) => (m.subject ?? "").toLowerCase().includes("stub"));
   const sent = state.messages.filter((m) => m.status === "sent");
 
   return (
@@ -166,9 +167,22 @@ export function Deal({ id, onBack }: { id: string; onBack: () => void }) {
         )}
       </div>
 
+      {state.risk_flags.length > 0 && (
+        <div className="card">
+          <h2>Risk flags (compliance service)</h2>
+          <ul className="audit">
+            {state.risk_flags.map((f) => (
+              <li key={f.id}>
+                <span className="badge draft">{f.severity}</span> {f.description}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       <div className="card">
-        <h2>AI panel (stub draft — real drafting arrives in Phase 6)</h2>
-        {!draft && sent.length === 0 && (
+        <h2>Draft messages — every draft needs a human Approve &amp; Send (Rule 3)</h2>
+        {!hasStubDraft && sent.length === 0 && drafts.length === 0 && (
           <button
             className="secondary"
             disabled={busy || state.deadlines.length === 0}
@@ -184,12 +198,15 @@ export function Deal({ id, onBack }: { id: string; onBack: () => void }) {
             Draft lender follow-up (stub)
           </button>
         )}
-        {draft && (
-          <>
+        {drafts.length === 0 && <p className="muted">No drafts pending.</p>}
+        {drafts.map((draft) => (
+          <div key={draft.id} style={{ marginBottom: "1rem" }}>
             <p>
               <strong>{draft.subject}</strong> <span className="badge draft">draft</span>
             </p>
-            {draftWhy && <div className="why">WHY: {draftWhy}</div>}
+            {draftWhy && (draft.subject ?? "").toLowerCase().includes("stub") && (
+              <div className="why">WHY: {draftWhy}</div>
+            )}
             <pre className="mail">{draft.body}</pre>
             <button
               className="danger-ish"
@@ -200,10 +217,10 @@ export function Deal({ id, onBack }: { id: string; onBack: () => void }) {
                 )
               }
             >
-              Approve &amp; Send (fake — nothing really sends in Phase 2)
+              Approve &amp; Send (fake — nothing really sends yet)
             </button>
-          </>
-        )}
+          </div>
+        ))}
         {sent.map((m) => (
           <p key={m.id}>
             <strong>{m.subject}</strong> <span className="badge sent">sent (fake)</span>{" "}

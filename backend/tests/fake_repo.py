@@ -40,6 +40,8 @@ class InMemoryRepo:
         self.tasks: list[dict[str, Any]] = []
         self.messages: dict[str, dict[str, Any]] = {}
         self.approvals: list[dict[str, Any]] = []
+        self.risk_flags: list[dict[str, Any]] = []
+        self.reminders: list[dict[str, Any]] = []
         self.audit_log: list[dict[str, Any]] = []
 
     def add_party(self, *, transaction_id: str, name: str, role: str) -> dict[str, Any]:
@@ -272,6 +274,125 @@ class InMemoryRepo:
         )
         return row
 
+    def apply_compliance_result(self, *, result, actor: str) -> dict[str, Any]:
+        transaction_id = result.transaction_id
+        rows = [
+            {"name": f["name"], "confirmed": f["confirmed"]}
+            for f in self.extracted_fields
+            if f["transaction_id"] == transaction_id
+        ]
+        violations = _deadline_gate_violations(rows)
+        if violations:
+            raise DeadlineFieldsUnconfirmed(violations)
+
+        # Carry over mutable task state (e.g. a party marked it done) by key.
+        prior_task_state = {
+            t["compute_key"]: t
+            for t in self.tasks
+            if t["transaction_id"] == transaction_id
+            and t.get("generated_by") == "compliance"
+            and t.get("compute_key")
+        }
+
+        run_id = str(uuid.uuid4())
+        deadline_id_by_key: dict[str, str] = {}
+        for d in result.deadlines:
+            row = {
+                "id": str(uuid.uuid4()),
+                "transaction_id": transaction_id,
+                "name": d.name,
+                "due_date": d.due_date.isoformat(),
+                "generated_by": "compliance",
+                "compliance_run_id": run_id,
+                "compute_key": d.key,
+            }
+            self.deadlines.append(row)
+            deadline_id_by_key[d.key] = row["id"]
+
+        task_id_by_key: dict[str, str] = {}
+        for t in result.tasks:
+            carried = prior_task_state.get(t.key, {})
+            row = {
+                "id": str(uuid.uuid4()),
+                "transaction_id": transaction_id,
+                "title": t.title,
+                "status": carried.get("status", "pending"),
+                "assigned_party_id": carried.get("assigned_party_id"),
+                "deadline_id": deadline_id_by_key.get(t.deadline_key or ""),
+                "depends_on_task_id": None,
+                "generated_by": "compliance",
+                "compliance_run_id": run_id,
+                "compute_key": t.key,
+            }
+            self.tasks.append(row)
+            task_id_by_key[t.key] = row["id"]
+        for t in result.tasks:
+            if t.depends_on_key and t.depends_on_key in task_id_by_key:
+                target = next(x for x in self.tasks if x["id"] == task_id_by_key[t.key])
+                target["depends_on_task_id"] = task_id_by_key[t.depends_on_key]
+
+        for f in result.risk_flags:
+            self.risk_flags.append(
+                {
+                    "id": str(uuid.uuid4()),
+                    "transaction_id": transaction_id,
+                    "severity": f.severity,
+                    "description": f.description,
+                    "deadline_id": deadline_id_by_key.get(f.deadline_key or ""),
+                    "generated_by": "compliance",
+                    "compliance_run_id": run_id,
+                    "case_key": f.case,
+                    "resolved": False,
+                }
+            )
+
+        for r in result.draft_reminders:
+            msg = {
+                "id": str(uuid.uuid4()),
+                "transaction_id": transaction_id,
+                "subject": r.subject,
+                "body": r.body,
+                "status": "draft",
+                "generated_by": "compliance",
+                "compliance_run_id": run_id,
+                "created_at": _now(),
+                "sent_at": None,
+            }
+            self.messages[msg["id"]] = msg
+
+        # New run landed — remove the prior run's rows. Messages only if still
+        # 'draft' (approved/sent compliance messages stay — append-only record).
+        def _prior(row) -> bool:
+            return (
+                row["transaction_id"] == transaction_id
+                and row.get("generated_by") == "compliance"
+                and row.get("compliance_run_id") != run_id
+            )
+
+        self.deadlines = [d for d in self.deadlines if not _prior(d)]
+        self.tasks = [t for t in self.tasks if not _prior(t)]
+        self.risk_flags = [r for r in self.risk_flags if not _prior(r)]
+        for mid in [
+            m["id"] for m in self.messages.values() if _prior(m) and m.get("status") == "draft"
+        ]:
+            del self.messages[mid]
+
+        summary = {
+            "deadlines": len(result.deadlines),
+            "tasks": len(result.tasks),
+            "risk_flags": len(result.risk_flags),
+            "draft_reminders": len(result.draft_reminders),
+        }
+        self._audit(
+            transaction_id=transaction_id,
+            actor=actor,
+            action="compliance.run",
+            entity_type="transaction",
+            entity_id=transaction_id,
+            details={**summary, "run_id": run_id},
+        )
+        return summary
+
     def get_full_state(self, transaction_id: str) -> dict[str, Any] | None:
         txn = self.transactions.get(transaction_id)
         if txn is None:
@@ -294,8 +415,8 @@ class InMemoryRepo:
             "messages": [
                 m for m in self.messages.values() if m["transaction_id"] == transaction_id
             ],
-            "reminders": [],
-            "risk_flags": [],
+            "reminders": [r for r in self.reminders if r["transaction_id"] == transaction_id],
+            "risk_flags": [r for r in self.risk_flags if r["transaction_id"] == transaction_id],
             "approvals": [a for a in self.approvals if a["transaction_id"] == transaction_id],
             "audit_log": [a for a in self.audit_log if a["transaction_id"] == transaction_id],
         }

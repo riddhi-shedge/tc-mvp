@@ -8,9 +8,11 @@ Supabase service-role key: backend only, never exposed to a frontend.
 from __future__ import annotations
 
 import os
+import uuid
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Protocol
 
+from app.contracts.compliance import ComplianceResult
 from app.contracts.fields import DEADLINE_DRIVING
 from app.contracts.payload import Payload
 
@@ -98,6 +100,10 @@ class MasterRepo(Protocol):
     def approve_and_send_fake(
         self, *, transaction_id: str, message_id: str, actor: str
     ) -> dict[str, Any] | None: ...
+
+    def apply_compliance_result(
+        self, *, result: ComplianceResult, actor: str
+    ) -> dict[str, Any]: ...
 
 
 _CHILD_TABLES = (
@@ -455,6 +461,144 @@ class SupabaseRepo:
             details={"fake": True},
         )
         return {"message": sent, "approval": approval}
+
+    def apply_compliance_result(self, *, result: ComplianceResult, actor: str) -> dict[str, Any]:
+        transaction_id = result.transaction_id
+        # The §11 gate holds here too: no unconfirmed/missing deadline-driving
+        # field may drive a Deadline/Task.
+        rows = (
+            self._db.table("extracted_fields")
+            .select("name, confirmed")
+            .eq("transaction_id", transaction_id)
+            .execute()
+            .data
+        )
+        violations = _deadline_gate_violations(rows)
+        if violations:
+            raise DeadlineFieldsUnconfirmed(violations)
+
+        # Carry over mutable state a receiving-end party may have set on a
+        # prior run's compliance task (e.g. status='done'), keyed by compute_key.
+        prior_tasks = (
+            self._db.table("tasks")
+            .select("compute_key, status, assigned_party_id")
+            .eq("transaction_id", transaction_id)
+            .eq("generated_by", "compliance")
+            .execute()
+            .data
+        )
+        prior_task_state = {t["compute_key"]: t for t in prior_tasks if t.get("compute_key")}
+
+        run_id = str(uuid.uuid4())
+        # Insert the NEW run first (tagged run_id); the prior run stays live until
+        # this fully lands. A failure mid-insert compensates by deleting only the
+        # new run's rows (mirrors write_payload), leaving the old timeline intact
+        # and its audit trail untouched.
+        try:
+            deadline_id_by_key: dict[str, str] = {}
+            for d in result.deadlines:
+                row = (
+                    self._db.table("deadlines")
+                    .insert(
+                        {
+                            "transaction_id": transaction_id,
+                            "name": d.name,
+                            "due_date": d.due_date.isoformat(),
+                            "generated_by": "compliance",
+                            "compliance_run_id": run_id,
+                            "compute_key": d.key,
+                        }
+                    )
+                    .execute()
+                    .data[0]
+                )
+                deadline_id_by_key[d.key] = row["id"]
+
+            task_id_by_key: dict[str, str] = {}
+            for t in result.tasks:
+                carried = prior_task_state.get(t.key, {})
+                row = (
+                    self._db.table("tasks")
+                    .insert(
+                        {
+                            "transaction_id": transaction_id,
+                            "title": t.title,
+                            "deadline_id": deadline_id_by_key.get(t.deadline_key or ""),
+                            # preserve completion + assignee across re-runs
+                            "status": carried.get("status", "pending"),
+                            "assigned_party_id": carried.get("assigned_party_id"),
+                            "generated_by": "compliance",
+                            "compliance_run_id": run_id,
+                            "compute_key": t.key,
+                        }
+                    )
+                    .execute()
+                    .data[0]
+                )
+                task_id_by_key[t.key] = row["id"]
+            for t in result.tasks:
+                if t.depends_on_key and t.depends_on_key in task_id_by_key:
+                    self._db.table("tasks").update(
+                        {"depends_on_task_id": task_id_by_key[t.depends_on_key]}
+                    ).eq("id", task_id_by_key[t.key]).execute()
+
+            for f in result.risk_flags:
+                self._db.table("risk_flags").insert(
+                    {
+                        "transaction_id": transaction_id,
+                        "severity": f.severity,
+                        "description": f.description,
+                        "deadline_id": deadline_id_by_key.get(f.deadline_key or ""),
+                        "generated_by": "compliance",
+                        "compliance_run_id": run_id,
+                        "case_key": f.case,
+                    }
+                ).execute()
+
+            # Rule 3: drafts land as 'draft' messages only — nothing sends here.
+            for r in result.draft_reminders:
+                self._db.table("messages").insert(
+                    {
+                        "transaction_id": transaction_id,
+                        "subject": r.subject,
+                        "body": r.body,
+                        "status": "draft",
+                        "generated_by": "compliance",
+                        "compliance_run_id": run_id,
+                    }
+                ).execute()
+        except Exception:
+            for table in ("messages", "risk_flags", "tasks", "deadlines"):
+                self._db.table(table).delete().eq("compliance_run_id", run_id).execute()
+            raise
+
+        # New run landed — now remove the PRIOR run's rows. Deadlines/tasks/flags
+        # are regenerated freely; messages only if still 'draft' (an
+        # approved/sent compliance message keeps its Approval + audit — the record
+        # stays append-only).
+        for table in ("risk_flags", "tasks", "deadlines"):
+            self._db.table(table).delete().eq("transaction_id", transaction_id).eq(
+                "generated_by", "compliance"
+            ).neq("compliance_run_id", run_id).execute()
+        self._db.table("messages").delete().eq("transaction_id", transaction_id).eq(
+            "generated_by", "compliance"
+        ).eq("status", "draft").neq("compliance_run_id", run_id).execute()
+
+        summary = {
+            "deadlines": len(result.deadlines),
+            "tasks": len(result.tasks),
+            "risk_flags": len(result.risk_flags),
+            "draft_reminders": len(result.draft_reminders),
+        }
+        self._audit(
+            transaction_id=transaction_id,
+            actor=actor,
+            action="compliance.run",
+            entity_type="transaction",
+            entity_id=transaction_id,
+            details={**summary, "run_id": run_id},
+        )
+        return summary
 
     def get_full_state(self, transaction_id: str) -> dict[str, Any] | None:
         txns = self._db.table("transactions").select("*").eq("id", transaction_id).execute().data

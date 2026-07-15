@@ -8,14 +8,17 @@ from ingestion is HITL and arrives with Phase 3.
 
 from __future__ import annotations
 
+import os
 import re
+import secrets
 from functools import lru_cache
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel, Field
 
 from app.common.auth import TCUser, require_tc
+from app.contracts.compliance import ComplianceResult
 from app.contracts.fields import EXTRACTABLE_FIELD_NAMES
 from app.contracts.payload import Payload
 from app.master.repo import (
@@ -27,6 +30,20 @@ from app.master.repo import (
 )
 
 router = APIRouter()
+
+
+def require_compliance_service(
+    x_compliance_token: str | None = Header(default=None),
+) -> None:
+    """Service-token auth for the compliance runner (a machine can't do MFA).
+    Constant-time compare; fails closed when unconfigured — mirrors the
+    Postmark inbound webhook token."""
+    expected = os.environ.get("COMPLIANCE_SERVICE_TOKEN")
+    if not expected:
+        raise HTTPException(status_code=503, detail="Compliance endpoint not configured")
+    if x_compliance_token is None or not secrets.compare_digest(x_compliance_token, expected):
+        raise HTTPException(status_code=401, detail="Invalid compliance service token")
+
 
 # Rule 2 (rules/security.md): money movement and wiring instructions are never
 # parsed, stored, displayed, or transmitted. Ingestion must not extract such
@@ -144,6 +161,69 @@ def approve_and_send(
     if result is None:
         raise HTTPException(status_code=404, detail="Message not found")
     return result
+
+
+@router.get("/transactions/{transaction_id}/compliance-state")
+def read_compliance_state(
+    transaction_id: str,
+    _: None = Depends(require_compliance_service),
+    repo: MasterRepo = Depends(get_repo),
+) -> dict[str, Any]:
+    """Least-privilege read for the scheduled compliance service: only the slice
+    it needs (confirmed fields, parties, doc status, task status) — not the full
+    deal state, and NOT a TC session. Service-token auth."""
+    state = repo.get_full_state(transaction_id)
+    if state is None:
+        raise HTTPException(status_code=404, detail="Transaction not found")
+    return {
+        "transaction_id": transaction_id,
+        "fields": [
+            {
+                "name": f["name"],
+                "value": f["value"],
+                "confirmed": f["confirmed"],
+                "deadline_driving": f.get("deadline_driving", False),
+            }
+            for f in state.get("extracted_fields", [])
+        ],
+        "parties": [
+            {"role": p.get("role", ""), "name": p.get("name"), "email": p.get("email")}
+            for p in state.get("parties", [])
+        ],
+        "documents": [
+            {"doc_type": d.get("doc_type"), "status": d.get("status", "")}
+            for d in state.get("documents", [])
+        ],
+        "tasks": [
+            {"title": t.get("title", ""), "status": t.get("status", "")}
+            for t in state.get("tasks", [])
+        ],
+    }
+
+
+@router.post("/transactions/{transaction_id}/compliance-result", status_code=201)
+def apply_compliance_result(
+    transaction_id: str,
+    result: ComplianceResult,
+    _: None = Depends(require_compliance_service),
+    repo: MasterRepo = Depends(get_repo),
+) -> dict[str, Any]:
+    """Persist a compliance run (part c → the SOR). Service-token auth; §11 gate
+    and Rule 3 (drafts only) enforced in the repo. Idempotent per deal."""
+    if result.transaction_id != transaction_id:
+        raise HTTPException(status_code=409, detail="Result transaction_id does not match the URL")
+    if not repo.transaction_exists(transaction_id):
+        raise HTTPException(status_code=404, detail="Transaction not found")
+    try:
+        return repo.apply_compliance_result(result=result, actor="compliance-service")
+    except DeadlineFieldsUnconfirmed as exc:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "BLOCKED: compliance cannot run until every deadline-driving field "
+                f"is TC-confirmed (§11). Unconfirmed or missing: {', '.join(exc.field_names)}."
+            ),
+        ) from None
 
 
 @router.get("/transactions/{transaction_id}")

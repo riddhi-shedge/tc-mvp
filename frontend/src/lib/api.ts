@@ -155,6 +155,14 @@ export interface AuditRow {
   created_at: string;
 }
 
+export interface DealRiskFlag {
+  id: string;
+  severity: string;
+  description: string;
+  case_key: string | null;
+  resolved: boolean;
+}
+
 export interface FullState {
   transaction: { id: string; status: string };
   property: { address: string } | null;
@@ -163,6 +171,7 @@ export interface FullState {
   deadlines: Deadline[];
   tasks: Task[];
   messages: Message[];
+  risk_flags: DealRiskFlag[];
   approvals: { id: string; message_id: string; approved_by: string }[];
   audit_log: AuditRow[];
 }
