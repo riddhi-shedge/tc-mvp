@@ -1,14 +1,19 @@
-"""Stub lender draft + Approve & Send (FAKE — Rule 3 shape, no real email).
-
-The approve-and-send endpoint IS the human approval: an Approval row is
-recorded before any 'sent' transition, and the send is fake (audit-only).
-"""
+"""Stub lender draft + Approve & Send (Rule 3 shape). The approve-and-send
+endpoint IS the human approval: an Approval row is recorded before any 'sent'
+transition, and the send goes through the (test) mailer — nothing real leaves."""
 
 
 def _txn(client, tc_headers) -> str:
-    return client.post(
+    txn_id = client.post(
         "/transactions", json={"property_address": "742 Synthetic Ave"}, headers=tc_headers
     ).json()["id"]
+    # A lender contact so the stub draft has a resolvable recipient.
+    client.post(
+        f"/transactions/{txn_id}/parties",
+        json={"name": "Synthetic Lender", "role": "lender", "email": "lender@example.test"},
+        headers=tc_headers,
+    )
+    return txn_id
 
 
 def _draft(client, tc_headers, txn_id) -> dict:
@@ -61,7 +66,9 @@ def test_approve_and_send_records_approval_before_sent(client, tc_headers, repo)
     actions = [a["action"] for a in state["audit_log"]]
     assert actions.index("message.approved") < actions.index("message.sent")
     sent_row = next(a for a in state["audit_log"] if a["action"] == "message.sent")
-    assert sent_row["details"]["fake"] is True  # Phase 2 sends nothing real
+    assert sent_row["details"]["provider_message_id"]  # a real (test) send id
+    # The mailer received exactly this message; a follow-up reminder was set.
+    assert len(state["reminders"]) == 1
 
 
 def test_approve_and_send_twice_is_409(client, tc_headers):

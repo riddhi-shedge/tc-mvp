@@ -169,20 +169,60 @@ def test_transaction_id_mismatch_is_409(client, tc_headers, repo):
     assert r.status_code == 409
 
 
+def _lender_result(txn_id: str) -> dict:
+    """A compliance result whose draft targets the lender (so it's sendable)."""
+    r = ComplianceResult(
+        transaction_id=txn_id,
+        deadlines=[
+            ComputedDeadline(
+                key="loan_contingency",
+                name="Loan contingency ends",
+                due_date="2026-07-31",
+                source_field="loan_contingency_days",
+            )
+        ],
+        tasks=[],
+        risk_flags=[RiskFlag(case="loan_contingency_approaching", description="approaching")],
+        draft_reminders=[
+            DraftReminder(
+                flag_case="loan_contingency_approaching",
+                to_role="lender",
+                subject="Loan contingency deadline approaching",
+                body="Please confirm loan status.",
+            )
+        ],
+    )
+    return r.model_dump(mode="json")
+
+
 def test_rerun_preserves_an_already_sent_compliance_message(client, tc_headers, repo):
     """A compliance draft the TC approved-and-sent must survive later runs —
     the record is append-only (blocking review fix)."""
     txn_id = _confirmed_deal(client, tc_headers, repo)
     client.post(
-        f"/transactions/{txn_id}/compliance-result", json=_result(txn_id), headers=_headers()
+        f"/transactions/{txn_id}/parties",
+        json={"name": "Syn Lender", "role": "lender", "email": "lender@example.test"},
+        headers=tc_headers,
+    )
+    client.post(
+        f"/transactions/{txn_id}/compliance-result",
+        json=_lender_result(txn_id),
+        headers=_headers(),
     )
     state = client.get(f"/transactions/{txn_id}", headers=tc_headers).json()
     msg_id = next(m["id"] for m in state["messages"] if m["status"] == "draft")
-    client.post(f"/transactions/{txn_id}/messages/{msg_id}/approve-and-send", headers=tc_headers)
+    assert (
+        client.post(
+            f"/transactions/{txn_id}/messages/{msg_id}/approve-and-send", headers=tc_headers
+        ).status_code
+        == 200
+    )
 
     # Re-run compliance — the sent message (and its approval) must remain.
     client.post(
-        f"/transactions/{txn_id}/compliance-result", json=_result(txn_id), headers=_headers()
+        f"/transactions/{txn_id}/compliance-result",
+        json=_lender_result(txn_id),
+        headers=_headers(),
     )
     state = client.get(f"/transactions/{txn_id}", headers=tc_headers).json()
     assert any(m["id"] == msg_id and m["status"] == "sent" for m in state["messages"])

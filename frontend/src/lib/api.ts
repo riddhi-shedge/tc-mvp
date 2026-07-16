@@ -145,6 +145,14 @@ export interface Message {
   body: string | null;
   status: "draft" | "approved" | "sent";
   sent_at: string | null;
+  party_id: string | null;
+}
+
+export interface DealParty {
+  id: string;
+  name: string | null;
+  role: string;
+  email: string | null;
 }
 
 export interface AuditRow {
@@ -166,6 +174,7 @@ export interface DealRiskFlag {
 export interface FullState {
   transaction: { id: string; status: string };
   property: { address: string } | null;
+  parties: DealParty[];
   documents: DealDocument[];
   extracted_fields: ExtractedField[];
   deadlines: Deadline[];

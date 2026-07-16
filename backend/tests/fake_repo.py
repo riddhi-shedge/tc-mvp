@@ -19,6 +19,7 @@ from app.master.repo import (
     _STUB_TIMELINE,
     DeadlineFieldsUnconfirmed,
     MessageNotSendable,
+    NoRecipient,
     TimelineAlreadyExists,
     _deadline_gate_violations,
 )
@@ -168,11 +169,13 @@ class InMemoryRepo:
         return {"deadlines": deadlines, "tasks": tasks}
 
     def create_stub_draft(self, *, transaction_id: str, actor: str) -> dict[str, Any]:
+        lender = self.lender_party(transaction_id)
         message = {
             "id": str(uuid.uuid4()),
             "transaction_id": transaction_id,
             "subject": _STUB_DRAFT_SUBJECT,
             "body": _STUB_DRAFT_BODY,
+            "party_id": lender["id"] if lender else None,
             "status": "draft",
             "created_at": _now(),
             "sent_at": None,
@@ -188,42 +191,154 @@ class InMemoryRepo:
         )
         return {"message": message, "why": _STUB_DRAFT_WHY}
 
-    def approve_and_send_fake(
-        self, *, transaction_id: str, message_id: str, actor: str
+    def create_party(
+        self, *, transaction_id, name, role, email, permission_tier, actor
+    ) -> dict[str, Any]:
+        party = {
+            "id": str(uuid.uuid4()),
+            "transaction_id": transaction_id,
+            "name": name,
+            "role": role,
+            "email": email,
+            "permission_tier": permission_tier,
+        }
+        self.parties[party["id"]] = party
+        self._audit(
+            transaction_id=transaction_id,
+            actor=actor,
+            action="party.added",
+            entity_type="party",
+            entity_id=party["id"],
+            details={"role": role},
+        )
+        return party
+
+    def lender_party(self, transaction_id: str) -> dict[str, Any] | None:
+        return next(
+            (
+                p
+                for p in self.parties.values()
+                if p["transaction_id"] == transaction_id
+                and p.get("role") in ("lender", "loan_officer")
+            ),
+            None,
+        )
+
+    def loan_deadline_iso(self, transaction_id: str) -> str | None:
+        return next(
+            (
+                d["due_date"]
+                for d in self.deadlines
+                if d["transaction_id"] == transaction_id
+                and d.get("compute_key") == "loan_contingency"
+            ),
+            None,
+        )
+
+    def create_message(
+        self,
+        *,
+        transaction_id,
+        subject,
+        body,
+        party_id,
+        actor,
+        action="message.drafted",
+        details=None,
+    ) -> dict[str, Any]:
+        message = {
+            "id": str(uuid.uuid4()),
+            "transaction_id": transaction_id,
+            "subject": subject,
+            "body": body,
+            "party_id": party_id,
+            "status": "draft",
+            "created_at": _now(),
+            "sent_at": None,
+        }
+        self.messages[message["id"]] = message
+        self._audit(
+            transaction_id=transaction_id,
+            actor=actor,
+            action=action,
+            entity_type="message",
+            entity_id=message["id"],
+            details=details or {},
+        )
+        return message
+
+    def approve_and_send(
+        self, *, transaction_id, message_id, actor, subject, body, mailer, followup_days
     ) -> dict[str, Any] | None:
         message = self.messages.get(message_id)
         if message is None or message["transaction_id"] != transaction_id:
             return None
-        if message["status"] != "draft":
+        if message["status"] not in ("draft", "approved"):
             raise MessageNotSendable
-        approval = {
-            "id": str(uuid.uuid4()),
-            "transaction_id": transaction_id,
-            "message_id": message_id,
-            "approved_by": actor,
-            "approved_at": _now(),
-        }
-        self.approvals.append(approval)
-        message["status"] = "approved"
-        self._audit(
-            transaction_id=transaction_id,
-            actor=actor,
-            action="message.approved",
-            entity_type="message",
-            entity_id=message_id,
-            details={"approval_id": approval["id"]},
-        )
+        recipient = self._recipient_email(message.get("party_id"))
+        if not recipient:
+            raise NoRecipient
+        final_subject = subject if subject is not None else message["subject"]
+        final_body = body if body is not None else message["body"]
+
+        approval = next((a for a in self.approvals if a["message_id"] == message_id), None)
+        if message["status"] == "draft":
+            approval = {
+                "id": str(uuid.uuid4()),
+                "transaction_id": transaction_id,
+                "message_id": message_id,
+                "approved_by": actor,
+                "approved_at": _now(),
+            }
+            self.approvals.append(approval)
+            message.update(
+                {
+                    "status": "approved",
+                    "subject": final_subject,
+                    "body": final_body,
+                    "approved_by": actor,
+                    "approved_at": _now(),
+                }
+            )
+            self._audit(
+                transaction_id=transaction_id,
+                actor=actor,
+                action="message.approved",
+                entity_type="message",
+                entity_id=message_id,
+                details={"approval_id": approval["id"]},
+            )
+        else:  # retry: no new approval
+            message.update({"subject": final_subject, "body": final_body})
+        # The send — a guarded/failed send leaves the message 'approved'.
+        sent_result = mailer.send(to=recipient, subject=final_subject, body=final_body)
         message["status"] = "sent"
         message["sent_at"] = _now()
+        message["provider_message_id"] = sent_result.provider_message_id
         self._audit(
             transaction_id=transaction_id,
             actor=actor,
             action="message.sent",
             entity_type="message",
             entity_id=message_id,
-            details={"fake": True},
+            details={"provider_message_id": sent_result.provider_message_id},
+        )
+        self.reminders.append(
+            {
+                "id": str(uuid.uuid4()),
+                "transaction_id": transaction_id,
+                "message_id": message_id,
+                "remind_at": _now(),
+                "note": "No reply from lender — consider following up.",
+            }
         )
         return {"message": message, "approval": approval}
+
+    def _recipient_email(self, party_id: str | None) -> str | None:
+        if not party_id:
+            return None
+        party = self.parties.get(party_id)
+        return party.get("email") if party else None
 
     def party_belongs_to_transaction(self, *, party_id: str, transaction_id: str) -> bool:
         party = self.parties.get(party_id)
@@ -346,6 +461,10 @@ class InMemoryRepo:
                 }
             )
 
+        role_to_party: dict[str, str] = {}
+        for p in self.parties.values():
+            if p["transaction_id"] == transaction_id:
+                role_to_party.setdefault(p["role"], p["id"])
         for r in result.draft_reminders:
             msg = {
                 "id": str(uuid.uuid4()),
@@ -353,6 +472,7 @@ class InMemoryRepo:
                 "subject": r.subject,
                 "body": r.body,
                 "status": "draft",
+                "party_id": role_to_party.get(r.to_role) if r.to_role else None,
                 "generated_by": "compliance",
                 "compliance_run_id": run_id,
                 "created_at": _now(),

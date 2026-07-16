@@ -33,18 +33,23 @@ def test_full_walking_skeleton(client, tc_headers, repo):
         client.post(f"/transactions/{txn_id}/timeline/stub", headers=tc_headers).status_code == 201
     )
 
-    # 6 Draft (stub lender follow-up)
+    # 6 Draft (stub lender follow-up) — needs a lender contact to send to
+    client.post(
+        f"/transactions/{txn_id}/parties",
+        json={"name": "Synthetic Lender", "role": "lender", "email": "lender@example.test"},
+        headers=tc_headers,
+    )
     msg_id = client.post(f"/transactions/{txn_id}/messages/draft-stub", headers=tc_headers).json()[
         "message"
     ]["id"]
 
-    # 7 Send (FAKE) — only after human approval
+    # 7 Send (via the test mailer) — only after human approval
     r = client.post(
         f"/transactions/{txn_id}/messages/{msg_id}/approve-and-send", headers=tc_headers
     )
     assert r.status_code == 200
 
-    # Done when: every step is in the audit log and the sent is fake.
+    # Done when: every step is in the audit log and the message sent.
     final = client.get(f"/transactions/{txn_id}", headers=tc_headers).json()
     actions = [a["action"] for a in final["audit_log"]]
     for expected in (
@@ -58,6 +63,6 @@ def test_full_walking_skeleton(client, tc_headers, repo):
     ):
         assert expected in actions, f"missing audit action: {expected}"
     sent_row = next(a for a in final["audit_log"] if a["action"] == "message.sent")
-    assert sent_row["details"]["fake"] is True
-    assert final["messages"][0]["status"] == "sent"
+    assert sent_row["details"]["provider_message_id"]  # a real (test) send id
+    assert any(m["status"] == "sent" for m in final["messages"])
     assert len(final["approvals"]) == 1

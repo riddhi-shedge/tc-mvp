@@ -21,15 +21,43 @@ from app.common.auth import TCUser, require_tc
 from app.contracts.compliance import ComplianceResult
 from app.contracts.fields import EXTRACTABLE_FIELD_NAMES
 from app.contracts.payload import Payload
+from app.common.zdr import ZdrNotConfirmed
+from app.master.drafting import ClaudeDrafter, DraftContext, DraftFailed, Drafter
+from app.master.mailer import (
+    Mailer,
+    PostmarkMailer,
+    RecipientNotAllowed,
+    SendDisabled,
+    SendFailed,
+)
 from app.master.repo import (
     DeadlineFieldsUnconfirmed,
     MasterRepo,
     MessageNotSendable,
+    NoRecipient,
     SupabaseRepo,
     TimelineAlreadyExists,
 )
 
 router = APIRouter()
+
+
+@lru_cache(maxsize=1)
+def _default_mailer() -> PostmarkMailer:
+    return PostmarkMailer()
+
+
+def get_mailer() -> Mailer:
+    return _default_mailer()
+
+
+@lru_cache(maxsize=1)
+def _default_drafter() -> ClaudeDrafter:
+    return ClaudeDrafter()
+
+
+def get_drafter() -> Drafter:
+    return _default_drafter()
 
 
 def require_compliance_service(
@@ -140,24 +168,148 @@ def create_stub_draft(
     return repo.create_stub_draft(transaction_id=transaction_id, actor=tc.actor)
 
 
+class CreatePartyRequest(BaseModel):
+    name: str = Field(min_length=1)
+    role: str = Field(min_length=1)
+    # Light shape check (avoids the email-validator dep) — caught at entry so
+    # the TC fixes a typo now, not at send time.
+    email: str | None = Field(default=None, pattern=r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+    permission_tier: str | None = None
+
+
+# Which permission tier a role defaults to (§8). Operator is the TC only.
+_ROLE_TIER = {
+    "lender": "email_participant",
+    "loan_officer": "email_participant",
+    "buyer": "email_participant",
+    "seller": "email_participant",
+    "title": "email_participant",
+    "escrow": "email_participant",
+    "appraiser": "receiving_end",
+    "contractor": "receiving_end",
+    "inspector_general": "receiving_end",
+    "inspector_termite": "receiving_end",
+    "inspector_roof": "receiving_end",
+    "inspector_sewer": "receiving_end",
+}
+
+
+@router.post("/transactions/{transaction_id}/parties", status_code=201)
+def create_party(
+    transaction_id: str,
+    body: CreatePartyRequest,
+    tc: TCUser = Depends(require_tc),
+    repo: MasterRepo = Depends(get_repo),
+) -> dict[str, Any]:
+    if not repo.transaction_exists(transaction_id):
+        raise HTTPException(status_code=404, detail="Transaction not found")
+    tier = body.permission_tier or _ROLE_TIER.get(body.role, "email_participant")
+    return repo.create_party(
+        transaction_id=transaction_id,
+        name=body.name,
+        role=body.role,
+        email=body.email,
+        permission_tier=tier,
+        actor=tc.actor,
+    )
+
+
+@router.post("/transactions/{transaction_id}/messages/draft-lender", status_code=201)
+def draft_lender(
+    transaction_id: str,
+    tc: TCUser = Depends(require_tc),
+    repo: MasterRepo = Depends(get_repo),
+    drafter: Drafter = Depends(get_drafter),
+) -> dict[str, Any]:
+    """Real Claude draft of a lender status request (Prompt 6). If no lender
+    contact, ask for one (Rule 6: never guess a recipient)."""
+    if not repo.transaction_exists(transaction_id):
+        raise HTTPException(status_code=404, detail="Transaction not found")
+    lender = repo.lender_party(transaction_id)
+    if lender is None:
+        raise HTTPException(
+            status_code=409,
+            detail="No lender contact on this deal — add one (POST /parties) before drafting.",
+        )
+    state = repo.get_full_state(transaction_id)
+    assert state is not None
+    prop = state.get("property") or {}
+    ctx = DraftContext(
+        property_address=prop.get("address"),
+        lender_name=lender.get("name"),
+        loan_deadline=repo.loan_deadline_iso(transaction_id),
+        loan_status_note=None,
+    )
+    try:
+        draft = drafter.draft_lender_status(ctx)
+    except ZdrNotConfirmed as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from None
+    except DraftFailed as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from None
+    money_hit = _MONEY_FIELD_NAME.search(f"{draft.subject}\n{draft.body}")
+    if money_hit:
+        # Rule 2 defense in depth: never persist/send a draft that slipped in
+        # wiring/payment language, even though the prompt forbids it.
+        raise HTTPException(
+            status_code=422,
+            detail="Draft contained payment/wiring language and was rejected (Rule 2).",
+        )
+    message = repo.create_message(
+        transaction_id=transaction_id,
+        subject=draft.subject,
+        body=draft.body,
+        party_id=lender["id"],
+        actor=tc.actor,
+        details={"kind": "lender_status"},
+    )
+    return {"message": message, "why": draft.why}
+
+
+class ApproveSendRequest(BaseModel):
+    # The TC's edits ARE the approved content (optional; defaults to the draft).
+    subject: str | None = Field(default=None, min_length=1)
+    body: str | None = Field(default=None, min_length=1)
+
+
 @router.post("/transactions/{transaction_id}/messages/{message_id}/approve-and-send")
 def approve_and_send(
     transaction_id: str,
     message_id: str,
+    body: ApproveSendRequest | None = None,
     tc: TCUser = Depends(require_tc),
     repo: MasterRepo = Depends(get_repo),
+    mailer: Any = Depends(get_mailer),
 ) -> dict[str, Any]:
-    """The human approval (Rule 3). Phase 2's send is FAKE — audit-log only."""
+    """The human approval + real (guarded) send (Rule 3). The ONLY path that can
+    transition a message to 'sent'. The TC's optional edits are the approved
+    content. On a guarded/failed send the message stays 'approved' (retryable)."""
     if not repo.transaction_exists(transaction_id):
         raise HTTPException(status_code=404, detail="Transaction not found")
+    edits = body or ApproveSendRequest()
     try:
-        result = repo.approve_and_send_fake(
-            transaction_id=transaction_id, message_id=message_id, actor=tc.actor
+        result = repo.approve_and_send(
+            transaction_id=transaction_id,
+            message_id=message_id,
+            actor=tc.actor,
+            subject=edits.subject,
+            body=edits.body,
+            mailer=mailer,
+            followup_days=int(os.environ.get("FOLLOWUP_DAYS", "3")),
         )
     except MessageNotSendable:
         raise HTTPException(
-            status_code=409, detail="Message is not a draft — cannot approve/send again"
+            status_code=409, detail="Message has already been sent — cannot send again"
         ) from None
+    except NoRecipient:
+        raise HTTPException(
+            status_code=409, detail="Message has no recipient — add a contact with an email first"
+        ) from None
+    except SendDisabled as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from None
+    except RecipientNotAllowed as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from None
+    except SendFailed as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from None
     if result is None:
         raise HTTPException(status_code=404, detail="Message not found")
     return result

@@ -23,13 +23,13 @@ import os
 from dataclasses import dataclass
 from typing import Any, Protocol
 
+from app.common.zdr import ZdrNotConfirmed, check_zdr_gate
 from app.contracts.documents import DocType
 from app.contracts.fields import S5_FIELDS, is_extractable_field
 from app.contracts.payload import ExtractedField
 
-
-class ExtractionBlocked(Exception):
-    """The ZDR/synthetic-only gate refused to run extraction."""
+# Back-compat alias — the gate now lives in app/common/zdr.py (shared).
+ExtractionBlocked = ZdrNotConfirmed
 
 
 class ExtractionFailed(Exception):
@@ -45,19 +45,6 @@ class ExtractionResult:
 
 class Extractor(Protocol):
     def extract(self, *, pdf_bytes: bytes, doc_type: DocType) -> ExtractionResult: ...
-
-
-def check_zdr_gate() -> None:
-    """Rule 5 gate. SYNTHETIC_ONLY defaults true (dev); flipping it to false
-    without a confirmed ZDR agreement hard-stops extraction."""
-    zdr = os.environ.get("ZDR_CONFIRMED", "false").lower() == "true"
-    synthetic_only = os.environ.get("SYNTHETIC_ONLY", "true").lower() == "true"
-    if not zdr and not synthetic_only:
-        raise ExtractionBlocked(
-            "Extraction is disabled: SYNTHETIC_ONLY=false but Anthropic "
-            "zero-data-retention is not confirmed (ZDR_CONFIRMED!=true). "
-            "No real client document may be processed until ZDR is active (§3)."
-        )
 
 
 def _output_schema() -> dict[str, Any]:

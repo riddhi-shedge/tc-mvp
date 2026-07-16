@@ -1,13 +1,17 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, FullState, Message } from "../lib/api";
 
-/** The deal screen: extraction review → confirm → stub timeline → AI panel
- *  (stub lender draft + why) → Approve & Send (FAKE — audit log only). */
+/** The deal screen: extraction review → confirm → timeline → risk flags →
+ *  lender contact → real lender draft (editable) → Approve & Send (guarded). */
 export function Deal({ id, onBack }: { id: string; onBack: () => void }) {
   const [state, setState] = useState<FullState | null>(null);
   const [draftWhy, setDraftWhy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [lenderName, setLenderName] = useState("");
+  const [lenderEmail, setLenderEmail] = useState("");
+  // TC edits to a draft before approval: messageId -> {subject, body}
+  const [edits, setEdits] = useState<Record<string, { subject: string; body: string }>>({});
 
   const refresh = useCallback(async () => {
     try {
@@ -40,8 +44,9 @@ export function Deal({ id, onBack }: { id: string; onBack: () => void }) {
   const unconfirmed = fields.filter((f) => !f.confirmed);
   const unconfirmedDeadline = unconfirmed.filter((f) => f.deadline_driving);
   const drafts: Message[] = state.messages.filter((m) => m.status === "draft");
-  const hasStubDraft = drafts.some((m) => (m.subject ?? "").toLowerCase().includes("stub"));
+  const approved: Message[] = state.messages.filter((m) => m.status === "approved");
   const sent = state.messages.filter((m) => m.status === "sent");
+  const lender = state.parties.find((p) => p.role === "lender" || p.role === "loan_officer");
 
   return (
     <>
@@ -181,49 +186,135 @@ export function Deal({ id, onBack }: { id: string; onBack: () => void }) {
       )}
 
       <div className="card">
-        <h2>Draft messages — every draft needs a human Approve &amp; Send (Rule 3)</h2>
-        {!hasStubDraft && sent.length === 0 && drafts.length === 0 && (
+        <h2>Lender contact</h2>
+        {lender ? (
+          <p className="muted">
+            {lender.name} &lt;{lender.email ?? "no email"}&gt;
+          </p>
+        ) : (
+          <div className="row">
+            <div>
+              <input
+                placeholder="Lender / loan officer name"
+                value={lenderName}
+                onChange={(e) => setLenderName(e.target.value)}
+              />
+            </div>
+            <div>
+              <input
+                placeholder="lender email"
+                value={lenderEmail}
+                onChange={(e) => setLenderEmail(e.target.value)}
+              />
+            </div>
+            <div style={{ flex: "0 0 auto" }}>
+              <button
+                disabled={busy || !lenderName || !lenderEmail}
+                onClick={() =>
+                  void run(async () => {
+                    await api.post(`/transactions/${id}/parties`, {
+                      name: lenderName,
+                      role: "lender",
+                      email: lenderEmail,
+                    });
+                    setLenderName("");
+                    setLenderEmail("");
+                  })
+                }
+              >
+                Add lender
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="card">
+        <h2>Lender follow-up — draft, edit, then Approve &amp; Send (Rule 3)</h2>
+        {drafts.length === 0 && sent.length === 0 && (
           <button
             className="secondary"
-            disabled={busy || state.deadlines.length === 0}
+            disabled={busy || !lender}
+            title={!lender ? "Add a lender contact first" : undefined}
             onClick={() =>
               void run(async () => {
                 const r = await api.post<{ why: string }>(
-                  `/transactions/${id}/messages/draft-stub`,
+                  `/transactions/${id}/messages/draft-lender`,
                 );
                 setDraftWhy(r.why);
               })
             }
           >
-            Draft lender follow-up (stub)
+            Draft lender follow-up (Claude)
           </button>
         )}
-        {drafts.length === 0 && <p className="muted">No drafts pending.</p>}
-        {drafts.map((draft) => (
-          <div key={draft.id} style={{ marginBottom: "1rem" }}>
-            <p>
-              <strong>{draft.subject}</strong> <span className="badge draft">draft</span>
-            </p>
-            {draftWhy && (draft.subject ?? "").toLowerCase().includes("stub") && (
-              <div className="why">WHY: {draftWhy}</div>
-            )}
-            <pre className="mail">{draft.body}</pre>
+        {drafts.map((draft) => {
+          const edit = edits[draft.id] ?? {
+            subject: draft.subject ?? "",
+            body: draft.body ?? "",
+          };
+          return (
+            <div key={draft.id} style={{ marginBottom: "1rem" }}>
+              <span className="badge draft">draft</span>
+              {draftWhy && <div className="why">WHY: {draftWhy}</div>}
+              <label>Subject</label>
+              <input
+                value={edit.subject}
+                onChange={(e) =>
+                  setEdits({ ...edits, [draft.id]: { ...edit, subject: e.target.value } })
+                }
+              />
+              <label>Body (edit before sending)</label>
+              <textarea
+                rows={6}
+                value={edit.body}
+                onChange={(e) =>
+                  setEdits({ ...edits, [draft.id]: { ...edit, body: e.target.value } })
+                }
+              />
+              <div style={{ marginTop: "0.5rem" }}>
+                <button
+                  className="danger-ish"
+                  disabled={busy}
+                  onClick={() =>
+                    void run(() =>
+                      api.post(`/transactions/${id}/messages/${draft.id}/approve-and-send`, {
+                        subject: edit.subject,
+                        body: edit.body,
+                      }),
+                    )
+                  }
+                >
+                  Approve &amp; Send
+                </button>
+              </div>
+            </div>
+          );
+        })}
+        {approved.map((m) => (
+          <div key={m.id} style={{ marginBottom: "0.75rem" }}>
+            <strong>{m.subject}</strong>{" "}
+            <span className="badge draft">approved — not sent</span>
+            <div className="muted">
+              Approved but the send didn't go through (sending disabled, recipient not
+              allow-listed, or a provider error). Retry when ready.
+            </div>
             <button
               className="danger-ish"
               disabled={busy}
               onClick={() =>
                 void run(() =>
-                  api.post(`/transactions/${id}/messages/${draft.id}/approve-and-send`),
+                  api.post(`/transactions/${id}/messages/${m.id}/approve-and-send`),
                 )
               }
             >
-              Approve &amp; Send (fake — nothing really sends yet)
+              Retry send
             </button>
           </div>
         ))}
         {sent.map((m) => (
           <p key={m.id}>
-            <strong>{m.subject}</strong> <span className="badge sent">sent (fake)</span>{" "}
+            <strong>{m.subject}</strong> <span className="badge sent">sent</span>{" "}
             <span className="muted">{m.sent_at}</span>
           </p>
         ))}

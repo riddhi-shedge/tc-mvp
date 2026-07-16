@@ -23,7 +23,15 @@ API (all routes except the webhook require a Supabase TC session JWT with MFA/aa
 - `POST /transactions/{id}/fields/confirm` — extraction-review confirm.
 - `POST /transactions/{id}/timeline/stub` — hardcoded Phase 2 timeline (real CA rules: Phase 5).
 - `POST /transactions/{id}/messages/draft-stub` — stub lender draft (real drafting: Phase 6).
-- `POST /transactions/{id}/messages/{mid}/approve-and-send` — human approval; **fake** send (audit only).
+- `POST /transactions/{id}/parties` — add a party (e.g. the lender contact).
+- `POST /transactions/{id}/messages/draft-lender` — real Claude draft of a lender
+  status request with a WHY (gated by the ZDR/synthetic gate); 409 if no lender
+  contact. `/messages/draft-stub` remains as the Phase 2 skeleton demo.
+- `POST /transactions/{id}/messages/{mid}/approve-and-send` — the **only** path
+  that sends. Records the human Approval first (Rule 3), applies the TC's optional
+  subject/body edits, then sends via the **guarded** mailer (real send off unless
+  `SEND_ENABLED=true` + recipient on `SEND_ALLOWLIST`), and sets a follow-up
+  reminder. On a guarded/failed send the message stays `approved` (retryable).
 - `POST /ingestion/webhooks/postmark` — inbound parse (dedicated deal address only;
   token via `X-Webhook-Token` header or `?token=`). Detects doc type, stores the
   attachment in the private `ingestion-attachments` bucket; unreadable → `needs_manual`.

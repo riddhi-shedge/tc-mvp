@@ -51,6 +51,10 @@ class MessageNotSendable(Exception):
     """The message is not in 'draft' state — it cannot be approved and sent."""
 
 
+class NoRecipient(Exception):
+    """The message has no resolvable recipient (its party has no email)."""
+
+
 # Hardcoded Phase 2 timeline — clearly labeled stub; real CA rules are Phase 5
 # and come only from ca-rules-researcher + human verification.
 _STUB_TIMELINE = (
@@ -97,8 +101,43 @@ class MasterRepo(Protocol):
 
     def create_stub_draft(self, *, transaction_id: str, actor: str) -> dict[str, Any]: ...
 
-    def approve_and_send_fake(
-        self, *, transaction_id: str, message_id: str, actor: str
+    def create_party(
+        self,
+        *,
+        transaction_id: str,
+        name: str,
+        role: str,
+        email: str | None,
+        permission_tier: str,
+        actor: str,
+    ) -> dict[str, Any]: ...
+
+    def lender_party(self, transaction_id: str) -> dict[str, Any] | None: ...
+
+    def loan_deadline_iso(self, transaction_id: str) -> str | None: ...
+
+    def create_message(
+        self,
+        *,
+        transaction_id: str,
+        subject: str,
+        body: str,
+        party_id: str | None,
+        actor: str,
+        action: str = "message.drafted",
+        details: dict[str, Any] | None = None,
+    ) -> dict[str, Any]: ...
+
+    def approve_and_send(
+        self,
+        *,
+        transaction_id: str,
+        message_id: str,
+        actor: str,
+        subject: str | None,
+        body: str | None,
+        mailer: Any,
+        followup_days: int,
     ) -> dict[str, Any] | None: ...
 
     def apply_compliance_result(
@@ -401,9 +440,116 @@ class SupabaseRepo:
             raise
         return {"message": message, "why": _STUB_DRAFT_WHY}
 
-    def approve_and_send_fake(
-        self, *, transaction_id: str, message_id: str, actor: str
+    def create_party(
+        self,
+        *,
+        transaction_id: str,
+        name: str,
+        role: str,
+        email: str | None,
+        permission_tier: str,
+        actor: str,
+    ) -> dict[str, Any]:
+        party = (
+            self._db.table("parties")
+            .insert(
+                {
+                    "transaction_id": transaction_id,
+                    "name": name,
+                    "role": role,
+                    "email": email,
+                    "permission_tier": permission_tier,
+                }
+            )
+            .execute()
+            .data[0]
+        )
+        self._audit(
+            transaction_id=transaction_id,
+            actor=actor,
+            action="party.added",
+            entity_type="party",
+            entity_id=party["id"],
+            details={"role": role},
+        )
+        return party
+
+    def lender_party(self, transaction_id: str) -> dict[str, Any] | None:
+        rows = (
+            self._db.table("parties")
+            .select("*")
+            .eq("transaction_id", transaction_id)
+            .in_("role", ["lender", "loan_officer"])
+            .limit(1)
+            .execute()
+            .data
+        )
+        return rows[0] if rows else None
+
+    def loan_deadline_iso(self, transaction_id: str) -> str | None:
+        rows = (
+            self._db.table("deadlines")
+            .select("due_date")
+            .eq("transaction_id", transaction_id)
+            .eq("compute_key", "loan_contingency")
+            .limit(1)
+            .execute()
+            .data
+        )
+        return rows[0]["due_date"] if rows else None
+
+    def create_message(
+        self,
+        *,
+        transaction_id: str,
+        subject: str,
+        body: str,
+        party_id: str | None,
+        actor: str,
+        action: str = "message.drafted",
+        details: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        message = (
+            self._db.table("messages")
+            .insert(
+                {
+                    "transaction_id": transaction_id,
+                    "subject": subject,
+                    "body": body,
+                    "party_id": party_id,
+                    "status": "draft",
+                }
+            )
+            .execute()
+            .data[0]
+        )
+        self._audit(
+            transaction_id=transaction_id,
+            actor=actor,
+            action=action,
+            entity_type="message",
+            entity_id=message["id"],
+            details=details or {},
+        )
+        return message
+
+    def approve_and_send(
+        self,
+        *,
+        transaction_id: str,
+        message_id: str,
+        actor: str,
+        subject: str | None,
+        body: str | None,
+        mailer: Any,
+        followup_days: int,
     ) -> dict[str, Any] | None:
+        """Rule 3 core: record the human Approval FIRST, apply the TC's edits,
+        then send via the (guarded) mailer. `sent` is set only on a successful
+        send. On send failure (guard off, allowlist miss, transient error) the
+        message stays `approved` and this same endpoint RETRIES it (no second
+        Approval — the human already approved). The ONLY place a message
+        transitions to `sent`."""
         rows = (
             self._db.table("messages")
             .select("*")
@@ -414,38 +560,69 @@ class SupabaseRepo:
         )
         if not rows:
             return None
-        if rows[0]["status"] != "draft":
+        msg = rows[0]
+        # 'draft' -> first approval; 'approved' -> retry the send; 'sent' -> no.
+        if msg["status"] not in ("draft", "approved"):
             raise MessageNotSendable
-        # Rule 3 shape: the human Approval row is recorded FIRST; only then may
-        # the message transition draft -> approved -> sent. The send is FAKE —
-        # nothing leaves the system in Phase 2 (no Postmark call anywhere).
-        approval = (
-            self._db.table("approvals")
-            .insert(
-                {
-                    "transaction_id": transaction_id,
-                    "message_id": message_id,
-                    "approved_by": actor,
-                }
+
+        recipient = self._recipient_email(msg.get("party_id"))
+        if not recipient:
+            raise NoRecipient
+
+        final_subject = subject if subject is not None else msg["subject"]
+        final_body = body if body is not None else msg["body"]
+
+        if msg["status"] == "draft":
+            approval = (
+                self._db.table("approvals")
+                .insert(
+                    {
+                        "transaction_id": transaction_id,
+                        "message_id": message_id,
+                        "approved_by": actor,
+                    }
+                )
+                .execute()
+                .data[0]
             )
-            .execute()
-            .data[0]
-        )
-        self._db.table("messages").update({"status": "approved"}).eq("id", message_id).execute()
-        self._audit(
-            transaction_id=transaction_id,
-            actor=actor,
-            action="message.approved",
-            entity_type="message",
-            entity_id=message_id,
-            details={"approval_id": approval["id"]},
-        )
+            try:
+                self._db.table("messages").update(
+                    {
+                        "status": "approved",
+                        "subject": final_subject,
+                        "body": final_body,
+                        "approved_by": actor,
+                        "approved_at": datetime.now(timezone.utc).isoformat(),
+                    }
+                ).eq("id", message_id).execute()
+            except Exception:
+                # Compensate: don't leave an orphaned Approval on a failed flip.
+                self._db.table("approvals").delete().eq("id", approval["id"]).execute()
+                raise
+            self._audit(
+                transaction_id=transaction_id,
+                actor=actor,
+                action="message.approved",
+                entity_type="message",
+                entity_id=message_id,
+                details={"approval_id": approval["id"]},
+            )
+        else:  # retry of an already-approved-but-unsent message (edits optional)
+            if subject is not None or body is not None:
+                self._db.table("messages").update(
+                    {"subject": final_subject, "body": final_body}
+                ).eq("id", message_id).execute()
+
+        # The send — the only outbound path. Failure leaves it approved (retryable).
+        sent_result = mailer.send(to=recipient, subject=final_subject, body=final_body)
+
         sent = (
             self._db.table("messages")
             .update(
                 {
                     "status": "sent",
                     "sent_at": datetime.now(timezone.utc).isoformat(),
+                    "provider_message_id": sent_result.provider_message_id,
                 }
             )
             .eq("id", message_id)
@@ -458,9 +635,25 @@ class SupabaseRepo:
             action="message.sent",
             entity_type="message",
             entity_id=message_id,
-            details={"fake": True},
+            details={"provider_message_id": sent_result.provider_message_id},
         )
+        # Follow-up reminder — surfaces to the TC; it never sends anything.
+        remind_at = datetime.now(timezone.utc) + timedelta(days=followup_days)
+        self._db.table("reminders").insert(
+            {
+                "transaction_id": transaction_id,
+                "message_id": message_id,
+                "remind_at": remind_at.isoformat(),
+                "note": "No reply from lender — consider following up.",
+            }
+        ).execute()
         return {"message": sent, "approval": approval}
+
+    def _recipient_email(self, party_id: str | None) -> str | None:
+        if not party_id:
+            return None
+        rows = self._db.table("parties").select("email").eq("id", party_id).execute().data
+        return rows[0]["email"] if rows and rows[0].get("email") else None
 
     def apply_compliance_result(self, *, result: ComplianceResult, actor: str) -> dict[str, Any]:
         transaction_id = result.transaction_id
@@ -556,6 +749,18 @@ class SupabaseRepo:
                 ).execute()
 
             # Rule 3: drafts land as 'draft' messages only — nothing sends here.
+            # Resolve to_role -> a party so the draft is later sendable to them.
+            # First party per role wins (roles are singular in the MVP data model).
+            role_to_party: dict[str, str] = {}
+            for p in (
+                self._db.table("parties")
+                .select("id, role")
+                .eq("transaction_id", transaction_id)
+                .order("created_at")
+                .execute()
+                .data
+            ):
+                role_to_party.setdefault(p["role"], p["id"])
             for r in result.draft_reminders:
                 self._db.table("messages").insert(
                     {
@@ -563,6 +768,7 @@ class SupabaseRepo:
                         "subject": r.subject,
                         "body": r.body,
                         "status": "draft",
+                        "party_id": role_to_party.get(r.to_role) if r.to_role else None,
                         "generated_by": "compliance",
                         "compliance_run_id": run_id,
                     }
