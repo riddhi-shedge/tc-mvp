@@ -18,11 +18,18 @@ from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel, Field
 
 from app.common.auth import TCUser, require_tc
+from app.common.zdr import ZdrNotConfirmed
 from app.contracts.compliance import ComplianceResult
 from app.contracts.fields import EXTRACTABLE_FIELD_NAMES
 from app.contracts.payload import Payload
-from app.common.zdr import ZdrNotConfirmed
+from app.master.dashboard import build_dashboard
 from app.master.drafting import ClaudeDrafter, DraftContext, DraftFailed, Drafter
+from app.master.party_access import (
+    AccessIssuanceFailed,
+    AccessIssuerNotConfigured,
+    PartyAccessIssuer,
+    SupabasePartyAccessIssuer,
+)
 from app.master.mailer import (
     Mailer,
     PostmarkMailer,
@@ -58,6 +65,15 @@ def _default_drafter() -> ClaudeDrafter:
 
 def get_drafter() -> Drafter:
     return _default_drafter()
+
+
+@lru_cache(maxsize=1)
+def _default_party_access_issuer() -> SupabasePartyAccessIssuer:
+    return SupabasePartyAccessIssuer()
+
+
+def get_party_access_issuer() -> PartyAccessIssuer:
+    return _default_party_access_issuer()
 
 
 def require_compliance_service(
@@ -212,6 +228,72 @@ def create_party(
         permission_tier=tier,
         actor=tc.actor,
     )
+
+
+@router.post("/transactions/{transaction_id}/parties/{party_id}/access-token", status_code=201)
+def create_party_access_token(
+    transaction_id: str,
+    party_id: str,
+    tc: TCUser = Depends(require_tc),
+    repo: MasterRepo = Depends(get_repo),
+    issuer: PartyAccessIssuer = Depends(get_party_access_issuer),
+) -> dict[str, Any]:
+    """Issue a scoped receiving-end access token (§8) — the magic-link credential.
+    A Supabase-issued session whose admin-set app_metadata.party_id RLS keys off;
+    the token grants nothing but that party's own task (enforced in the DB)."""
+    party = repo.get_party(party_id=party_id, transaction_id=transaction_id)
+    if party is None:
+        raise HTTPException(status_code=404, detail="Party not found on this transaction")
+    # §8: only receiving-end parties get a live DB credential. Other tiers
+    # (email participants: buyer/seller/lender/title/escrow) are out of scope.
+    if party.get("permission_tier") != "receiving_end":
+        raise HTTPException(
+            status_code=409, detail="Access tokens are only for receiving-end parties"
+        )
+    try:
+        result = issuer.issue(party_id=party_id, transaction_id=transaction_id, email=None)
+    except AccessIssuerNotConfigured as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from None
+    except AccessIssuanceFailed as exc:
+        raise HTTPException(status_code=502, detail=f"Could not issue access token: {exc}") from None
+    repo.record_access_token_issued(
+        transaction_id=transaction_id, party_id=party_id, actor=tc.actor
+    )
+    return result
+
+
+class AssignTaskRequest(BaseModel):
+    party_id: str = Field(min_length=1)
+
+
+@router.post("/transactions/{transaction_id}/tasks/{task_id}/assign")
+def assign_task(
+    transaction_id: str,
+    task_id: str,
+    body: AssignTaskRequest,
+    tc: TCUser = Depends(require_tc),
+    repo: MasterRepo = Depends(get_repo),
+) -> dict[str, Any]:
+    if not repo.party_belongs_to_transaction(party_id=body.party_id, transaction_id=transaction_id):
+        raise HTTPException(status_code=404, detail="Party not found on this transaction")
+    task = repo.assign_task(
+        transaction_id=transaction_id, task_id=task_id, party_id=body.party_id, actor=tc.actor
+    )
+    if task is None:
+        raise HTTPException(status_code=404, detail="Task not found")
+    return task
+
+
+@router.get("/transactions/{transaction_id}/dashboard")
+def read_dashboard(
+    transaction_id: str,
+    tc: TCUser = Depends(require_tc),
+    repo: MasterRepo = Depends(get_repo),
+) -> dict[str, Any]:
+    state = repo.get_full_state(transaction_id)
+    if state is None:
+        raise HTTPException(status_code=404, detail="Transaction not found")
+    return build_dashboard(state)
 
 
 @router.post("/transactions/{transaction_id}/messages/draft-lender", status_code=201)

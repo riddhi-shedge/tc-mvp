@@ -20,6 +20,19 @@ class FakeMailer:
         return SentMessage(provider_message_id=f"fake-{len(self.sent)}")
 
 
+class FakePartyAccessIssuer:
+    """Returns a deterministic token instead of provisioning a Supabase user."""
+
+    def __init__(self) -> None:
+        self.calls: list[dict[str, str | None]] = []
+
+    def issue(self, *, party_id: str, transaction_id: str, email: str | None) -> dict[str, str]:
+        self.calls.append(
+            {"party_id": party_id, "transaction_id": transaction_id, "email": email}
+        )
+        return {"party_id": party_id, "access_token": f"fake-token-{party_id}"}
+
+
 class FakeDrafter:
     """Returns a canned lender draft referencing the context — no model call."""
 

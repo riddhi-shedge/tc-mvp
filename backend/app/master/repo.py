@@ -89,6 +89,12 @@ class MasterRepo(Protocol):
 
     def party_belongs_to_transaction(self, *, party_id: str, transaction_id: str) -> bool: ...
 
+    def get_party(self, *, party_id: str, transaction_id: str) -> dict[str, Any] | None: ...
+
+    def record_access_token_issued(
+        self, *, transaction_id: str, party_id: str, actor: str
+    ) -> None: ...
+
     def write_payload(
         self, *, transaction_id: str, payload: Payload, actor: str
     ) -> dict[str, Any]: ...
@@ -113,6 +119,10 @@ class MasterRepo(Protocol):
     ) -> dict[str, Any]: ...
 
     def lender_party(self, transaction_id: str) -> dict[str, Any] | None: ...
+
+    def assign_task(
+        self, *, transaction_id: str, task_id: str, party_id: str, actor: str
+    ) -> dict[str, Any] | None: ...
 
     def loan_deadline_iso(self, transaction_id: str) -> str | None: ...
 
@@ -256,6 +266,31 @@ class SupabaseRepo:
             .data
         )
         return bool(rows)
+
+    def get_party(self, *, party_id: str, transaction_id: str) -> dict[str, Any] | None:
+        rows = (
+            self._db.table("parties")
+            .select("*")
+            .eq("id", party_id)
+            .eq("transaction_id", transaction_id)
+            .limit(1)
+            .execute()
+            .data
+        )
+        return rows[0] if rows else None
+
+    def record_access_token_issued(
+        self, *, transaction_id: str, party_id: str, actor: str
+    ) -> None:
+        # Rule 5: minting a live receiving-end credential is audited. The token
+        # itself is never recorded — only who issued one, to whom, and when.
+        self._audit(
+            transaction_id=transaction_id,
+            actor=actor,
+            action="party.access_token_issued",
+            entity_type="party",
+            entity_id=party_id,
+        )
 
     def write_payload(self, *, transaction_id: str, payload: Payload, actor: str) -> dict[str, Any]:
         # Compensated like create_transaction: deleting the document cascades
@@ -485,6 +520,29 @@ class SupabaseRepo:
             .data
         )
         return rows[0] if rows else None
+
+    def assign_task(
+        self, *, transaction_id: str, task_id: str, party_id: str, actor: str
+    ) -> dict[str, Any] | None:
+        rows = (
+            self._db.table("tasks")
+            .update({"assigned_party_id": party_id})
+            .eq("id", task_id)
+            .eq("transaction_id", transaction_id)
+            .execute()
+            .data
+        )
+        if not rows:
+            return None
+        self._audit(
+            transaction_id=transaction_id,
+            actor=actor,
+            action="task.assigned",
+            entity_type="task",
+            entity_id=task_id,
+            details={"party_id": party_id},
+        )
+        return rows[0]
 
     def loan_deadline_iso(self, transaction_id: str) -> str | None:
         rows = (

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, FullState, Message } from "../lib/api";
+import { DealDashboard } from "./DealDashboard";
 
 /** The deal screen: extraction review → confirm → timeline → risk flags →
  *  lender contact → real lender draft (editable) → Approve & Send (guarded). */
@@ -62,6 +63,8 @@ export function Deal({ id, onBack }: { id: string; onBack: () => void }) {
         </button>
       </div>
       {error && <p className="error">{error}</p>}
+
+      <DealDashboard id={id} state={state} onChanged={refresh} />
 
       <div className="card">
         <h2>Documents</h2>
@@ -171,19 +174,6 @@ export function Deal({ id, onBack }: { id: string; onBack: () => void }) {
           <p className="muted">Confirm the extracted fields first.</p>
         )}
       </div>
-
-      {state.risk_flags.length > 0 && (
-        <div className="card">
-          <h2>Risk flags (compliance service)</h2>
-          <ul className="audit">
-            {state.risk_flags.map((f) => (
-              <li key={f.id}>
-                <span className="badge draft">{f.severity}</span> {f.description}
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
 
       <div className="card">
         <h2>Lender contact</h2>

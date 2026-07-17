@@ -137,6 +137,7 @@ export interface Task {
   title: string;
   status: string;
   deadline_id: string | null;
+  assigned_party_id: string | null;
 }
 
 export interface Message {
@@ -153,6 +154,7 @@ export interface DealParty {
   name: string | null;
   role: string;
   email: string | null;
+  permission_tier?: string;
 }
 
 export interface AuditRow {
@@ -169,6 +171,44 @@ export interface DealRiskFlag {
   description: string;
   case_key: string | null;
   resolved: boolean;
+}
+
+// ---- Dashboard (Prompt 7): a read-only aggregation over the SOR ------------
+
+export interface DashboardPartyView {
+  party: DealParty;
+  open_tasks: Task[];
+  done_tasks: Task[];
+  last_message_status: string | null;
+}
+
+export interface Dashboard {
+  transaction_id: string;
+  parties: DashboardPartyView[];
+  party_progress: {
+    buyers_total: number;
+    proof_of_funds_confirmed: number;
+    disclosures_confirmed: number;
+  };
+  risk_alerts: DealRiskFlag[];
+  communication: { sent: Message[]; pending: Message[]; replies: unknown[] };
+}
+
+export interface PartyAccessToken {
+  party_id: string;
+  access_token: string;
+}
+
+// The §8 tier that gets a scoped access link (matches the backend default).
+export const RECEIVING_END_ROLES = new Set([
+  "inspector_general",
+  "inspector_pest",
+  "appraiser",
+  "contractor",
+]);
+
+export function isReceivingEnd(p: DealParty): boolean {
+  return p.permission_tier === "receiving_end" || RECEIVING_END_ROLES.has(p.role);
 }
 
 export interface FullState {

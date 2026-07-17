@@ -224,6 +224,30 @@ class InMemoryRepo:
             None,
         )
 
+    def assign_task(
+        self, *, transaction_id: str, task_id: str, party_id: str, actor: str
+    ) -> dict[str, Any] | None:
+        task = next(
+            (
+                t
+                for t in self.tasks
+                if t["id"] == task_id and t["transaction_id"] == transaction_id
+            ),
+            None,
+        )
+        if task is None:
+            return None
+        task["assigned_party_id"] = party_id
+        self._audit(
+            transaction_id=transaction_id,
+            actor=actor,
+            action="task.assigned",
+            entity_type="task",
+            entity_id=task_id,
+            details={"party_id": party_id},
+        )
+        return task
+
     def loan_deadline_iso(self, transaction_id: str) -> str | None:
         return next(
             (
@@ -343,6 +367,23 @@ class InMemoryRepo:
     def party_belongs_to_transaction(self, *, party_id: str, transaction_id: str) -> bool:
         party = self.parties.get(party_id)
         return party is not None and party["transaction_id"] == transaction_id
+
+    def get_party(self, *, party_id: str, transaction_id: str) -> dict[str, Any] | None:
+        party = self.parties.get(party_id)
+        if party is None or party["transaction_id"] != transaction_id:
+            return None
+        return party
+
+    def record_access_token_issued(
+        self, *, transaction_id: str, party_id: str, actor: str
+    ) -> None:
+        self._audit(
+            transaction_id=transaction_id,
+            actor=actor,
+            action="party.access_token_issued",
+            entity_type="party",
+            entity_id=party_id,
+        )
 
     def write_payload(self, *, transaction_id: str, payload: Payload, actor: str) -> dict[str, Any]:
         doc = {

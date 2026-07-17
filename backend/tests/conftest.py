@@ -27,10 +27,10 @@ from fastapi.testclient import TestClient
 
 from app.ingestion.routes import get_extractor, get_inbox_repo, get_master_client
 from app.main import app
-from app.master.routes import get_drafter, get_mailer, get_repo
+from app.master.routes import get_drafter, get_mailer, get_party_access_issuer, get_repo
 from tests.fake_extractor import FakeExtractor
 from tests.fake_inbox import FakeMasterClient, InMemoryInboxRepo
-from tests.fake_mailer import FakeDrafter, FakeMailer
+from tests.fake_mailer import FakeDrafter, FakeMailer, FakePartyAccessIssuer
 from tests.fake_repo import InMemoryRepo
 
 TEST_JWT_SECRET = os.environ["SUPABASE_JWT_SECRET"]
@@ -119,12 +119,18 @@ def drafter() -> FakeDrafter:
 
 
 @pytest.fixture()
+def party_access_issuer() -> FakePartyAccessIssuer:
+    return FakePartyAccessIssuer()
+
+
+@pytest.fixture()
 def client(
     repo: InMemoryRepo,
     inbox: InMemoryInboxRepo,
     extractor: FakeExtractor,
     mailer: FakeMailer,
     drafter: FakeDrafter,
+    party_access_issuer: FakePartyAccessIssuer,
 ):
     app.dependency_overrides[get_repo] = lambda: repo
     app.dependency_overrides[get_inbox_repo] = lambda: inbox
@@ -132,6 +138,7 @@ def client(
     app.dependency_overrides[get_extractor] = lambda: extractor
     app.dependency_overrides[get_mailer] = lambda: mailer
     app.dependency_overrides[get_drafter] = lambda: drafter
+    app.dependency_overrides[get_party_access_issuer] = lambda: party_access_issuer
     try:
         yield TestClient(app)
     finally:

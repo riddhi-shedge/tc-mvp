@@ -64,6 +64,36 @@ def test_mfa_not_completed_is_403(client):
     assert "mfa" in r.json()["detail"].lower()
 
 
+def test_receiving_end_party_token_is_rejected(client):
+    """A party session (app_metadata.party_id), even if it somehow had aal2, must
+    never reach the TC API — it's for the receiving-end, DB-scoped by RLS."""
+    import time
+
+    import jwt
+
+    from tests.conftest import TEST_JWT_SECRET
+
+    now = int(time.time())
+    token = jwt.encode(
+        {
+            "sub": "party-1",
+            "role": "authenticated",
+            "aud": "authenticated",
+            "aal": "aal2",
+            "app_metadata": {"party_id": "some-party-id"},
+            "iat": now,
+            "exp": now + 3600,
+        },
+        TEST_JWT_SECRET,
+        algorithm="HS256",
+    )
+    r = client.get(
+        "/transactions/00000000-0000-0000-0000-000000000000",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert r.status_code == 401
+
+
 def test_valid_mfa_token_passes(client, tc_headers):
     r = client.post(
         "/transactions", json={"property_address": "1 Synthetic Way"}, headers=tc_headers
