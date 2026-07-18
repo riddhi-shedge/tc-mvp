@@ -23,6 +23,85 @@ every downstream task (§18 risk register).
 Legend: ✅ well-corroborated (still verify) · ⚠️ conflicting sources · ❓ could
 not confirm against the current form (UNVERIFIED)
 
+---
+
+## Second-pass research update (2026-07-17)
+
+A focused second research pass ran to narrow the unverified set from accessible
+authoritative sources. It still could **not** read the gated 12/25 forms, so
+**this does not clear the blocker** — but it resolved the two statutory clocks
+from **primary law**, corrected two errors in the first draft, and shrank the
+list of items that truly require the literal form. Full detail below; the A–F
+tables are annotated where this pass changed them.
+
+**Resolved from primary statute (high confidence — read directly on leginfo):**
+- **F1 — TDS rescission, Civ. Code §1102.3:** buyer may terminate in writing
+  within **3 days after personal delivery**, or **5 days after** delivery by mail
+  or by electronic record. Confirmed against current statute text.
+- **F3 — NHD rescission: the first draft's citation was WRONG.** The rescission
+  right is **not** in Govt. Code §8589.3 (that only creates the disclosure duty)
+  nor Civ. §1103.2 (form content). It is **Civ. Code §1103.3(c)**, and it uses the
+  **same day counts as F1** (3 personal / 5 mail / 5 electronic). Good for the
+  engine: one rescission-window rule, two triggers. Fix the citation in F3.
+
+**Corrections to the first draft:**
+- **A7 was WRONG** ("found no backward-from-COE deadline"). A backward-counting
+  rule **does** exist: the **Demand to Close Escrow (DCE)** — deliverable no
+  earlier than **3 Days prior to scheduled COE**, giving ≥3 Days to close
+  (3 independent sources; one cites ¶14G, which the 12/25 renumber may have
+  moved). This should likely be modeled in the date engine — human to confirm the
+  paragraph ref + that "3 Days prior" is unchanged.
+- **A5 now resolved (moderate):** the 7-day disclosure-delivery window **does**
+  roll on its final day like other Days-After deadlines (concrete rolling example
+  found); no source says it's a hard non-rolling deadline.
+- **D3 likely reconciled:** "24 hours vs 2 Days" is probably floor-vs-default —
+  24 hours reads as the legal/contractual **minimum** the NBP must allow, while
+  the printed **default** filling the blank is **2 Days**. Moderate confidence;
+  human should check whether the form's blank is pre-filled "2 Days."
+- **A6 narrowed:** CA's general statutory "legal holiday" definition is Gov. Code
+  §6700 (CA state holidays, ≠ federal list). Unconfirmed whether the RPA's
+  Definitions paragraph actually cross-references §6700 vs. leaving the term
+  undefined — needs the literal form.
+
+**PREMISE QUESTION — resolve this FIRST (new, affects the whole sheet):** the
+Dec 2025 release is "12/25" (only FinCEN + electrical-inspection changes, no
+day-count impact). But a **June 2026 C.A.R. forms release** reportedly made
+**substantive RPA changes** (seller-credit handling, an appraisal-gap option, new
+inspection cost-allocation options, a loan-vs-insurance-contingency interaction),
+and two association sources say the **revision label still reads "12/25."** Check
+the literal footer/date stamp on the form you actually have — verifying against a
+form one cycle behind would corrupt everything. Confirm which RPA you're holding
+before resolving the rows below.
+
+**Shortest list that genuinely needs the human + the literal current form:**
+1. **C1** — initial deposit: "**3 business days**" (an exception to calendar-day
+   counting) or "3 Days"? Highest priority — changes the math for this field.
+2. **C5** — insurance-contingency default day count, or confirm there is **no**
+   default (blank must be filled).
+3. **C7** — verification of down payment/closing costs: **3 Days vs 7 Days**
+   (direct source conflict — do NOT treat 3 as settled).
+4. **D3** — confirm the printed NBP cure default (2 Days?) vs. the 24-hour floor.
+5. **A4** — is Acceptance itself extended if it lands on a weekend/holiday?
+6. **A6** — does "legal holiday" cross-reference Gov. Code §6700?
+7. **A7** — confirm the DCE paragraph ref and that "3 Days prior" is current.
+8. **E2** — does possession (COE + N Days) roll like other Days-After deadlines?
+9. The **revision-label** premise question above.
+
+**Still-conflicting (look closely):** C7 (3 vs 7 Days); D3 (24h vs 2 Days);
+the revision label (substantive June-2026 changes vs. an unchanged "12/25" stamp).
+
+**Well-corroborated across this pass (still verify the paragraph refs against
+12/25):** A1–A3 (calendar days, final-day-only roll incl. COE), B1–B2 (acceptance
+trigger), C2/C4 (inspection/appraisal 17 Days), C3 (loan 21 Days — best-dated
+sources cite 12/22, none confirm 12/25), C6 (disclosure 7 Days), D1/D2/D4 (active
+removal; NBP earliest = 2 Days prior; seller must NBP before cancelling).
+
+*Caveat carried from the sources: the best-dated secondary sources that name a
+revision cite **12/22–6/24**, not 12/25 — cross-source agreement is high but is
+not a substitute for reading the current form.*
+
+---
+
 ## A. Day-counting mechanics
 
 | # | Claim (from research) | Confidence | Verified value / notes |
@@ -31,9 +110,9 @@ not confirm against the current form (UNVERIFIED)
 | A2 | Only the **final** day rolls; intermediate weekends/holidays count normally | ✅ | |
 | A3 | The final-day roll (Sat/Sun/legal holiday → next day) applies broadly **including Close of Escrow** | ✅ but verify scope | |
 | A4 | Acceptance itself does NOT get the weekend/holiday extension | ❓ (1 source only) | |
-| A5 | Disclosure-delivery (7-day) window: does it roll, or is it a hard calendar deadline? | ❓ conflicting | |
-| A6 | "Legal holiday" = California state holidays vs federal — **which?** | ❓ unconfirmed | |
-| A7 | Any deadline computed BACKWARD from COE (e.g. "X days before COE")? Research found none | ❓ verify none exist | |
+| A5 | Disclosure-delivery (7-day) window: does it roll, or is it a hard calendar deadline? | ❓ conflicting | **2nd pass: rolls like other deadlines** (moderate) — verify |
+| A6 | "Legal holiday" = California state holidays vs federal — **which?** | ❓ unconfirmed | 2nd pass: CA general def is Gov. Code §6700 (state, ≠ federal); unconfirmed the RPA cross-references it |
+| A7 | Any deadline computed BACKWARD from COE (e.g. "X days before COE")? Research found none | ❓ verify none exist | **2nd pass CORRECTION: a backward rule EXISTS** — Demand to Close Escrow, ≥3 Days prior to COE (¶14G?). Model it; verify ref/figure |
 
 ## B. Trigger date
 
@@ -46,13 +125,13 @@ not confirm against the current form (UNVERIFIED)
 
 | # | Field | Researched default | Verified default (against 12/25 form) |
 |---|---|---|---|
-| C1 | Initial deposit due | 3 days — **⚠️ "business days" vs "Days" unclear** | |
-| C2 | Investigation/inspection contingency | 17 Days | |
-| C3 | Loan contingency | 21 Days — ⚠️ brief noted some sources say 17; researcher found none confirming 17 | |
-| C4 | Appraisal contingency | 17 Days | |
-| C5 | Insurance contingency (added 6/24) | ❓ **no source gave a default** | |
-| C6 | Seller disclosure delivery | 7 Days (from a 12/18 source) | |
-| C7 | Verification of down payment/closing costs | 3 Days (from a 12/22 source) | |
+| C1 | Initial deposit due | 3 days — **⚠️ "business days" vs "Days" unclear** | **2nd pass: sources show "3 business days" (an exception to calendar-day counting) — TOP-priority literal verify** |
+| C2 | Investigation/inspection contingency | 17 Days | 2nd pass: corroborated 17 Days (best-dated source cites 12/22, not 12/25) |
+| C3 | Loan contingency | 21 Days — ⚠️ brief noted some sources say 17; researcher found none confirming 17 | 2nd pass: 21 Days corroborated (12/22-dated); note June-2026 loan-vs-insurance interaction |
+| C4 | Appraisal contingency | 17 Days | 2nd pass: corroborated 17 Days (12/22-dated) |
+| C5 | Insurance contingency (added 6/24) | ❓ **no source gave a default** | **2nd pass: still no default found — confirm the default, or that there is none (blank must be filled)** |
+| C6 | Seller disclosure delivery | 7 Days (from a 12/18 source) | 2nd pass: 7 Days corroborated (rolling example); not tied to a 12/25 citation |
+| C7 | Verification of down payment/closing costs | 3 Days (from a 12/22 source) | **2nd pass: DIRECT CONFLICT — 3 Days vs 7 Days. Unresolved** |
 
 **Note:** paragraph numbers the research cited (3H, 3L(4), 8D, 12D) are from
 12/22–6/24 and may be renumbered in 12/25. The Dec 2025 release reportedly
@@ -64,7 +143,7 @@ reordered several sections. Do not rely on paragraph refs without checking.
 |---|---|---|---|
 | D1 | CA contingencies are ACTIVELY removed — survive their deadline until removed in writing (form CR/CR-B) | ✅ | |
 | D2 | An NBP may not be delivered earlier than **2 Days prior** to the deadline | ✅ (verify) | |
-| D3 | NBP cure window after delivery: **24 hours vs 2 Days — ⚠️ sources conflict** (load-bearing for "loan contingency approaching") | ⚠️ | |
+| D3 | NBP cure window after delivery: **24 hours vs 2 Days — ⚠️ sources conflict** (load-bearing for "loan contingency approaching") | ⚠️ | 2nd pass: likely reconciled — 24h = legal floor, **2 Days = printed default**. Verify the form's pre-filled blank | |
 | D4 | Seller cannot cancel without first issuing an NBP (or a Demand to Close for COE) | ✅ | |
 
 ## E. COE / possession
@@ -78,9 +157,9 @@ reordered several sections. Do not rely on paragraph refs without checking.
 
 | # | Claim | Confidence | Verified value / notes |
 |---|---|---|---|
-| F1 | TDS late-delivery rescission (Civ. Code §1102.3): 3 days if personal delivery, 5 days if by mail or electronic record; buyer may terminate in writing | ✅ statute cited | |
+| F1 | TDS late-delivery rescission (Civ. Code §1102.3): 3 days if personal delivery, 5 days if by mail or electronic record; buyer may terminate in writing | ✅ statute cited | 2nd pass: confirmed against current §1102.3 statute text (primary source) |
 | F2 | Model this as a SEPARATE rescission-risk clock, not the RPA's 7-day contractual delivery deadline | ✅ (design note) | |
-| F3 | NHD separate statutory rescission window (Govt Code §8589.3 / Pub. Res. Code) | ❓ needs dedicated research if encoded | |
+| F3 | NHD separate statutory rescission window | ✅ **2nd pass RESOLVED from primary law** | **Citation corrected: it's Civ. Code §1103.3(c) (NOT Govt §8589.3, which is only the disclosure duty). Same counts as F1: 3 personal / 5 mail / 5 electronic** |
 
 ## G. §6 risk-flag thresholds — RULE vs CONVENTION (your product decisions)
 
