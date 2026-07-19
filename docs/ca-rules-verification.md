@@ -1,47 +1,68 @@
 # California Deadline Rules — Verification Sheet (Phase 5 BLOCKER)
 
 **Status: ✅ VERIFIED against the current C.A.R. RPA revision 6/26 (June 2026),
-by Riddhi Shedge on 2026-07-18, reading values directly off the form. This
-CLEARS the Phase 5 day-count blocker.** The premise question is resolved — the
+by Riddhi Shedge on 2026-07-18 — values read off the form AND cross-verified
+against the literal 6/26 PDF, which corrected four items (loan → 17; disclosure
+delivery DOES roll; "Legal Holiday" = Civ. §§7/7.1 + Gov. §6700; possession is
+event-based). This CLEARS the Phase 5 day-count blocker.** The premise question is resolved — the
 current revision is **6/26** (C.A.R. gave the June 2026 release its own code).
 Per-item verified values are in the "Verified value" columns; the canonical
 encode-ready ruleset is immediately below; sign-off is at the bottom.
 
 ## Verified ruleset (RPA 6/26) — canonical, encode this
 
+**Cross-verified against the literal 6/26 PDF (2026-07-18)** — this corrects three
+read-off answers (loan 17 not 21; disclosure delivery DOES roll; holiday
+definition is broader than §6700; possession is event-based). Each grid value is
+the pre-printed **default** that applies when the deal's blank isn't filled; the
+engine uses the deal's filled-in value when present, else this default.
+
 **Anchor:** all "Days After" deadlines count from **Acceptance** = the offer
-signed AND that acceptance received back by the other party or their agent
-(standard definition, accepted). Day 1 = the **day after** Acceptance.
+signed AND that acceptance received back by the other party or their agent. Day 1
+= the **day after** Acceptance ("Day 0" = the event day, per the form).
 
-**Day-counting:** calendar days; weekends/CA-Gov-Code holidays in the middle
-count; if the **final** day is a weekend/CA legal holiday it **rolls to the next
-working day** — EXCEPT the three hard deadlines below, which never roll.
+**Day-counting:** calendar days; weekends/legal holidays in the middle count; if
+the **final** day is a Saturday/Sunday/legal holiday it **rolls to the next
+Allowable Performance Day** (form ¶ rule 4, Civ. Code §11). This roll applies to
+**every act required after Acceptance, including Close of Escrow and disclosure
+delivery.** The only things that do NOT move: the **Acceptance date** itself (the
+roll is "after Acceptance"), and the separate **statutory** rescission clocks.
 
-**Holidays:** California Government Code holidays (state, not federal).
+**"Legal Holiday" (per the form ¶ rule 4/5, verbatim reference):** any holiday or
+optional bank holiday under **Civil Code §§ 7 and 7.1**, plus any holiday under
+**Government Code § 6700**. Encoding: compute all deterministic ones (fixed-date +
+weekday-rule, incl. optional bank holidays like Columbus Day); **Lunar New Year,
+Diwali, and Governor/President-proclaimed days go in an editable override list**
+(not deterministically computable); **Good Friday excluded** (a partial noon–3pm
+holiday, not a full-day closure). For **COE only**, days the County Recorder /
+lender / closing agent are closed also push the allowable day (form ¶ rule 5).
 
-| Deadline | Value | Counting | Rolls? |
+| Deadline | Default | Counting | Rolls? |
 |---|---|---|---|
 | Initial deposit | 3 | **business days** | (business-days math) |
-| Inspection contingency | 17 | calendar Days after Acceptance | yes |
-| Loan contingency | 21 | calendar Days after Acceptance | yes |
+| Inspection/Investigation contingency | 17 | calendar Days after Acceptance | yes |
+| Loan contingency | **17** | calendar Days after Acceptance | yes |
 | Appraisal contingency | 17 | calendar Days after Acceptance | yes |
 | Insurance contingency | 17 | calendar Days after Acceptance | yes |
-| Seller disclosure delivery | 7 | calendar Days after Acceptance | **NO — hard** |
-| Verification of funds | 3 | calendar Days after Acceptance | yes |
+| Seller disclosure delivery | 7 | calendar Days after Acceptance | **yes** (corrected) |
+| Verification of funds (cash / down pmt / loan app) | 3 | calendar Days after Acceptance | yes |
 | Close of Escrow | (per contract) | Days after Acceptance | yes |
-| Possession | COE + N | **calendar days** | **NO** |
-| Acceptance (anchor) | — | — | **NO — never moves** |
+| Final walk-through (Verification of Condition) | 5 | calendar Days **before COE** (backward) | no (form: "whether or not…") |
+| Acceptance (anchor) | — | — | **never moves** |
+| Possession | event-based | at recordation/COE, or a specified date | n/a (not a computed period) |
 
-**Notices/closing:** NBP delivered no earlier than **2 Days before** its target
-deadline; recipient gets **2 Days** to perform. Demand to Close Escrow delivered
-no earlier than **3 Days before** COE; gives **≥3 Days** to close.
+**Notices/closing (¶14E/¶14G):** NBP delivered no earlier than **2 Days before**
+its target deadline; recipient gets **≥2 Days** to perform. Demand to Close Escrow
+delivered no earlier than **3 Days before** COE; gives **≥3 Days** to close.
 
 **Statutory rescission clocks (primary law, separate from the RPA):** TDS
 (Civ. §1102.3) and NHD (Civ. §1103.3(c)) — both **3 days** if personal delivery,
 **5 days** if by mail or electronic record.
 
-**Mechanic for the risk framework (not a date):** 6/26 loan contingency cannot be
-used if the buyer is unable to obtain insurance (loan↔insurance interaction).
+**Mechanic for the risk framework (not a date):** 6/26 — inability to obtain
+insurance may justify cancellation under the **insurance** contingency but **not**
+the loan contingency (form ¶8A); appraisal-gap option is separate from the
+appraisal period.
 
 Prepared 2026-07-14 by `ca-rules-researcher`. **Critical limitation:** the
 current-revision (12/25) C.A.R. RPA and the NBP/CR forms are member-gated on
@@ -149,8 +170,8 @@ not a substitute for reading the current form.*
 | A2 | Only the **final** day rolls; intermediate weekends/holidays count normally | ✅ | ✅ VERIFIED 6/26: middle weekends/holidays still count |
 | A3 | The final-day roll (Sat/Sun/legal holiday → next day) applies broadly **including Close of Escrow** | ✅ but verify scope | ✅ VERIFIED 6/26: final day rolls to the next working day, incl. Close of Escrow |
 | A4 | Acceptance itself does NOT get the weekend/holiday extension | ❓ (1 source only) | ✅ VERIFIED 6/26: **EXCEPTION — the Acceptance date does NOT move** |
-| A5 | Disclosure-delivery (7-day) window: does it roll, or is it a hard calendar deadline? | ❓ conflicting | ✅ VERIFIED 6/26: **EXCEPTION — does NOT roll; a hard 7-calendar-day deadline** (corrects the research guess) |
-| A6 | "Legal holiday" = California state holidays vs federal — **which?** | ❓ unconfirmed | ✅ VERIFIED 6/26: **California Government Code** holidays (state, e.g. §6700) — NOT federal |
+| A5 | Disclosure-delivery (7-day) window: does it roll, or is it a hard calendar deadline? | ❓ conflicting | ✅ **VERIFIED against literal 6/26 form (¶ rule 4): it DOES roll** — the roll applies to "any act required by this Agreement," incl. disclosure delivery. Corrects the read-off "no roll". |
+| A6 | "Legal holiday" = California state holidays vs federal — **which?** | ❓ unconfirmed | ✅ **VERIFIED against literal 6/26 form: "Legal Holiday" = Civil Code §§7 & 7.1 (incl. optional bank holidays) + Gov. Code §6700** (broader than the read-off "Gov Code"). |
 | A7 | Any deadline computed BACKWARD from COE (e.g. "X days before COE")? Research found none | ❓ verify none exist | ✅ VERIFIED 6/26: **Demand to Close Escrow exists** — deliver no earlier than **3 Days prior** to COE, giving **≥3 Days** to close. Model it. |
 
 ## B. Trigger date
@@ -166,7 +187,7 @@ not a substitute for reading the current form.*
 |---|---|---|---|
 | C1 | Initial deposit due | 3 days — **⚠️ "business days" vs "Days" unclear** | ✅ **VERIFIED 6/26: 3 business days** — an EXCEPTION to the calendar-day rule (business-days counting skips all weekends/holidays, not just the final day) |
 | C2 | Investigation/inspection contingency | 17 Days | ✅ VERIFIED 6/26: 17 Days |
-| C3 | Loan contingency | 21 Days — ⚠️ brief noted some sources say 17; researcher found none confirming 17 | ✅ VERIFIED 6/26: 21 Days (see 6/26 loan-vs-insurance interaction note below) |
+| C3 | Loan contingency | 21 Days — ⚠️ brief noted some sources say 17; researcher found none confirming 17 | ✅ **VERIFIED against literal 6/26 form ¶3L(1): 17 Days** (default, overridable). Corrects the read-off "21"; 6/26 aligns all contingencies at 17. |
 | C4 | Appraisal contingency | 17 Days | ✅ VERIFIED 6/26: 17 Days (the 6/26 appraisal-gap option is separate, not a period change) |
 | C5 | Insurance contingency (added 6/24) | ❓ **no source gave a default** | ✅ **VERIFIED 6/26: 17 Days** (same as the inspection period) |
 | C6 | Seller disclosure delivery | 7 Days (from a 12/18 source) | ✅ VERIFIED 6/26: 7 Days |
@@ -190,7 +211,7 @@ reordered several sections. Do not rely on paragraph refs without checking.
 | # | Claim | Confidence | Verified value / notes |
 |---|---|---|---|
 | E1 | COE "N Days After Acceptance" uses the §A Days-After rule and rolls on the final day | ✅ (for COE) | ✅ VERIFIED 6/26: COE rolls on the final day (per A3) |
-| E2 | Possession "at COE + N Days" rolls the same way | ❓ inferred by analogy, not sourced | ✅ VERIFIED 6/26: **does NOT roll — possession counted in plain calendar days** |
+| E2 | Possession "at COE + N Days" rolls the same way | ❓ inferred by analogy, not sourced | ✅ **VERIFIED against literal 6/26 form ¶3M(1): possession is event-based** — "upon notice of recordation" (at COE) or a specified date/time; NOT a computed "+N days" period. |
 
 ## F. Statutory overlays (separate from RPA blanks)
 
@@ -228,9 +249,11 @@ product decisions for you to set. Only the underlying deadlines are rules.
 ## Sign-off
 
 - [x] I verified the rules above against the current C.A.R. RPA (**revision 6/26**)
-      and its NBP/DCE provisions, reading values directly off the form. The values
-      in the "Verified value" columns (and the canonical ruleset near the top) are
-      authoritative and may be encoded into the Phase 5 date-math engine.
+      and its NBP/DCE provisions — read off the form and cross-verified against the
+      literal 6/26 PDF (loan corrected to 17; disclosure delivery rolls; holiday
+      definition = Civ. §§7/7.1 + Gov. §6700; possession event-based). The values
+      in the canonical ruleset near the top are authoritative and may be encoded
+      into the Phase 5 date-math engine.
 
 Verified by: **Riddhi Shedge**   Date: **2026-07-18**   Form revision: **RPA 6/26**
 
