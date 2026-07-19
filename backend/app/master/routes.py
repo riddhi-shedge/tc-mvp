@@ -254,8 +254,9 @@ def create_party_access_token(
         result = issuer.issue(party_id=party_id, transaction_id=transaction_id, email=None)
     except AccessIssuerNotConfigured as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from None
-    except AccessIssuanceFailed as exc:
-        raise HTTPException(status_code=502, detail=f"Could not issue access token: {exc}") from None
+    except AccessIssuanceFailed:
+        # Generic detail — never surface the raw provider exception (Rule 5).
+        raise HTTPException(status_code=502, detail="Could not issue access token") from None
     repo.record_access_token_issued(
         transaction_id=transaction_id, party_id=party_id, actor=tc.actor
     )

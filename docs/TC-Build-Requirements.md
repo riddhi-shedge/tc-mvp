@@ -579,7 +579,7 @@ screens, triggered by email, with every step in the audit log and no auto-send p
 - [x] Secrets in gitignored .env / password manager
 - [~] RLS policies for tiers (Phase 7: operator via service role + receiving-end via app_metadata-keyed policy, live-verified; collaborator/email-participant out of MVP scope, deny-by-default)
 - [ ] Encryption at rest for documents
-- [ ] Logging discipline enforced (no NPI)
+- [x] Logging discipline enforced (no NPI) — audited 2026-07-19: one server log site (main.py DB-error handler) logs method/path/exc-class/DB-code only, never content; no scattered logging elsewhere; all raised errors + HTTP details are generic (type/status/field-NAMES/doc-type, never values/bodies/emails); audit-log details are metadata only; access-token error genericized
 - [x] Audit log on every state change (append-only; asserted across the full slice in test_end_to_end.py)
 - [ ] Data retention/disposal + incident-response plan
 
