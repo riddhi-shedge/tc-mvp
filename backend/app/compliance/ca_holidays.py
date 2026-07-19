@@ -9,9 +9,9 @@ standard weekend observation (Sat → prior Fri, Sun → following Mon).
 NOT included here, by design (KNOWN LIMITATIONS — see the pre-go-live items in
 docs/ca-rules-verification.md):
   * Lunar New Year and Diwali — set by lunar calendars, not computable by
-    formula. Supply them (and any Governor/President-proclaimed day) via the
-    `extra` override list in the verified RuleSet. Until populated, a deadline
-    whose final day lands on one of these will NOT roll — populate before go-live.
+    formula. Supplied (and any Governor/President-proclaimed day) via the `extra`
+    override list in the verified RuleSet (ca_rules.py `_OVERRIDE_HOLIDAYS`,
+    populated for 2026–2030; extend past 2030).
   * Good Friday — a partial (noon–3 p.m.) holiday, not a full-day closure.
   * Every Sunday — handled by the weekend logic in date_engine, not here.
   * The COE-only extra rule (form ¶ rule 5: days the County Recorder / lender /

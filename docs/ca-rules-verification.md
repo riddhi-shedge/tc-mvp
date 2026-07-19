@@ -252,10 +252,10 @@ The verified day-count ruleset is encoded and correct. These are known,
 documented gaps to close before processing REAL deals (the engine is otherwise
 complete and tested):
 
-- [ ] **Populate the holiday override list** (`_OVERRIDE_HOLIDAYS` in
-      `ca_rules.py`) with human-verified **Lunar New Year / Diwali / Governor-
-      proclaimed** dates for the years in play. Until then, a deadline whose final
-      day lands exactly on one of those (non-computable) holidays won't roll.
+- [x] **Holiday override list populated** (`_OVERRIDE_HOLIDAYS` in `ca_rules.py`):
+      human-confirmed **Lunar New Year & Diwali** dates for **2026–2030** encoded
+      (2026-07-19). Remaining: extend past 2030 before then, and add any
+      **Governor/President-proclaimed** day when proclaimed (ad hoc, uncomputable).
 - [ ] **Extend `_VERIFIED_HOLIDAY_YEARS`** (currently 2024–2045) before its upper
       bound; add a runtime bound check so out-of-range dates fail loud.
 - [ ] **COE-only closure rule** (form ¶ rule 5): days the County Recorder / lender

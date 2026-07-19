@@ -84,13 +84,26 @@ class RuleSet:
 # the upper bound — a deal dated outside the range silently treats those years as
 # holiday-free (no runtime bound check exists yet).
 _VERIFIED_HOLIDAY_YEARS = range(2024, 2046)
-# Non-computable legal holidays (Lunar New Year, Diwali, Governor/President-
-# proclaimed days) — add explicit dates here to honor the full §6700 definition
-# the human chose. PRE-GO-LIVE / KNOWN GAP: this is empty, so a deadline whose
-# final day lands on one of those dates will NOT roll (computed one day early).
-# Populate (human-verified dates) before processing real deals. Tracked in
-# docs/ca-rules-verification.md.
-_OVERRIDE_HOLIDAYS: frozenset[date] = frozenset()
+# Non-computable §6700 legal holidays — set by lunar calendars, so they can't be
+# derived by formula. Human-confirmed Gregorian dates (2026–2030), per the "full
+# §6700" choice in docs/ca-rules-verification.md (row A6). PRE-GO-LIVE: extend
+# past 2030, and add any Governor/President-proclaimed day when proclaimed.
+_OVERRIDE_HOLIDAYS: frozenset[date] = frozenset(
+    {
+        # Lunar New Year (§6700: 2nd new moon after the winter solstice).
+        date(2026, 2, 17),
+        date(2027, 2, 6),
+        date(2028, 1, 26),
+        date(2029, 2, 13),
+        date(2030, 2, 3),
+        # Diwali (§6700: 15th of Kartik — the Lakshmi Puja main day).
+        date(2026, 11, 8),
+        date(2027, 10, 29),
+        date(2028, 10, 17),
+        date(2029, 11, 5),
+        date(2030, 10, 26),
+    }
+)
 
 VERIFIED_RULESET: RuleSet | None = RuleSet(
     default_periods={

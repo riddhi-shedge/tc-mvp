@@ -79,6 +79,22 @@ def test_backward_window_does_not_roll(verified_rules):
     assert days_before(coe, verified_rules.dce_earliest_days_before) == date(2026, 9, 12)
 
 
+def test_override_lunar_holidays_are_live(verified_rules):
+    # Non-computable §6700 holidays supplied via the override list.
+    assert date(2026, 2, 17) in verified_rules.holidays   # Lunar New Year 2026
+    assert date(2027, 10, 29) in verified_rules.holidays  # Diwali 2027
+    assert date(2030, 2, 3) in verified_rules.holidays     # Lunar New Year 2030
+
+
+def test_deadline_rolls_off_diwali(verified_rules):
+    from app.compliance.date_engine import days_after
+
+    # Oct 17 2028 is Diwali (Tue). A deadline landing there rolls to Wed 10/18.
+    assert days_after(
+        date(2028, 10, 16), 1, unit="calendar", holidays=verified_rules.holidays
+    ) == date(2028, 10, 18)
+
+
 def test_statutory_rescission_and_mechanic_present(verified_rules):
     assert verified_rules.rescission_personal_days == 3
     assert verified_rules.rescission_mail_or_electronic_days == 5
