@@ -584,12 +584,12 @@ screens, triggered by email, with every step in the audit log and no auto-send p
 - [ ] Data retention/disposal + incident-response plan
 
 **Deployment and operations (production)**
-- [ ] Backend deployed
-- [ ] Frontend deployed
+- [~] Backend deployed — Render Docker web service config ready (render.yaml); not yet deployed (user action)
+- [~] Frontend deployed — Render static site config ready (render.yaml); not yet deployed
 - [ ] Domain + MX + DKIM/SPF/DMARC
 - [ ] Postmark production approval + sending domain
-- [ ] Staging vs production separation
-- [ ] CI/CD (tests on push, migrations)
+- [~] Staging vs production separation — synthetic-only staging blueprint (render.yaml, gates pinned closed) + local docker-compose ready; separate prod Supabase/domain still to set up (see docs/deploy-staging.md)
+- [x] CI/CD — GitHub Actions (.github/workflows/ci.yml): ruff + pytest + frontend build on push/PR; migration automation still manual
 - [ ] Monitoring / alerting / error tracking
 - [ ] Backups / disaster recovery
 

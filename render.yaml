@@ -1,0 +1,72 @@
+# Render blueprint — SYNTHETIC-ONLY staging for tc-mvp.
+# Supabase stays external. Secrets (sync:false) are set in the Render dashboard,
+# never committed. The safety gates are pinned CLOSED here: SYNTHETIC_ONLY=true
+# and SEND_ENABLED=false, so staging cannot process real data or send real email.
+services:
+  # ---- API + Postmark inbound webhook -------------------------------------
+  - type: web
+    name: tc-mvp-api
+    runtime: docker
+    plan: free
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    healthCheckPath: /health
+    envVars:
+      - key: SYNTHETIC_ONLY        # ZDR gate: real docs blocked in staging
+        value: "true"
+      - key: SEND_ENABLED          # outbound email stays off
+        value: "false"
+      - key: CA_RULES_VERIFIED     # exercise the real 6/26 date math on synthetic deals
+        value: "true"
+      - key: REQUIRE_MFA
+        value: "true"
+      # Secrets — set in the Render dashboard (Environment tab):
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: SUPABASE_ANON_KEY
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: POSTMARK_SERVER_TOKEN
+        sync: false
+      - key: POSTMARK_FROM_EMAIL
+        sync: false
+      - key: POSTMARK_WEBHOOK_TOKEN
+        sync: false
+      - key: COMPLIANCE_SERVICE_TOKEN
+        sync: false
+      - key: FRONTEND_ORIGIN       # the static site's URL, for CORS
+        sync: false
+
+  # ---- Frontend (static) --------------------------------------------------
+  - type: web
+    name: tc-mvp-frontend
+    runtime: static
+    buildCommand: cd frontend && npm ci && npm run build
+    staticPublishPath: ./frontend/dist
+    envVars:
+      - key: VITE_API_BASE         # the API service's URL
+        sync: false
+    routes:
+      - type: rewrite              # SPA fallback
+        source: /*
+        destination: /index.html
+
+  # ---- Compliance scheduler (daily sweep) ---------------------------------
+  # Talks to the API over HTTP only (decoupled) — needs no Supabase creds.
+  - type: cron
+    name: tc-mvp-scheduler
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    schedule: "0 14 * * *"         # daily 14:00 UTC (~06:00–07:00 PT)
+    dockerCommand: python -m app.compliance.scheduler
+    envVars:
+      - key: CA_RULES_VERIFIED
+        value: "true"
+      - key: MASTER_API_BASE       # the tc-mvp-api service URL
+        sync: false
+      - key: COMPLIANCE_SERVICE_TOKEN
+        sync: false

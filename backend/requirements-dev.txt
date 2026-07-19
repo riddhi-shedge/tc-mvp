@@ -1,2 +1,4 @@
-# Dev-only: synthetic fixture generation
-reportlab
+# Dev/CI-only tooling (not installed into the runtime Docker image).
+reportlab       # synthetic fixture generation
+pytest==9.1.1   # test runner (CI + local)
+ruff==0.15.21   # lint (CI + local)
