@@ -85,6 +85,8 @@ class MasterRepo(Protocol):
 
     def list_transactions(self) -> list[dict[str, Any]]: ...
 
+    def list_active_transaction_ids(self) -> list[str]: ...
+
     def transaction_exists(self, transaction_id: str) -> bool: ...
 
     def party_belongs_to_transaction(self, *, party_id: str, transaction_id: str) -> bool: ...
@@ -243,6 +245,12 @@ class SupabaseRepo:
             .data
         }
         return [{**t, "property_address": (props.get(t["id"]) or {}).get("address")} for t in txns]
+
+    def list_active_transaction_ids(self) -> list[str]:
+        rows = (
+            self._db.table("transactions").select("id").eq("status", "open").execute().data
+        )
+        return [r["id"] for r in rows]
 
     def transaction_exists(self, transaction_id: str) -> bool:
         rows = (

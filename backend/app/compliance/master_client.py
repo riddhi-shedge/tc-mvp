@@ -68,6 +68,19 @@ class HttpComplianceMasterClient:
         if r.status_code >= 400:
             raise ComplianceMasterError(f"master write failed (HTTP {r.status_code})")
 
+    def list_active_transactions(self) -> list[str]:
+        try:
+            r = httpx.get(
+                f"{self._base}/transactions/compliance-active",
+                headers=self._headers,
+                timeout=_TIMEOUT,
+            )
+        except httpx.HTTPError as exc:
+            raise ComplianceMasterError(f"master API unreachable ({type(exc).__name__})") from exc
+        if r.status_code >= 400:
+            raise ComplianceMasterError(f"master list failed (HTTP {r.status_code})")
+        return list(r.json().get("transaction_ids", []))
+
 
 def _state_from_slice(slice_: dict) -> DealState:
     """Map the compliance-state slice onto the DealState boundary."""

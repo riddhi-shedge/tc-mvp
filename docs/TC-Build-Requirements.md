@@ -560,7 +560,7 @@ screens, triggered by email, with every step in the audit log and no auto-send p
 
 **Supporting components**
 - [x] PDF pre-check library (pypdf — Phase 4)
-- [ ] Scheduler
+- [x] Scheduler (Phase-5 follow-on 2026-07-19; app/compliance/scheduler.py sweeps open deals daily via the compliance endpoints; gate-respecting, failure-isolated; wire a cron/Modal timer to `python -m app.compliance.scheduler`)
 - [x] Ingestion queue (ingestion_inbox status machine — Phase 3)
 - [x] Extraction pipeline + confidence calibration (Phase 4; calibration to be revisited with real-form samples post-ZDR)
 - [x] Routing heuristics (Phase 3 — suggest-only)

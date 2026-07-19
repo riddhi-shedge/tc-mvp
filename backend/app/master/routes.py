@@ -460,6 +460,17 @@ def apply_compliance_result(
         ) from None
 
 
+@router.get("/transactions/compliance-active")
+def list_compliance_active(
+    _: None = Depends(require_compliance_service),
+    repo: MasterRepo = Depends(get_repo),
+) -> dict[str, Any]:
+    """Open transaction IDs for the scheduled compliance runner to sweep.
+    Service-token auth (a machine can't do MFA); IDs only, no deal content.
+    Declared before GET /transactions/{id} so the static path isn't shadowed."""
+    return {"transaction_ids": repo.list_active_transaction_ids()}
+
+
 @router.get("/transactions/{transaction_id}")
 def read_full_state(
     transaction_id: str,

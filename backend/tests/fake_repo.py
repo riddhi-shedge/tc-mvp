@@ -107,6 +107,11 @@ class InMemoryRepo:
             for t in self.transactions.values()
         ]
 
+    def list_active_transaction_ids(self) -> list[str]:
+        return [
+            t["id"] for t in self.transactions.values() if t.get("status", "open") == "open"
+        ]
+
     def transaction_exists(self, transaction_id: str) -> bool:
         return transaction_id in self.transactions
 
