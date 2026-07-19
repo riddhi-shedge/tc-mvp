@@ -549,13 +549,14 @@ screens, triggered by email, with every step in the audit log and no auto-send p
 - [ ] Unlicensed-legal-advice boundary confirmed
 
 **Build phases**
-- [~] Phase 1 — SOR core (payload contract + skeleton done; schema/migrations/API/audit/auth remaining)
-- [ ] Phase 2 — walking skeleton
-- [ ] Phase 3 — ingestion (real)
+- [x] Phase 1 — SOR core (done; schema/migrations/API/audit/MFA auth — commit c049e82)
+- [x] Phase 2 — walking skeleton (done; email-triggered slice — commit dda8173)
+- [x] Phase 3 — ingestion (real) (done; detection/routing/storage/queue — commit 099865e)
 - [x] Phase 4 — extraction + confirm (done 2026-07-13; §5 verified; synthetic-only with ZDR_CONFIRMED code gate — no real docs until ZDR)
 - [x] Phase 5 — compliance service (done 2026-07-18; CA rules VERIFIED & signed against RPA 6/26 and encoded; deterministic date engine + CA holiday calendar; gated by CA_RULES_VERIFIED)
-- [ ] Phase 6 — draft, approve & send
+- [x] Phase 6 — draft, approve & send (done; real lender draft, human approve/edit, guarded send — commit eac2675)
 - [x] Phase 7 — dashboard + RLS permissions (done 2026-07-16; receiving-end tier enforced by DB RLS via a Supabase-issued token's app_metadata.party_id, live-verified; TC auth verifies via project JWKS/ES256)
+- [x] MVP end-to-end (done 2026-07-19; test_end_to_end.py drives the full §11 slice on synthetic data through the real API with the verified 6/26 rules)
 
 **Supporting components**
 - [x] PDF pre-check library (pypdf — Phase 4)
@@ -570,7 +571,8 @@ screens, triggered by email, with every step in the audit log and no auto-send p
 - [ ] Synthetic fixtures (PA, proof of funds, disclosures, inspection reports, failure cases)
 - [ ] Per-phase code-reviewer + qa + compliance-auditor passes
 - [x] Permission (RLS) tests (Phase 7 — live receiving-end permission test + no-party_id + deny-by-default across all other tables)
-- [ ] Optional end-to-end (Playwright)
+- [x] End-to-end integration (backend) — test_end_to_end.py (full §11 slice, verified rules)
+- [ ] Optional end-to-end (Playwright, frontend)
 
 **Security and compliance**
 - [x] MFA on all admin logins
@@ -578,7 +580,7 @@ screens, triggered by email, with every step in the audit log and no auto-send p
 - [~] RLS policies for tiers (Phase 7: operator via service role + receiving-end via app_metadata-keyed policy, live-verified; collaborator/email-participant out of MVP scope, deny-by-default)
 - [ ] Encryption at rest for documents
 - [ ] Logging discipline enforced (no NPI)
-- [ ] Audit log on every state change
+- [x] Audit log on every state change (append-only; asserted across the full slice in test_end_to_end.py)
 - [ ] Data retention/disposal + incident-response plan
 
 **Deployment and operations (production)**
