@@ -1,19 +1,20 @@
-"""The California rule VALUES — WALLED OFF until human-verified.
+"""The California rule VALUES.
 
-*** DO NOT fill these in from memory, blogs, or an AI. ***
-Every value here must come from a human reading the literal current C.A.R. RPA
-(12/25) and NBP/CR forms and signing off on docs/ca-rules-verification.md
-(§11, §18). Wrong date math silently corrupts every downstream task.
+*** These came ONLY from a human reading the literal current C.A.R. RPA. ***
+VERIFIED_RULESET below was filled from docs/ca-rules-verification.md, which was
+verified and signed against the literal C.A.R. RPA revision 6/26 (and cross-
+checked against the PDF) by a human on 2026-07-18 (§11, §18). Nothing here was
+sourced from memory, blogs, or an AI. Wrong date math silently corrupts every
+downstream task, so any future edit must go back through that sheet.
 
-Until that sign-off:
-  - VERIFIED_RULESET is None (empty),
-  - `load_verified_ruleset()` raises RulesNotVerified,
-  - the compliance service refuses to run in production.
+Runtime gate (unchanged discipline): `load_verified_ruleset()` still refuses to
+serve the values unless CA_RULES_VERIFIED=true is set in the environment — an
+explicit production opt-in acknowledging the rules are current.
 
-The date-engine MECHANICS (date_engine.py) and the compute framework
-(timeline.py / risk_flags.py / drafts.py) are complete and are tested against
+The date-engine MECHANICS (date_engine.py, ca_holidays.py) and the compute
+framework (timeline.py / risk_flags.py / drafts.py) are also tested against
 `synthetic_ruleset()` — a clearly fake set of numbers that must NEVER be
-mistaken for verified values.
+mistaken for the verified values.
 """
 
 from __future__ import annotations
@@ -22,6 +23,7 @@ import os
 from dataclasses import dataclass
 from datetime import date
 
+from app.compliance.ca_holidays import ca_legal_holidays
 from app.compliance.date_engine import DayUnit
 
 
@@ -34,7 +36,7 @@ class Period:
     """A contingency/action period: N days of a given unit after the trigger."""
 
     days: int
-    unit: DayUnit  # "calendar" or "business" — UNVERIFIED which, per row C1
+    unit: DayUnit  # "calendar" or "business" (deposit is business days — row C1)
 
 
 @dataclass(frozen=True)
@@ -49,17 +51,70 @@ class RuleSet:
     # NBP mechanics [rows D2, D3].
     nbp_earliest_days_before: int
     nbp_cure: Period
-    # Which dates are non-business days [row A6: CA state vs federal — UNVERIFIED].
+    # Legal holidays for the final-day roll [row A6: RPA 6/26 = Civ. §§7/7.1 +
+    # Gov. §6700; see ca_holidays.py]. A wide precomputed set for real deals.
     holidays: frozenset[date]
     # §6 risk-flag thresholds — PRODUCT DECISIONS (research §7), you choose them.
     flag_lead_days: dict[str, int]  # case -> "flag this many days before"
+
+    # Backward-from-COE windows — plain calendar subtraction, NO roll [row A7 +
+    # the final walk-through]. The form counts these "whether or not" the day is
+    # a weekend/holiday (¶14E/¶14G).
+    dce_earliest_days_before: int = 3
+    dce_min_days_to_close: int = 3
+    final_walkthrough_days_before: int = 5
+    # Statutory rescission clocks — primary law, separate from the RPA [rows F1,
+    # F3]: buyer may terminate within N days of disclosure delivery.
+    rescission_personal_days: int = 3
+    rescission_mail_or_electronic_days: int = 5
+    # 6/26 mechanic [form ¶8A]: a failure to obtain insurance may justify
+    # cancellation under the INSURANCE contingency but not the loan contingency.
+    loan_cancellation_requires_non_insurance_reason: bool = True
 
     def period_for(self, field_name: str) -> Period | None:
         return self.default_periods.get(field_name)
 
 
-# Filled ONLY after human verification. Stays None until then.
-VERIFIED_RULESET: RuleSet | None = None
+# --- The human-verified California ruleset (RPA 6/26) ------------------------
+# VERIFIED & signed against the literal C.A.R. RPA revision 6/26 by Riddhi Shedge
+# on 2026-07-18 (docs/ca-rules-verification.md — canonical ruleset + sign-off).
+# Provenance for each value is the bracketed row id in that sheet.
+#
+# Years covered by the precomputed holiday set. PRE-GO-LIVE: extend this before
+# the upper bound — a deal dated outside the range silently treats those years as
+# holiday-free (no runtime bound check exists yet).
+_VERIFIED_HOLIDAY_YEARS = range(2024, 2046)
+# Non-computable legal holidays (Lunar New Year, Diwali, Governor/President-
+# proclaimed days) — add explicit dates here to honor the full §6700 definition
+# the human chose. PRE-GO-LIVE / KNOWN GAP: this is empty, so a deadline whose
+# final day lands on one of those dates will NOT roll (computed one day early).
+# Populate (human-verified dates) before processing real deals. Tracked in
+# docs/ca-rules-verification.md.
+_OVERRIDE_HOLIDAYS: frozenset[date] = frozenset()
+
+VERIFIED_RULESET: RuleSet | None = RuleSet(
+    default_periods={
+        # [rows C1–C7] All "N (or __) Days after Acceptance" pre-printed defaults.
+        "emd_due_days": Period(3, "business"),  # C1 — deposit is business days
+        "inspection_contingency_days": Period(17, "calendar"),  # C2
+        "loan_contingency_days": Period(17, "calendar"),  # C3 — 6/26 aligns at 17
+        "appraisal_contingency_days": Period(17, "calendar"),  # C4
+        "insurance_contingency_days": Period(17, "calendar"),  # C5
+        "disclosure_delivery_days": Period(7, "calendar"),  # C6 (rolls — row A5)
+        "verification_of_funds_days": Period(3, "calendar"),  # C7
+    },
+    nbp_earliest_days_before=2,  # D2
+    nbp_cure=Period(2, "calendar"),  # D3
+    holidays=ca_legal_holidays(_VERIFIED_HOLIDAY_YEARS, extra=_OVERRIDE_HOLIDAYS),
+    flag_lead_days={  # §6 product decisions (chosen 2026-07-18)
+        "loan_contingency_approaching": 3,
+        "closing_near_open_tasks": 5,
+        "inspection_not_scheduled": 3,
+        "appraisal_not_ordered": 3,
+    },
+    # Backward windows + statutory clocks + loan/insurance mechanic take their
+    # verified defaults (A7: DCE 3/3; walk-through 5; F1/F3: 3 personal / 5 mail).
+)
 
 
 def _rules_marked_verified() -> bool:

@@ -10,7 +10,7 @@ from __future__ import annotations
 from datetime import date
 
 from app.compliance.ca_rules import RuleSet
-from app.compliance.date_engine import days_after
+from app.compliance.date_engine import days_after, days_before
 from app.contracts.compliance import ComputedDeadline, ComputedTask, DealState
 
 # Each deadline-driving contingency field -> (deadline key, human name, task
@@ -127,6 +127,25 @@ def compute_timeline(
                 key="task_coe",
                 title="Confirm closing preparations complete",
                 deadline_key="coe",
+            )
+        )
+
+        # Final walk-through ("Verification of Condition") — a fixed number of
+        # days BEFORE COE, counted straight (no weekend/holiday roll; row A7).
+        walkthrough = days_before(coe_date, rules.final_walkthrough_days_before)
+        deadlines.append(
+            ComputedDeadline(
+                key="final_walkthrough",
+                name="Final walk-through (verification of condition)",
+                due_date=walkthrough,
+                source_field="close_of_escrow",
+            )
+        )
+        tasks.append(
+            ComputedTask(
+                key="task_final_walkthrough",
+                title="Schedule and complete the final walk-through",
+                deadline_key="final_walkthrough",
             )
         )
 

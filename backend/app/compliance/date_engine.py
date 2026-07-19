@@ -62,3 +62,16 @@ def days_after(
         return _add_business_days(trigger, n, holidays)
     final = trigger + timedelta(days=n)
     return next_business_day(final, holidays)
+
+
+def days_before(reference: date, n: int) -> date:
+    """`n` calendar days BEFORE `reference`, with NO weekend/holiday roll.
+
+    The RPA counts its backward windows — the Demand to Close Escrow earliest-
+    delivery day and the final walk-through — "whether or not the Scheduled
+    Performance Day falls on a Saturday, Sunday, or legal holiday" (¶14E/¶14G),
+    so these are plain calendar subtractions.
+    """
+    if n < 0:
+        raise ValueError("day count must be non-negative")
+    return reference - timedelta(days=n)

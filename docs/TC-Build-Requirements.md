@@ -553,7 +553,7 @@ screens, triggered by email, with every step in the audit log and no auto-send p
 - [ ] Phase 2 — walking skeleton
 - [ ] Phase 3 — ingestion (real)
 - [x] Phase 4 — extraction + confirm (done 2026-07-13; §5 verified; synthetic-only with ZDR_CONFIRMED code gate — no real docs until ZDR)
-- [ ] Phase 5 — compliance service  `[BLOCKER: CA rules, §6]`
+- [x] Phase 5 — compliance service (done 2026-07-18; CA rules VERIFIED & signed against RPA 6/26 and encoded; deterministic date engine + CA holiday calendar; gated by CA_RULES_VERIFIED)
 - [ ] Phase 6 — draft, approve & send
 - [x] Phase 7 — dashboard + RLS permissions (done 2026-07-16; receiving-end tier enforced by DB RLS via a Supabase-issued token's app_metadata.party_id, live-verified; TC auth verifies via project JWKS/ES256)
 
@@ -563,7 +563,7 @@ screens, triggered by email, with every step in the audit log and no auto-send p
 - [x] Ingestion queue (ingestion_inbox status machine — Phase 3)
 - [x] Extraction pipeline + confidence calibration (Phase 4; calibration to be revisited with real-form samples post-ZDR)
 - [x] Routing heuristics (Phase 3 — suggest-only)
-- [ ] Deterministic date-math engine
+- [x] Deterministic date-math engine (calendar roll + business days + backward windows; CA §7/§7.1/§6700 holiday calendar with override list — Phase 5)
 
 **Testing**
 - [x] Payload contract tests

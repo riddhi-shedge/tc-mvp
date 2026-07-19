@@ -246,6 +246,24 @@ product decisions for you to set. Only the underlying deadlines are rules.
 - [ ] "Legal holiday" definition (A6): CA state or federal?
 - [ ] Choose the §G risk-flag thresholds (product decisions).
 
+## Pre-go-live refinements (Phase 5 code review, 2026-07-18)
+
+The verified day-count ruleset is encoded and correct. These are known,
+documented gaps to close before processing REAL deals (the engine is otherwise
+complete and tested):
+
+- [ ] **Populate the holiday override list** (`_OVERRIDE_HOLIDAYS` in
+      `ca_rules.py`) with human-verified **Lunar New Year / Diwali / Governor-
+      proclaimed** dates for the years in play. Until then, a deadline whose final
+      day lands exactly on one of those (non-computable) holidays won't roll.
+- [ ] **Extend `_VERIFIED_HOLIDAY_YEARS`** (currently 2024–2045) before its upper
+      bound; add a runtime bound check so out-of-range dates fail loud.
+- [ ] **COE-only closure rule** (form ¶ rule 5): days the County Recorder / lender
+      / closing agent are closed also push the Close-of-Escrow allowable day — not
+      modeled (needs county/lender-specific closure data).
+- [ ] **Statute spot-check**: confirm Lincoln Day, Columbus Day, Native American
+      Day are still current entries when the CA legal-holiday list is finalized.
+
 ## Sign-off
 
 - [x] I verified the rules above against the current C.A.R. RPA (**revision 6/26**)

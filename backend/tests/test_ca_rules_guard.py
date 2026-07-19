@@ -10,22 +10,27 @@ from app.compliance.ca_rules import (
 )
 
 
-def test_verified_ruleset_ships_empty():
-    # Until a human fills it in, there are NO verified rules in the codebase.
-    assert VERIFIED_RULESET is None
+def test_verified_ruleset_is_filled_with_6_26_values():
+    # Signed against RPA 6/26 (docs/ca-rules-verification.md) — no longer empty.
+    assert VERIFIED_RULESET is not None
+    assert VERIFIED_RULESET.default_periods["loan_contingency_days"].days == 17
+    assert VERIFIED_RULESET.default_periods["emd_due_days"].unit == "business"
+    assert VERIFIED_RULESET.nbp_cure.days == 2
+    assert VERIFIED_RULESET.dce_earliest_days_before == 3
 
 
 def test_loader_raises_when_flag_unset(monkeypatch):
+    # Values exist, but production must still explicitly opt in via the env flag.
     monkeypatch.delenv("CA_RULES_VERIFIED", raising=False)
     with pytest.raises(RulesNotVerified, match="not verified"):
         load_verified_ruleset()
 
 
-def test_loader_raises_when_flag_true_but_values_missing(monkeypatch):
-    # Flipping the flag alone must not conjure rules — the values are still None.
+def test_loader_returns_ruleset_when_flag_set(monkeypatch):
     monkeypatch.setenv("CA_RULES_VERIFIED", "true")
-    with pytest.raises(RulesNotVerified):
-        load_verified_ruleset()
+    rules = load_verified_ruleset()
+    assert rules is VERIFIED_RULESET
+    assert rules.default_periods["loan_contingency_days"].days == 17
 
 
 def test_synthetic_ruleset_is_usable_but_clearly_not_verified():
