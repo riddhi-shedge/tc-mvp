@@ -135,9 +135,45 @@ export function Inbox({ onOpenDeal }: { onOpenDeal: (id: string) => void }) {
 
   return (
     <>
+      <div className="page-head">
+        <div>
+          <h1>Inbox &amp; Deals</h1>
+          <div className="muted">Triage inbound documents, and open any active deal.</div>
+        </div>
+      </div>
+
       <div className="card">
-        <h2>Inbound — dedicated deal address</h2>
-        {pending.length === 0 && <p className="muted">No pending documents.</p>}
+        <h2>🏠 Deals</h2>
+        {transactions.length === 0 && (
+          <div className="empty">
+            <span className="emoji">🗂️</span>
+            No deals yet — confirm an inbound document to create one.
+          </div>
+        )}
+        <div className="deal-grid">
+          {transactions.map((t) => (
+            <div key={t.id} className="deal-tile" onClick={() => onOpenDeal(t.id)}>
+              <div className="dt-addr">{t.property_address ?? "(no property on file)"}</div>
+              <span className={`badge ${t.status === "open" ? "ok" : ""}`} style={{ alignSelf: "flex-start" }}>
+                <span className="dot open" /> {t.status}
+              </span>
+              <div className="dt-meta">
+                <span className="dt-id">{t.id.slice(0, 8)}</span>
+                <span className="dt-open">Open →</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="card">
+        <h2>📥 Inbound — dedicated deal address</h2>
+        {pending.length === 0 && (
+          <div className="empty">
+            <span className="emoji">📨</span>
+            Inbox zero. New documents emailed to the deal address land here for your review.
+          </div>
+        )}
         {pending.map((item) => (
           <div key={item.id} className="row" style={{ marginBottom: "0.9rem" }}>
             <div>
@@ -308,40 +344,20 @@ export function Inbox({ onOpenDeal }: { onOpenDeal: (id: string) => void }) {
       )}
 
       <div className="card">
-        <h2>Manual upload (fallback)</h2>
-        <div className="row">
-          <div>
-            <input type="file" accept="application/pdf" onChange={onFilePicked} />
-          </div>
-          <div style={{ flex: "0 0 auto" }}>
+        <h2>📎 Manual upload</h2>
+        <div className="dropzone">
+          <input type="file" accept="application/pdf" onChange={onFilePicked} />
+          <div style={{ marginTop: "0.7rem" }}>
             <button disabled={!uploadB64 || busy === "upload"} onClick={() => void uploadManual()}>
               Upload{uploadName ? ` ${uploadName}` : ""}
             </button>
           </div>
+          <p className="muted" style={{ marginTop: "0.5rem" }}>
+            Fallback for a document that didn't arrive by email (PDF).
+          </p>
         </div>
       </div>
 
-      <div className="card">
-        <h2>Deals</h2>
-        {transactions.length === 0 && <p className="muted">No transactions yet.</p>}
-        <table>
-          <tbody>
-            {transactions.map((t) => (
-              <tr key={t.id}>
-                <td>{t.property_address ?? "(no property)"}</td>
-                <td>
-                  <span className="badge">{t.status}</span>
-                </td>
-                <td style={{ textAlign: "right" }}>
-                  <button className="secondary" onClick={() => onOpenDeal(t.id)}>
-                    Open
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
     </>
   );
 }

@@ -73,8 +73,15 @@ export function Login({ onSignedIn }: { onSignedIn: () => void }) {
   }
 
   return (
-    <div className="card" style={{ maxWidth: 380, margin: "10vh auto" }}>
-      <h2>tc-mvp — TC sign in</h2>
+    <div className="login-wrap">
+      <div className="login-card">
+        <div className="login-brand">
+          <div className="mark">T</div>
+          <div className="name">Terra</div>
+          <div className="tagline">Transaction Coordinator</div>
+        </div>
+        <div className="card">
+      <h2>Sign in</h2>
       {stage === "password" && (
         <form onSubmit={submitPassword}>
           <label>Email</label>
@@ -115,6 +122,8 @@ export function Login({ onSignedIn }: { onSignedIn: () => void }) {
         </form>
       )}
       {error && <p className="error">{error}</p>}
+        </div>
+      </div>
     </div>
   );
 }
