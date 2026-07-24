@@ -19,8 +19,10 @@ from app.master.repo import (
     _STUB_TIMELINE,
     DeadlineFieldsUnconfirmed,
     MessageNotSendable,
+    NoPayloadForManualField,
     NoRecipient,
     TimelineAlreadyExists,
+    _deadline_gate_state,
     _deadline_gate_violations,
 )
 
@@ -131,6 +133,35 @@ class InMemoryRepo:
                 details={"count": len(confirmed_ids), "field_ids": confirmed_ids},
             )
         return len(confirmed_ids)
+
+    def add_manual_field(
+        self, *, transaction_id: str, name: str, value: str, actor: str
+    ) -> dict[str, Any]:
+        payload = next(
+            (p for p in self.payloads.values() if p["transaction_id"] == transaction_id), None
+        )
+        if payload is None:
+            raise NoPayloadForManualField
+        field = {
+            "id": str(uuid.uuid4()),
+            "payload_id": payload["id"],
+            "transaction_id": transaction_id,
+            "name": name,
+            "value": value,
+            "confidence": 1.0,
+            "confirmed": True,
+            "deadline_driving": name in DEADLINE_DRIVING,
+        }
+        self.extracted_fields.append(field)
+        self._audit(
+            transaction_id=transaction_id,
+            actor=actor,
+            action="field.added_manually",
+            entity_type="extracted_field",
+            entity_id=field["id"],
+            details={"name": name, "deadline_driving": name in DEADLINE_DRIVING},
+        )
+        return field
 
     def create_stub_timeline(self, *, transaction_id: str, actor: str) -> dict[str, Any]:
         rows = [
@@ -563,9 +594,11 @@ class InMemoryRepo:
         txn = self.transactions.get(transaction_id)
         if txn is None:
             return None
+        fields = [f for f in self.extracted_fields if f["transaction_id"] == transaction_id]
         return {
             "transaction": txn,
             "property": self.properties.get(transaction_id),
+            "timeline_gate": _deadline_gate_state(fields),
             "parties": [p for p in self.parties.values() if p["transaction_id"] == transaction_id],
             "documents": [
                 d for d in self.documents.values() if d["transaction_id"] == transaction_id

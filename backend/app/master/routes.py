@@ -11,7 +11,10 @@ from __future__ import annotations
 import os
 import re
 import secrets
+import subprocess
+import sys
 from functools import lru_cache
+from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Depends, Header, HTTPException
@@ -41,10 +44,17 @@ from app.master.repo import (
     DeadlineFieldsUnconfirmed,
     MasterRepo,
     MessageNotSendable,
+    NoPayloadForManualField,
     NoRecipient,
     SupabaseRepo,
     TimelineAlreadyExists,
 )
+
+# The compliance part runs as its own process (the daily scheduler); the master
+# never imports its internals. The on-demand "Build timeline" action shells out
+# to that same entrypoint for one deal — process isolation keeps the parts
+# decoupled, exactly like the cron sweep.
+_BACKEND_DIR = Path(__file__).resolve().parents[2]
 
 router = APIRouter()
 
@@ -145,6 +155,97 @@ def confirm_fields(
         transaction_id=transaction_id, field_ids=body.field_ids, actor=tc.actor
     )
     return {"confirmed": count}
+
+
+class AddFieldRequest(BaseModel):
+    name: str = Field(min_length=1)
+    value: str = Field(min_length=1)
+
+
+@router.post("/transactions/{transaction_id}/fields", status_code=201)
+def add_field(
+    transaction_id: str,
+    body: AddFieldRequest,
+    tc: TCUser = Depends(require_tc),
+    repo: MasterRepo = Depends(get_repo),
+) -> dict[str, Any]:
+    """Hand-enter a §5 field the extraction missed (e.g. an acceptance date the
+    model couldn't find) so a real deal's timeline can be built without a script.
+    Whitelisted to the human-verified §5 names; Rule 2 money/wiring guard on both
+    name and value; a name already on the deal is a confirm, not an add."""
+    name = body.name.strip()
+    value = body.value.strip()
+    if name not in EXTRACTABLE_FIELD_NAMES:
+        raise HTTPException(status_code=422, detail=f"'{name}' is not a §5 extractable field")
+    if _MONEY_FIELD_NAME.search(name) or _MONEY_FIELD_NAME.search(value):
+        raise HTTPException(
+            status_code=422,
+            detail="Payment/wiring data is never stored (Rule 2).",
+        )
+    state = repo.get_full_state(transaction_id)
+    if state is None:
+        raise HTTPException(status_code=404, detail="Transaction not found")
+    if any(f["name"] == name for f in state["extracted_fields"]):
+        raise HTTPException(
+            status_code=409,
+            detail=f"'{name}' is already on this deal — confirm it instead of re-adding.",
+        )
+    try:
+        field = repo.add_manual_field(
+            transaction_id=transaction_id, name=name, value=value, actor=tc.actor
+        )
+    except NoPayloadForManualField:
+        raise HTTPException(
+            status_code=409,
+            detail="Upload the purchase agreement first — then missing fields can be added.",
+        )
+    fresh = repo.get_full_state(transaction_id) or {}
+    return {"field": field, "timeline_gate": fresh.get("timeline_gate")}
+
+
+@router.post("/transactions/{transaction_id}/build-timeline")
+def build_timeline(
+    transaction_id: str,
+    tc: TCUser = Depends(require_tc),
+    repo: MasterRepo = Depends(get_repo),
+) -> dict[str, Any]:
+    """Run compliance on demand for one deal (the TC's "Build timeline" tap), once
+    every deadline-driving field is present and confirmed. Spawns the compliance
+    scheduler for this deal — same seam as the daily cron — so the master stays
+    decoupled from compliance internals."""
+    state = repo.get_full_state(transaction_id)
+    if state is None:
+        raise HTTPException(status_code=404, detail="Transaction not found")
+    gate = state.get("timeline_gate") or {}
+    if not gate.get("ready", False):
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": "Timeline needs every deadline-driving field present and confirmed first.",
+                "missing_fields": gate.get("missing_fields", []),
+                "unconfirmed_fields": gate.get("unconfirmed_fields", []),
+            },
+        )
+    try:
+        proc = subprocess.run(
+            [sys.executable, "-m", "app.compliance.scheduler", transaction_id],
+            cwd=str(_BACKEND_DIR),
+            env={**os.environ},
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+    except subprocess.TimeoutExpired:
+        raise HTTPException(status_code=504, detail="Timeline build timed out — try again")
+    if proc.returncode != 0:
+        # Never echo subprocess output to the client — it can carry ids (Rule 5).
+        raise HTTPException(status_code=502, detail="Timeline build failed — see server logs")
+    fresh = repo.get_full_state(transaction_id) or {}
+    return {
+        "deadlines": len(fresh.get("deadlines", [])),
+        "tasks": len(fresh.get("tasks", [])),
+        "risk_flags": len(fresh.get("risk_flags", [])),
+    }
 
 
 @router.post("/transactions/{transaction_id}/timeline/stub", status_code=201)

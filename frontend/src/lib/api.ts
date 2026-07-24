@@ -211,9 +211,19 @@ export function isReceivingEnd(p: DealParty): boolean {
   return p.permission_tier === "receiving_end" || RECEIVING_END_ROLES.has(p.role);
 }
 
+// Timeline-readiness breakdown (backend _deadline_gate_state): which
+// deadline-driving §5 fields still block the timeline. `missing_fields` need
+// hand-entry, `unconfirmed_fields` need a one-tap confirm.
+export interface TimelineGate {
+  ready: boolean;
+  missing_fields: string[];
+  unconfirmed_fields: string[];
+}
+
 export interface FullState {
   transaction: { id: string; status: string };
   property: { address: string } | null;
+  timeline_gate?: TimelineGate;
   parties: DealParty[];
   documents: DealDocument[];
   extracted_fields: ExtractedField[];

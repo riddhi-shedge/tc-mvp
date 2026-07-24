@@ -26,6 +26,14 @@ function actionIcon(a: string): string {
 function humanize(s: string): string {
   return s.replace(/[._]/g, " ").replace(/\b\w/g, (m) => m.toUpperCase());
 }
+/** A short hint for hand-entering a missing deadline-driving field. */
+function fieldHint(name: string): string {
+  if (name.endsWith("_date")) return "e.g. 2026-07-10 (YYYY-MM-DD)";
+  if (name.endsWith("_days")) return "number of days (or 'waived')";
+  if (name === "close_of_escrow") return "a date, or days after acceptance";
+  if (name === "possession_date") return "date/time terms as written";
+  return "value as written on the agreement";
+}
 
 /** The deal screen: extraction review → confirm → timeline → risk flags →
  *  lender contact → real lender draft (editable) → Approve & Send (guarded). */
@@ -38,6 +46,8 @@ export function Deal({ id, onBack }: { id: string; onBack: () => void }) {
   const [lenderEmail, setLenderEmail] = useState("");
   // TC edits to a draft before approval: messageId -> {subject, body}
   const [edits, setEdits] = useState<Record<string, { subject: string; body: string }>>({});
+  // TC entries for deadline-driving fields the extraction missed: name -> value
+  const [fieldVals, setFieldVals] = useState<Record<string, string>>({});
 
   const refresh = useCallback(async () => {
     try {
@@ -71,6 +81,8 @@ export function Deal({ id, onBack }: { id: string; onBack: () => void }) {
 
   const fields = state.extracted_fields;
   const unconfirmed = fields.filter((f) => !f.confirmed);
+  const gate = state.timeline_gate;
+  const blocking = gate ? gate.missing_fields.length + gate.unconfirmed_fields.length : 0;
   const drafts: Message[] = state.messages.filter((m) => m.status === "draft");
   const approved: Message[] = state.messages.filter((m) => m.status === "approved");
   const sent = state.messages.filter((m) => m.status === "sent");
@@ -122,10 +134,119 @@ export function Deal({ id, onBack }: { id: string; onBack: () => void }) {
       </div>
       {error && <p className="error">{error}</p>}
 
-      <DealTimeline
-        deadlines={state.deadlines}
-        acceptanceDate={fields.find((f) => f.name === "acceptance_date")?.value ?? null}
-      />
+      {gate && !gate.ready && (
+        <div className="card gate-card">
+          <div className="gate-head">
+            <span className="gate-ic">🗓️</span>
+            <div>
+              <h2 style={{ margin: 0 }}>Finish the timeline</h2>
+              <p className="muted" style={{ margin: "3px 0 0" }}>
+                {blocking} deadline-driving field{blocking > 1 ? "s" : ""} still needed before the
+                CA deadlines can compute.
+              </p>
+            </div>
+          </div>
+
+          {gate.missing_fields.length > 0 && (
+            <div className="gate-sec">
+              <div className="gate-sec-label">
+                Missing — enter from the purchase agreement
+              </div>
+              {gate.missing_fields.map((name) => (
+                <div key={name} className="gate-row">
+                  <label className="gate-fname">{humanize(name)}</label>
+                  <input
+                    value={fieldVals[name] ?? ""}
+                    placeholder={fieldHint(name)}
+                    onChange={(e) => setFieldVals({ ...fieldVals, [name]: e.target.value })}
+                  />
+                  <button
+                    className="gold"
+                    disabled={busy || !(fieldVals[name] ?? "").trim()}
+                    onClick={() =>
+                      void run(async () => {
+                        await api.post(`/transactions/${id}/fields`, {
+                          name,
+                          value: (fieldVals[name] ?? "").trim(),
+                        });
+                        setFieldVals((v) => ({ ...v, [name]: "" }));
+                      }, `${humanize(name)} added`)
+                    }
+                  >
+                    Add
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {gate.unconfirmed_fields.length > 0 && (
+            <div className="gate-sec">
+              <div className="gate-sec-label">Extracted — confirm to lock in</div>
+              <div className="gate-chips">
+                {gate.unconfirmed_fields.map((name) => (
+                  <span key={name} className="gate-chip">
+                    {humanize(name)}
+                  </span>
+                ))}
+              </div>
+              <button
+                className="gold"
+                disabled={busy}
+                style={{ marginTop: "0.75rem" }}
+                onClick={() =>
+                  void run(
+                    () =>
+                      api.post(`/transactions/${id}/fields/confirm`, {
+                        field_ids: fields
+                          .filter((f) => gate.unconfirmed_fields.includes(f.name))
+                          .map((f) => f.id),
+                      }),
+                    "Deadline fields confirmed",
+                  )
+                }
+              >
+                ✓ Confirm {gate.unconfirmed_fields.length} deadline field
+                {gate.unconfirmed_fields.length > 1 ? "s" : ""}
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {gate?.ready && fields.length > 0 && state.deadlines.length === 0 && (
+        <div className="card gate-card ready">
+          <div className="gate-head">
+            <span className="gate-ic">✅</span>
+            <div>
+              <h2 style={{ margin: 0 }}>Ready to build</h2>
+              <p className="muted" style={{ margin: "3px 0 0" }}>
+                Every deadline-driving field is in and confirmed — build the CA timeline.
+              </p>
+            </div>
+          </div>
+          <button
+            className="gold"
+            disabled={busy}
+            style={{ marginTop: "0.9rem" }}
+            onClick={() =>
+              void run(
+                () => api.post(`/transactions/${id}/build-timeline`),
+                "Timeline built",
+              )
+            }
+          >
+            {busy ? "Building…" : "🗓️ Build timeline"}
+          </button>
+        </div>
+      )}
+
+      {state.deadlines.length > 0 && (
+        <DealTimeline
+          deadlines={state.deadlines}
+          acceptanceDate={fields.find((f) => f.name === "acceptance_date")?.value ?? null}
+        />
+      )}
 
       <AnimatedTabs
         tabs={[

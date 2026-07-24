@@ -69,8 +69,33 @@ def run_all(
 def main(argv: list[str] | None = None) -> int:
     from app.compliance.master_client import HttpComplianceMasterClient
 
+    argv = list(argv or [])
+    master = HttpComplianceMasterClient()
+
+    if argv:
+        # On-demand build for named deal(s) — the master's "Build timeline" tap.
+        # Same seam and ruleset gate as the sweep, scoped to one deal.
+        try:
+            ruleset = load_verified_ruleset()
+        except Exception as exc:
+            print(f"compliance: could not load rules ({type(exc).__name__})")
+            return 1
+        when = date.today()
+        failures = 0
+        for txn_id in argv:
+            try:
+                result = run_for_transaction(txn_id, master, as_of=when, rules=ruleset)
+                print(
+                    f"compliance: deal ran OK "
+                    f"({len(result.deadlines)} deadlines, {len(result.risk_flags)} risk flags)"
+                )
+            except Exception as exc:
+                failures += 1
+                print(f"compliance: deal failed ({type(exc).__name__})")
+        return 1 if failures else 0
+
     try:
-        summary = run_all(HttpComplianceMasterClient())
+        summary = run_all(master)
     except Exception as exc:
         # Setup-level failure (rules gate closed, master unreachable, list failed).
         # Print only the error TYPE — never a traceback that could carry a URL/id

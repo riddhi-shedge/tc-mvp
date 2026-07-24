@@ -32,19 +32,34 @@ class DeadlineFieldsUnconfirmed(Exception):
         super().__init__(", ".join(field_names))
 
 
-def _deadline_gate_violations(rows: list[dict[str, Any]]) -> list[str]:
-    """Given a transaction's extracted-field rows ({name, confirmed}), return
-    the deadline-driving names that block the timeline: unconfirmed rows plus
-    names with no row at all. Applies only once ANY field row exists (a deal
-    with no extraction yet — e.g. created manually — is not gated on §5
-    coverage; Phase 5's real timeline needs the values regardless)."""
+def _deadline_gate_state(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    """The timeline-readiness breakdown for the UI (and the "Build timeline"
+    pre-check): which deadline-driving §5 fields are MISSING (no row at all —
+    the TC must hand-enter them) vs present-but-UNCONFIRMED (a one-tap confirm).
+    The timeline builds only when both are empty.
+
+    Mirrors the gate's own rule: a deal with no extraction yet (e.g. created
+    manually, no PA uploaded) is not gated on §5 coverage, so it reports ready
+    with nothing outstanding — the frontend surfaces the prompt only when a
+    deal actually has fields but isn't ready."""
     if not rows:
-        return []
+        return {"ready": True, "missing_fields": [], "unconfirmed_fields": []}
     confirmed = {r["name"] for r in rows if r["confirmed"]}
     present = {r["name"] for r in rows}
-    unconfirmed = {r["name"] for r in rows if r["name"] in DEADLINE_DRIVING} - confirmed
-    missing = DEADLINE_DRIVING - present
-    return sorted(unconfirmed | missing)
+    missing = sorted(DEADLINE_DRIVING - present)
+    unconfirmed = sorted((DEADLINE_DRIVING & present) - confirmed)
+    return {
+        "ready": not missing and not unconfirmed,
+        "missing_fields": missing,
+        "unconfirmed_fields": unconfirmed,
+    }
+
+
+def _deadline_gate_violations(rows: list[dict[str, Any]]) -> list[str]:
+    """The flat list of deadline-driving names that block the timeline (missing
+    OR unconfirmed) — the §11 gate raised by the stub/compliance write paths."""
+    gate = _deadline_gate_state(rows)
+    return sorted(set(gate["missing_fields"]) | set(gate["unconfirmed_fields"]))
 
 
 class MessageNotSendable(Exception):
@@ -53,6 +68,11 @@ class MessageNotSendable(Exception):
 
 class NoRecipient(Exception):
     """The message has no resolvable recipient (its party has no email)."""
+
+
+class NoPayloadForManualField(Exception):
+    """A manual field can't be attached — the deal has no payload yet (nothing
+    has been ingested). Upload a document first, then add missing fields."""
 
 
 # Hardcoded Phase 2 timeline — clearly labeled stub; real CA rules are Phase 5
@@ -104,6 +124,10 @@ class MasterRepo(Protocol):
     def get_full_state(self, transaction_id: str) -> dict[str, Any] | None: ...
 
     def confirm_fields(self, *, transaction_id: str, field_ids: list[str], actor: str) -> int: ...
+
+    def add_manual_field(
+        self, *, transaction_id: str, name: str, value: str, actor: str
+    ) -> dict[str, Any]: ...
 
     def create_stub_timeline(self, *, transaction_id: str, actor: str) -> dict[str, Any]: ...
 
@@ -387,6 +411,52 @@ class SupabaseRepo:
                 details={"count": count, "field_ids": [f["id"] for f in updated]},
             )
         return count
+
+    def add_manual_field(
+        self, *, transaction_id: str, name: str, value: str, actor: str
+    ) -> dict[str, Any]:
+        """Attach a TC-entered field value to an existing deal — for §5 fields the
+        extraction missed (e.g. an acceptance date the model couldn't find). Hand-
+        entered, so it lands already confirmed. The deadline_driving flag is
+        stamped from the human-verified §5 list, never from the caller. Requires a
+        payload to attach to (extracted_fields.payload_id is NOT NULL) — the most
+        recent one for the deal."""
+        payloads = (
+            self._db.table("payloads")
+            .select("id")
+            .eq("transaction_id", transaction_id)
+            .order("created_at", desc=True)
+            .limit(1)
+            .execute()
+            .data
+        )
+        if not payloads:
+            raise NoPayloadForManualField
+        inserted = (
+            self._db.table("extracted_fields")
+            .insert(
+                {
+                    "payload_id": payloads[0]["id"],
+                    "transaction_id": transaction_id,
+                    "name": name,
+                    "value": value,
+                    "confidence": 1.0,  # hand-entered by the TC
+                    "confirmed": True,
+                    "deadline_driving": name in DEADLINE_DRIVING,
+                }
+            )
+            .execute()
+            .data[0]
+        )
+        self._audit(
+            transaction_id=transaction_id,
+            actor=actor,
+            action="field.added_manually",
+            entity_type="extracted_field",
+            entity_id=inserted["id"],
+            details={"name": name, "deadline_driving": name in DEADLINE_DRIVING},
+        )
+        return inserted
 
     def create_stub_timeline(self, *, transaction_id: str, actor: str) -> dict[str, Any]:
         # The confirmation gate (Prompt 4): no unconfirmed OR missing
@@ -895,4 +965,5 @@ class SupabaseRepo:
                 .execute()
                 .data
             )
+        state["timeline_gate"] = _deadline_gate_state(state["extracted_fields"])
         return state
