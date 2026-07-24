@@ -18,15 +18,55 @@ def _pa_min_pages() -> int:
     return int(os.environ.get("PA_MIN_PAGES", "2"))
 
 
+def decrypt_pdf(pdf_bytes: bytes) -> bytes | None:
+    """Return PDF bytes readable without a password.
+
+    Real-estate PDFs (zipForm/DocuSign) are frequently encrypted with only an
+    OWNER password and an EMPTY user password — fully readable, just permission-
+    restricted. Those are unlocked with an empty password and re-serialized
+    without encryption so downstream (the pre-check and the model) can read them.
+    Returns the original bytes when not encrypted, or None only when a real user
+    password is required."""
+    from pypdf import PasswordType, PdfReader, PdfWriter
+    from pypdf.errors import PyPdfError
+
+    try:
+        reader = PdfReader(BytesIO(pdf_bytes))
+    except Exception:
+        return pdf_bytes  # not a parseable PDF — let precheck report the reason
+    if not reader.is_encrypted:
+        return pdf_bytes
+    try:
+        if reader.decrypt("") == PasswordType.NOT_DECRYPTED:
+            return None
+    except (PyPdfError, NotImplementedError):
+        return None
+    try:
+        writer = PdfWriter()
+        for page in reader.pages:
+            writer.add_page(page)
+        out = BytesIO()
+        writer.write(out)
+        return out.getvalue()
+    except Exception:
+        return pdf_bytes
+
+
 def precheck_pdf(pdf_bytes: bytes, *, expect_purchase_agreement: bool) -> list[str]:
     """Returns a list of human-readable failure reasons; empty means OK."""
-    from pypdf import PdfReader
+    from pypdf import PasswordType, PdfReader
     from pypdf.errors import PyPdfError
 
     try:
         reader = PdfReader(BytesIO(pdf_bytes))
         if reader.is_encrypted:
-            return ["the PDF is encrypted and cannot be read"]
+            # Owner-password-only PDFs open with an empty password; only a real
+            # user password is a true block (§4 manual-entry fallback).
+            try:
+                if reader.decrypt("") == PasswordType.NOT_DECRYPTED:
+                    return ["the PDF is password-protected and cannot be read"]
+            except (PyPdfError, NotImplementedError):
+                return ["the PDF is password-protected and cannot be read"]
         page_count = len(reader.pages)
         text_chars = sum(len((page.extract_text() or "").strip()) for page in reader.pages)
     except PyPdfError:

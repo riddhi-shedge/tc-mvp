@@ -33,7 +33,7 @@ from app.ingestion.extractor import (
 )
 from app.ingestion.inbox_repo import InboxRepo, StorageUnavailable, SupabaseInboxRepo
 from app.ingestion.master_client import HttpMasterClient
-from app.ingestion.precheck import precheck_pdf
+from app.ingestion.precheck import decrypt_pdf, precheck_pdf
 from app.ingestion.routing import suggest_transaction
 
 router = APIRouter(prefix="/ingestion")
@@ -307,6 +307,15 @@ def _extract_pa_fields(
         raise HTTPException(
             status_code=503, detail="Attachment store unavailable; try again shortly"
         ) from None
+    # Unlock owner-password-only PDFs (common with zipForm/DocuSign) so the model
+    # gets readable bytes; only a real user password forces manual entry.
+    readable = decrypt_pdf(pdf_bytes)
+    if readable is None:
+        raise _extraction_error(
+            "The document is password-protected",
+            ["the PDF requires a password to open — upload an unlocked copy, or enter fields manually"],
+        )
+    pdf_bytes = readable
     reasons = precheck_pdf(pdf_bytes, expect_purchase_agreement=True)
     if reasons:
         raise _extraction_error(
