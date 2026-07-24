@@ -4,17 +4,20 @@ import { Deal } from "./screens/Deal";
 import { Inbox } from "./screens/Inbox";
 import { Login } from "./screens/Login";
 import { Toaster } from "./lib/ui";
+import { motion } from "framer-motion";
 
 type View = { name: "inbox" } | { name: "deal"; id: string };
 
 export default function App() {
   const [ready, setReady] = useState(false);
   const [signedIn, setSignedIn] = useState(false);
+  const [email, setEmail] = useState<string | null>(null);
   const [view, setView] = useState<View>({ name: "inbox" });
 
   useEffect(() => {
     void supabase.auth.getSession().then(async ({ data }) => {
       if (data.session) {
+        setEmail(data.session.user.email ?? null);
         const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
         setSignedIn(aal?.currentLevel === "aal2");
       }
@@ -40,24 +43,44 @@ export default function App() {
           className={`nav-item ${view.name === "inbox" ? "active" : ""}`}
           onClick={() => setView({ name: "inbox" })}
         >
-          <span className="ic">▤</span> Inbox &amp; Deals
+          {view.name === "inbox" && (
+            <motion.span
+              layoutId="side-ind"
+              className="side-ind"
+              transition={{ type: "spring", stiffness: 400, damping: 34 }}
+            />
+          )}
+          <span className="ni-label"><span className="ic">▤</span> Inbox &amp; Deals</span>
         </button>
         {view.name === "deal" && (
           <div className="nav-item active" style={{ cursor: "default" }}>
-            <span className="ic">◈</span> Current deal
+            <motion.span
+              layoutId="side-ind"
+              className="side-ind"
+              transition={{ type: "spring", stiffness: 400, damping: 34 }}
+            />
+            <span className="ni-label"><span className="ic">◈</span> Current deal</span>
           </div>
         )}
 
         <div className="spacer" />
-        <div className="who">
+        <div className="side-synth">
           <span className="badge gold" style={{ fontSize: "0.66rem" }}>◆ Synthetic data</span>
         </div>
-        <button
-          className="nav-item"
-          onClick={() => void supabase.auth.signOut().then(() => setSignedIn(false))}
-        >
-          <span className="ic">⇥</span> Sign out
-        </button>
+        <div className="side-account">
+          <div className="side-ava">{(email ?? "?").slice(0, 1).toUpperCase()}</div>
+          <div className="side-account-info">
+            <div className="side-email">{email ?? "signed in"}</div>
+            <div className="side-plan">Coordinator</div>
+          </div>
+          <button
+            className="side-signout"
+            title="Sign out"
+            onClick={() => void supabase.auth.signOut().then(() => setSignedIn(false))}
+          >
+            ⇥
+          </button>
+        </div>
       </aside>
 
       <main className="main">
