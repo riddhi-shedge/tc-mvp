@@ -580,3 +580,7 @@ button.secondary.sm { padding: 0.28rem 0.55rem; font-size: 0.76rem; }
 .party-contact .faint { color: var(--muted); }
 .party-contact .clickable { cursor: pointer; }
 .party-contact .clickable:hover { color: var(--gold-700); }
+
+/* Archived deal tiles — dimmed, with an unarchive action. */
+.deal-tile.archived { opacity: 0.62; }
+.deal-tile.archived:hover { opacity: 1; }

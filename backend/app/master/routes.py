@@ -139,6 +139,43 @@ def list_transactions(
     return repo.list_transactions()
 
 
+@router.post("/transactions/{transaction_id}/archive")
+def archive_transaction(
+    transaction_id: str,
+    tc: TCUser = Depends(require_tc),
+    repo: MasterRepo = Depends(get_repo),
+) -> dict[str, Any]:
+    """Soft-remove: hide from the active list, keep the full audit trail."""
+    txn = repo.archive_transaction(transaction_id=transaction_id, actor=tc.actor)
+    if txn is None:
+        raise HTTPException(status_code=404, detail="Transaction not found")
+    return txn
+
+
+@router.post("/transactions/{transaction_id}/unarchive")
+def unarchive_transaction(
+    transaction_id: str,
+    tc: TCUser = Depends(require_tc),
+    repo: MasterRepo = Depends(get_repo),
+) -> dict[str, Any]:
+    txn = repo.unarchive_transaction(transaction_id=transaction_id, actor=tc.actor)
+    if txn is None:
+        raise HTTPException(status_code=404, detail="Transaction not found")
+    return txn
+
+
+@router.delete("/transactions/{transaction_id}", status_code=204)
+def delete_transaction(
+    transaction_id: str,
+    tc: TCUser = Depends(require_tc),
+    repo: MasterRepo = Depends(get_repo),
+) -> None:
+    """Hard delete — cascades every child row incl. the audit log. Irreversible;
+    for synthetic/test cleanup. Archive is the compliance-safe alternative."""
+    if not repo.delete_transaction(transaction_id=transaction_id, actor=tc.actor):
+        raise HTTPException(status_code=404, detail="Transaction not found")
+
+
 class ConfirmFieldsRequest(BaseModel):
     field_ids: list[str] = Field(min_length=1)
 

@@ -148,9 +148,51 @@ export function Deal({ id, onBack }: { id: string; onBack: () => void }) {
 
   return (
     <>
-      <button className="secondary" onClick={onBack} style={{ marginBottom: "1rem" }}>
-        ← Inbox &amp; Deals
-      </button>
+      <div className="between" style={{ marginBottom: "1rem" }}>
+        <button className="secondary" onClick={onBack}>← Inbox &amp; Deals</button>
+        <div className="row" style={{ gap: "0.5rem" }}>
+          <button
+            className="secondary"
+            disabled={busy}
+            onClick={async () => {
+              setBusy(true);
+              try {
+                await api.post(`/transactions/${id}/archive`);
+                toast("Deal archived");
+                onBack();
+              } catch (e) {
+                toast(e instanceof Error ? e.message : "Failed to archive", { error: true });
+                setBusy(false);
+              }
+            }}
+          >
+            Archive
+          </button>
+          <button
+            className="danger-ish"
+            disabled={busy}
+            onClick={async () => {
+              if (
+                !window.confirm(
+                  "Permanently delete this deal and everything under it (parties, timeline, tasks, messages, audit log)? This cannot be undone.",
+                )
+              )
+                return;
+              setBusy(true);
+              try {
+                await api.del(`/transactions/${id}`);
+                toast("Deal deleted");
+                onBack();
+              } catch (e) {
+                toast(e instanceof Error ? e.message : "Failed to delete", { error: true });
+                setBusy(false);
+              }
+            }}
+          >
+            Delete
+          </button>
+        </div>
+      </div>
       <div className="deal-header">
         <div className="between">
           <div>

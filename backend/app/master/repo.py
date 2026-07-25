@@ -107,6 +107,16 @@ class MasterRepo(Protocol):
 
     def list_transactions(self) -> list[dict[str, Any]]: ...
 
+    def archive_transaction(
+        self, *, transaction_id: str, actor: str
+    ) -> dict[str, Any] | None: ...
+
+    def unarchive_transaction(
+        self, *, transaction_id: str, actor: str
+    ) -> dict[str, Any] | None: ...
+
+    def delete_transaction(self, *, transaction_id: str, actor: str) -> bool: ...
+
     def list_active_transaction_ids(self) -> list[str]: ...
 
     def transaction_exists(self, transaction_id: str) -> bool: ...
@@ -295,6 +305,53 @@ class SupabaseRepo:
             .data
         }
         return [{**t, "property_address": (props.get(t["id"]) or {}).get("address")} for t in txns]
+
+    def _set_transaction_status(
+        self, *, transaction_id: str, status: str, actor: str, action: str
+    ) -> dict[str, Any] | None:
+        rows = (
+            self._db.table("transactions")
+            .update({"status": status})
+            .eq("id", transaction_id)
+            .execute()
+            .data
+        )
+        if not rows:
+            return None
+        self._audit(
+            transaction_id=transaction_id,
+            actor=actor,
+            action=action,
+            entity_type="transaction",
+            entity_id=transaction_id,
+            details={"status": status},
+        )
+        return rows[0]
+
+    def archive_transaction(self, *, transaction_id: str, actor: str) -> dict[str, Any] | None:
+        return self._set_transaction_status(
+            transaction_id=transaction_id, status="archived", actor=actor,
+            action="transaction.archived",
+        )
+
+    def unarchive_transaction(self, *, transaction_id: str, actor: str) -> dict[str, Any] | None:
+        return self._set_transaction_status(
+            transaction_id=transaction_id, status="open", actor=actor,
+            action="transaction.unarchived",
+        )
+
+    def delete_transaction(self, *, transaction_id: str, actor: str) -> bool:
+        """Hard delete — the transaction row cascades to every child (property,
+        parties, documents, fields, deadlines, tasks, messages, AND the audit
+        log). For synthetic/test cleanup; archive keeps the compliance trail. The
+        PDF blob lives in ingestion's private bucket and is cleared separately."""
+        existed = bool(
+            self._db.table("transactions").select("id").eq("id", transaction_id).execute().data
+        )
+        if not existed:
+            return False
+        self._db.table("transactions").delete().eq("id", transaction_id).execute()
+        return True
 
     def list_active_transaction_ids(self) -> list[str]:
         rows = (

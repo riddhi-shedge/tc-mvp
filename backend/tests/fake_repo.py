@@ -119,6 +119,45 @@ class InMemoryRepo:
     def transaction_exists(self, transaction_id: str) -> bool:
         return transaction_id in self.transactions
 
+    def _set_transaction_status(self, transaction_id, status, actor, action):
+        txn = self.transactions.get(transaction_id)
+        if txn is None:
+            return None
+        txn["status"] = status
+        self._audit(
+            transaction_id=transaction_id,
+            actor=actor,
+            action=action,
+            entity_type="transaction",
+            entity_id=transaction_id,
+            details={"status": status},
+        )
+        return txn
+
+    def archive_transaction(self, *, transaction_id: str, actor: str) -> dict[str, Any] | None:
+        return self._set_transaction_status(
+            transaction_id, "archived", actor, "transaction.archived"
+        )
+
+    def unarchive_transaction(self, *, transaction_id: str, actor: str) -> dict[str, Any] | None:
+        return self._set_transaction_status(transaction_id, "open", actor, "transaction.unarchived")
+
+    def delete_transaction(self, *, transaction_id: str, actor: str) -> bool:
+        if transaction_id not in self.transactions:
+            return False
+        del self.transactions[transaction_id]
+        self.properties.pop(transaction_id, None)
+        for d in (self.parties, self.documents, self.payloads, self.messages):
+            for key in [k for k, v in d.items() if v["transaction_id"] == transaction_id]:
+                del d[key]
+        for name in ("extracted_fields", "deadlines", "tasks", "approvals", "risk_flags",
+                     "reminders", "audit_log"):
+            setattr(
+                self, name,
+                [r for r in getattr(self, name) if r["transaction_id"] != transaction_id],
+            )
+        return True
+
     def confirm_fields(self, *, transaction_id: str, field_ids: list[str], actor: str) -> int:
         confirmed_ids = []
         for field in self.extracted_fields:
