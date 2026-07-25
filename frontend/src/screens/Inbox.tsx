@@ -148,7 +148,7 @@ export function Inbox({ onOpenDeal }: { onOpenDeal: (id: string) => void }) {
         const archived = transactions.filter((t) => t.status === "archived");
         return (
           <div className="card">
-            <div className="between">
+            <div className="between" style={{ marginBottom: "1rem" }}>
               <h2 style={{ margin: 0 }}>🏠 Deals</h2>
               {archived.length > 0 && (
                 <button className="secondary sm" onClick={() => setShowArchived((s) => !s)}>
