@@ -570,3 +570,13 @@ button.secondary.sm { padding: 0.28rem 0.55rem; font-size: 0.76rem; }
   color: var(--green-700); font-weight: 800; font-size: 0.85rem; line-height: 1;
 }
 .task-row.done .task-check { background: var(--green-100); border-color: var(--green-600); }
+
+/* Extraction review: a header strip, then one card per §5 group. */
+.ex-head { margin: 0.4rem 0 0.1rem; }
+.fcard .fgroup-label { margin: 0 0 0.7rem; font-size: 0.78rem; }
+.fcard { padding-top: 0.9rem; }
+
+/* Empty party contact lines — visible, clickable affordance to add. */
+.party-contact .faint { color: var(--muted); }
+.party-contact .clickable { cursor: pointer; }
+.party-contact .clickable:hover { color: var(--gold-700); }

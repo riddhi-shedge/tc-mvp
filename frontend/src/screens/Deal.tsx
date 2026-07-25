@@ -336,52 +336,48 @@ export function Deal({ id, onBack }: { id: string; onBack: () => void }) {
         )}
       </div>
 
-      <div className="card">
-        <div className="between" style={{ marginBottom: "0.9rem" }}>
-          <h2 style={{ margin: 0 }}>🔎 Extraction review</h2>
-          <span className="muted">Claude · §5 fields, per-field confidence</span>
+      <div className="ex-head">
+        <div className="between">
+          <div>
+            <h2 style={{ margin: 0 }}>🔎 Extraction review</h2>
+            <span className="muted">Claude · §5 fields, grouped · per-field confidence</span>
+          </div>
+          {unconfirmed.length > 0 && (
+            <button
+              className="gold"
+              disabled={busy}
+              onClick={() =>
+                void run(
+                  () =>
+                    api.post(`/transactions/${id}/fields/confirm`, {
+                      field_ids: unconfirmed.map((f) => f.id),
+                    }),
+                  `${unconfirmed.length} field${unconfirmed.length > 1 ? "s" : ""} confirmed`,
+                )
+              }
+            >
+              ✓ Confirm {unconfirmed.length} field{unconfirmed.length > 1 ? "s" : ""}
+            </button>
+          )}
         </div>
-        {fields.length === 0 && (
-          <div className="empty"><span className="emoji">🔎</span>No extracted fields yet.</div>
-        )}
-        {fields.length > 0 && (
-          <>
-            {S5_GROUPS.map((grp) => {
-              const inGroup = fields.filter(
-                (f) => (S5_FIELD_GROUP[f.name] ?? "other") === grp.key,
-              );
-              if (inGroup.length === 0) return null;
-              return (
-                <div key={grp.key} className="fgroup">
-                  <div className="fgroup-label">
-                    {grp.icon} {grp.label}
-                  </div>
-                  <div className="field-grid">{inGroup.map((f) => fieldCard(f))}</div>
-                </div>
-              );
-            })}
-            {unconfirmed.length > 0 && (
-              <div style={{ marginTop: "1rem" }}>
-                <button
-                  className="gold"
-                  disabled={busy}
-                  onClick={() =>
-                    void run(
-                      () =>
-                        api.post(`/transactions/${id}/fields/confirm`, {
-                          field_ids: unconfirmed.map((f) => f.id),
-                        }),
-                      `${unconfirmed.length} field${unconfirmed.length > 1 ? "s" : ""} confirmed`,
-                    )
-                  }
-                >
-                  ✓ Confirm {unconfirmed.length} field{unconfirmed.length > 1 ? "s" : ""}
-                </button>
-              </div>
-            )}
-          </>
-        )}
       </div>
+      {fields.length === 0 && (
+        <div className="card">
+          <div className="empty"><span className="emoji">🔎</span>No extracted fields yet.</div>
+        </div>
+      )}
+      {S5_GROUPS.map((grp) => {
+        const inGroup = fields.filter((f) => (S5_FIELD_GROUP[f.name] ?? "other") === grp.key);
+        if (inGroup.length === 0) return null;
+        return (
+          <div key={grp.key} className="card fcard">
+            <div className="fgroup-label">
+              {grp.icon} {grp.label}
+            </div>
+            <div className="field-grid">{inGroup.map((f) => fieldCard(f))}</div>
+          </div>
+        );
+      })}
 
               </>
             ),

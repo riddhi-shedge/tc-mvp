@@ -169,13 +169,21 @@ export function DealDashboard({
             <div className="party-role">{PARTY_ROLE_LABEL[pt.role] ?? pt.role.replace(/_/g, " ")}</div>
           </div>
         </div>
-        {(pt.company || pt.phone || pt.email) && (
-          <div className="party-contact">
-            {pt.company && <div>🏢 {pt.company}</div>}
-            {pt.phone && <div>📞 {pt.phone}</div>}
-            {pt.email && <div>✉️ {pt.email}</div>}
+        <div className="party-contact">
+          {pt.company && <div>🏢 {pt.company}</div>}
+          <div
+            className={pt.email ? "" : "faint clickable"}
+            onClick={pt.email ? undefined : () => startEdit(pt)}
+          >
+            ✉️ {pt.email || "add email"}
           </div>
-        )}
+          <div
+            className={pt.phone ? "" : "faint clickable"}
+            onClick={pt.phone ? undefined : () => startEdit(pt)}
+          >
+            📞 {pt.phone || "add phone"}
+          </div>
+        </div>
         <div className="party-meta">
           <span className="badge navy">{pv.open_tasks.length} open</span>
           <span className="badge ok">{pv.done_tasks.length} done</span>
