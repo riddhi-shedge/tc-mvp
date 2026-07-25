@@ -12,6 +12,7 @@ import uuid
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Protocol
 
+from app.common.db import ThreadLocalSupabase
 from app.contracts.compliance import ComplianceResult
 from app.contracts.fields import DEADLINE_DRIVING
 from app.contracts.payload import Payload
@@ -236,11 +237,15 @@ class SupabaseRepo:
     """Supabase-backed implementation of MasterRepo."""
 
     def __init__(self) -> None:
-        from supabase import create_client
-
-        self._db = create_client(
+        # Thread-local client: this repo is a process-wide singleton used from
+        # FastAPI's threadpool, and the Supabase client isn't thread-safe.
+        self._pool = ThreadLocalSupabase(
             os.environ["SUPABASE_URL"], os.environ["SUPABASE_SERVICE_ROLE_KEY"]
         )
+
+    @property
+    def _db(self) -> Any:
+        return self._pool.client
 
     # -- audit -----------------------------------------------------------------
     def _audit(

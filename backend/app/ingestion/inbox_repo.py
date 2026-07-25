@@ -13,6 +13,8 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any, Protocol
 
+from app.common.db import ThreadLocalSupabase
+
 BUCKET = "ingestion-attachments"
 
 _SAFE_NAME = re.compile(r"[^A-Za-z0-9._-]")
@@ -88,11 +90,15 @@ class InboxRepo(Protocol):
 
 class SupabaseInboxRepo:
     def __init__(self) -> None:
-        from supabase import create_client
-
-        self._db = create_client(
+        # Thread-local client (see app/common/db) — this repo is a singleton used
+        # from FastAPI's threadpool and the Supabase client isn't thread-safe.
+        self._pool = ThreadLocalSupabase(
             os.environ["SUPABASE_URL"], os.environ["SUPABASE_SERVICE_ROLE_KEY"]
         )
+
+    @property
+    def _db(self):
+        return self._pool.client
 
     def store_attachment(self, *, source: str, filename: str, content_base64: str) -> str:
         try:
