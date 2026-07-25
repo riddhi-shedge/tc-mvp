@@ -132,6 +132,9 @@ export const S5_FIELD_NAMES = [
 export const S5_FIELD_GROUP: Record<string, string> = {
   buyer_names: "parties", seller_names: "parties",
   property_address: "property", apn: "property",
+  items_included: "property", items_excluded: "property",
+  home_warranty_paid_by: "allocation", home_warranty_issued_by: "allocation",
+  other_terms: "terms",
   purchase_price: "financial", initial_deposit_amount: "financial",
   increased_deposit_amount: "financial", loan_amount: "financial",
   financing_type: "financial", down_payment: "financial", all_cash: "financial",
@@ -154,6 +157,8 @@ export const S5_GROUPS: { key: string; label: string; icon: string }[] = [
   { key: "dates", label: "Dates", icon: "📅" },
   { key: "contingency", label: "Contingencies", icon: "⏳" },
   { key: "flags", label: "Contingency flags", icon: "🚩" },
+  { key: "allocation", label: "Costs & allocation", icon: "🧾" },
+  { key: "terms", label: "Other terms", icon: "📝" },
   { key: "contacts", label: "Contacts", icon: "📇" },
   { key: "other", label: "Other", icon: "•" },
 ];

@@ -12,6 +12,7 @@ from typing import Any
 
 from app.contracts.fields import DEADLINE_DRIVING
 from app.contracts.payload import Payload
+from app.master.deal_tasks import derive_tasks
 from app.master.parties import derive_parties, party_key, tier_for
 from app.master.repo import (
     _STUB_DRAFT_BODY,
@@ -295,6 +296,50 @@ class InMemoryRepo:
                 actor=actor,
             )
             have.add(party_key(d.role, d.name))
+            created += 1
+        return created
+
+    def derive_tasks_from_fields(self, *, transaction_id: str, actor: str) -> int:
+        confirmed = {
+            f["name"]: f["value"]
+            for f in self.extracted_fields
+            if f["transaction_id"] == transaction_id and f["confirmed"]
+        }
+        desired = derive_tasks(confirmed)
+        if not desired:
+            return 0
+        existing_keys = {
+            t.get("compute_key")
+            for t in self.tasks
+            if t["transaction_id"] == transaction_id
+        }
+        role_to_party: dict[str, str] = {}
+        for p in self.parties.values():
+            if p["transaction_id"] == transaction_id:
+                role_to_party.setdefault(p["role"], p["id"])
+        created = 0
+        for d in desired:
+            if d.key in existing_keys:
+                continue
+            task = {
+                "id": str(uuid.uuid4()),
+                "transaction_id": transaction_id,
+                "title": d.title,
+                "status": "pending",
+                "assigned_party_id": role_to_party.get(d.assign_role),
+                "generated_by": "rule",
+                "compute_key": d.key,
+            }
+            self.tasks.append(task)
+            self._audit(
+                transaction_id=transaction_id,
+                actor=actor,
+                action="task.created",
+                entity_type="task",
+                entity_id=task["id"],
+                details={"source": "rule", "rule": d.key},
+            )
+            existing_keys.add(d.key)
             created += 1
         return created
 

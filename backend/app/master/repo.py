@@ -15,6 +15,7 @@ from typing import Any, Protocol
 from app.contracts.compliance import ComplianceResult
 from app.contracts.fields import DEADLINE_DRIVING
 from app.contracts.payload import Payload
+from app.master.deal_tasks import derive_tasks
 from app.master.parties import derive_parties, party_key, tier_for
 
 
@@ -152,6 +153,8 @@ class MasterRepo(Protocol):
     ) -> dict[str, Any] | None: ...
 
     def derive_parties_from_fields(self, *, transaction_id: str, actor: str) -> int: ...
+
+    def derive_tasks_from_fields(self, *, transaction_id: str, actor: str) -> int: ...
 
     def lender_party(self, transaction_id: str) -> dict[str, Any] | None: ...
 
@@ -675,6 +678,74 @@ class SupabaseRepo:
                 actor=actor,
             )
             have.add(party_key(d.role, d.name))
+            created += 1
+        return created
+
+    def derive_tasks_from_fields(self, *, transaction_id: str, actor: str) -> int:
+        """Create action-item tasks implied by confirmed allocation fields (the
+        home-warranty issuer rule). generated_by='rule' + compute_key make it
+        idempotent and safe from compliance re-runs; assigned to the relevant
+        agent when that party exists."""
+        rows = (
+            self._db.table("extracted_fields")
+            .select("name, value")
+            .eq("transaction_id", transaction_id)
+            .eq("confirmed", True)
+            .execute()
+            .data
+        )
+        desired = derive_tasks({r["name"]: r["value"] for r in rows})
+        if not desired:
+            return 0
+        existing_keys = {
+            t["compute_key"]
+            for t in (
+                self._db.table("tasks")
+                .select("compute_key")
+                .eq("transaction_id", transaction_id)
+                .execute()
+                .data
+            )
+            if t.get("compute_key")
+        }
+        parties = (
+            self._db.table("parties")
+            .select("role, id")
+            .eq("transaction_id", transaction_id)
+            .execute()
+            .data
+        )
+        role_to_party: dict[str, str] = {}
+        for p in parties:
+            role_to_party.setdefault(p["role"], p["id"])
+        created = 0
+        for d in desired:
+            if d.key in existing_keys:
+                continue
+            task = (
+                self._db.table("tasks")
+                .insert(
+                    {
+                        "transaction_id": transaction_id,
+                        "title": d.title,
+                        "status": "pending",
+                        "assigned_party_id": role_to_party.get(d.assign_role),
+                        "generated_by": "rule",
+                        "compute_key": d.key,
+                    }
+                )
+                .execute()
+                .data[0]
+            )
+            self._audit(
+                transaction_id=transaction_id,
+                actor=actor,
+                action="task.created",
+                entity_type="task",
+                entity_id=task["id"],
+                details={"source": "rule", "rule": d.key},
+            )
+            existing_keys.add(d.key)
             created += 1
         return created
 

@@ -93,3 +93,36 @@ contact is sourced from the TC (Phase 6 asks for it if missing).
 v2 list, marks §19's blocker cleared, and the §5 half of the Phase 4 gate is
 open. Default day-counts (17/21/17/7/3/3) remain provisional until Phase 5's
 CA-rules verification.*
+
+---
+
+## v3 additions — 2026-07-25 (review feedback) — NEEDS YOUR VERIFICATION
+
+Five **informational, NON-deadline-driving** fields added from MVP review
+feedback. None gate the timeline (deadline_driving = No for all), so they carry
+no timeline-corruption risk — the reason §5 changes need verification. They only
+need a form-level accuracy check.
+
+| New field | Group | Deadline-driving | Source on the RPA | Notes |
+|---|---|---|---|---|
+| `items_included` | property | **No** | Personal-property / items-included section | e.g. "refrigerator, washer/dryer stay" — comma-separated |
+| `items_excluded` | property | **No** | Items-excluded section | null if none listed |
+| `home_warranty_paid_by` | allocation | **No** | Allocation of Costs (home-warranty line) | **who-pays only** (buyer/seller/split/none) — NEVER an amount (Rule 2, per your "allocation-only" call) |
+| `home_warranty_issued_by` | allocation | **No** | Allocation of Costs (home-warranty line) | issuer named, or "buyer's choice"; null if blank |
+| `other_terms` | terms | **No** | Additional/other-terms clauses | short freeform summary of what is written — never invented |
+
+**Derived rule (not a §5 field):** the home-warranty *issuer* drives an action
+item — `home_warranty_issued_by = "buyer's choice"` → task assigned to the
+**buyer's agent**; a warranty in play with a blank issuer → task to the
+**listing agent**. A named issuer or no warranty creates no task.
+
+**Possession default (no field/flag change):** when `possession_date` is blank,
+the missing-field prompt now pre-fills "at close of escrow" for the TC to
+confirm (non-silent). The timeline engine already resolves "at close of escrow"
+to the COE date; `possession_date` stays deadline-driving and TC-confirmed.
+
+### v3 sign-off
+- [ ] I verified these five informational fields against the current RPA 12/25
+      and the allocation-only (no amounts) constraint. APPROVED for use.
+
+Verified by: ______________________  Date: ____________

@@ -155,9 +155,11 @@ def confirm_fields(
     count = repo.confirm_fields(
         transaction_id=transaction_id, field_ids=body.field_ids, actor=tc.actor
     )
-    # Confirmed names/agents/escrow/title become real Party records (idempotent).
+    # Confirmed names/agents/escrow/title become real Party records (idempotent),
+    # then allocation-rule tasks (assigned to those agents where present).
     parties_created = repo.derive_parties_from_fields(transaction_id=transaction_id, actor=tc.actor)
-    return {"confirmed": count, "parties_created": parties_created}
+    tasks_created = repo.derive_tasks_from_fields(transaction_id=transaction_id, actor=tc.actor)
+    return {"confirmed": count, "parties_created": parties_created, "tasks_created": tasks_created}
 
 
 class AddFieldRequest(BaseModel):
@@ -732,6 +734,7 @@ def write_payload(
             detail="Payload party_id does not belong to this transaction",
         )
     written = repo.write_payload(transaction_id=transaction_id, payload=payload, actor=tc.actor)
-    # Manual-entry fields arrive confirmed — derive their parties immediately.
+    # Manual-entry fields arrive confirmed — derive parties then rule tasks.
     repo.derive_parties_from_fields(transaction_id=transaction_id, actor=tc.actor)
+    repo.derive_tasks_from_fields(transaction_id=transaction_id, actor=tc.actor)
     return written

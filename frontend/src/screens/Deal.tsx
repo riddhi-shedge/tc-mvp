@@ -37,11 +37,17 @@ function humanize(s: string): string {
 }
 /** A short hint for hand-entering a missing deadline-driving field. */
 function fieldHint(name: string): string {
+  if (name === "possession_date") return "defaults to close of escrow if unspecified";
   if (name.endsWith("_date")) return "e.g. 2026-07-10 (YYYY-MM-DD)";
   if (name.endsWith("_days")) return "number of days (or 'waived')";
   if (name === "close_of_escrow") return "a date, or days after acceptance";
-  if (name === "possession_date") return "date/time terms as written";
   return "value as written on the agreement";
+}
+/** Pre-filled value the TC confirms/edits — the RPA's default when the box is
+ *  blank. Non-silent: it's shown for confirmation, never auto-applied. */
+function fieldSuggestion(name: string): string {
+  if (name === "possession_date") return "at close of escrow";
+  return "";
 }
 
 /** The deal screen: extraction review → confirm → timeline → risk flags →
@@ -198,31 +204,31 @@ export function Deal({ id, onBack }: { id: string; onBack: () => void }) {
               <div className="gate-sec-label">
                 Missing — enter from the purchase agreement
               </div>
-              {gate.missing_fields.map((name) => (
-                <div key={name} className="gate-row">
-                  <label className="gate-fname">{humanize(name)}</label>
-                  <input
-                    value={fieldVals[name] ?? ""}
-                    placeholder={fieldHint(name)}
-                    onChange={(e) => setFieldVals({ ...fieldVals, [name]: e.target.value })}
-                  />
-                  <button
-                    className="gold"
-                    disabled={busy || !(fieldVals[name] ?? "").trim()}
-                    onClick={() =>
-                      void run(async () => {
-                        await api.post(`/transactions/${id}/fields`, {
-                          name,
-                          value: (fieldVals[name] ?? "").trim(),
-                        });
-                        setFieldVals((v) => ({ ...v, [name]: "" }));
-                      }, `${humanize(name)} added`)
-                    }
-                  >
-                    Add
-                  </button>
-                </div>
-              ))}
+              {gate.missing_fields.map((name) => {
+                const val = fieldVals[name] ?? fieldSuggestion(name);
+                return (
+                  <div key={name} className="gate-row">
+                    <label className="gate-fname">{humanize(name)}</label>
+                    <input
+                      value={val}
+                      placeholder={fieldHint(name)}
+                      onChange={(e) => setFieldVals({ ...fieldVals, [name]: e.target.value })}
+                    />
+                    <button
+                      className="gold"
+                      disabled={busy || !val.trim()}
+                      onClick={() =>
+                        void run(async () => {
+                          await api.post(`/transactions/${id}/fields`, { name, value: val.trim() });
+                          setFieldVals((v) => ({ ...v, [name]: "" }));
+                        }, `${humanize(name)} added`)
+                      }
+                    >
+                      Add
+                    </button>
+                  </div>
+                );
+              })}
             </div>
           )}
 

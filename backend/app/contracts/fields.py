@@ -31,6 +31,19 @@ S5_FIELDS: tuple[FieldSpec, ...] = (
     # -- Property --------------------------------------------------------------
     FieldSpec("property_address", "property", False, "Full property address incl. city/state/zip"),
     FieldSpec("apn", "property", False, "Assessor's Parcel Number"),
+    FieldSpec(
+        "items_included",
+        "property",
+        False,
+        "Personal property/items INCLUDED in the sale (e.g. 'refrigerator, washer, dryer stay') "
+        "— comma-separated; null if none listed",
+    ),
+    FieldSpec(
+        "items_excluded",
+        "property",
+        False,
+        "Items explicitly EXCLUDED from the sale — comma-separated; null if none listed",
+    ),
     # -- Financial (amounts only — NEVER wiring/account details, Rule 2) --------
     FieldSpec("purchase_price", "financial", False, "Total purchase price in USD"),
     FieldSpec("initial_deposit_amount", "financial", False, "Initial earnest-money deposit amount"),
@@ -112,6 +125,29 @@ S5_FIELDS: tuple[FieldSpec, ...] = (
         "flags",
         False,
         "true/false — insurance contingency applies",
+    ),
+    # -- Cost allocation (WHO pays — allocation ONLY, never a dollar amount; Rule 2) --
+    FieldSpec(
+        "home_warranty_paid_by",
+        "allocation",
+        False,
+        "Who pays for the home-warranty plan: 'buyer' / 'seller' / 'split' / 'none' — "
+        "who-pays only, NEVER an amount (Rule 2)",
+    ),
+    FieldSpec(
+        "home_warranty_issued_by",
+        "allocation",
+        False,
+        "Home-warranty company/plan named on the form, or \"buyer's choice\" if the buyer "
+        "selects the provider; null if blank",
+    ),
+    # -- Other terms -------------------------------------------------------------
+    FieldSpec(
+        "other_terms",
+        "terms",
+        False,
+        "Other/additional terms or special clauses written on the agreement (short freeform "
+        "summary of what is written — never invented); null if none",
     ),
     # -- Contacts (no wiring data ever; lender/title often absent from the form) --
     FieldSpec("buyer_agent", "contacts", False, "Buyer's agent and brokerage"),
