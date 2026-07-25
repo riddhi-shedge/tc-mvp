@@ -126,3 +126,28 @@ to the COE date; `possession_date` stays deadline-driving and TC-confirmed.
       and the allocation-only (no amounts) constraint. APPROVED for use.
 
 Verified by: ______________________  Date: ____________
+
+---
+
+## v4 additions — 2026-07-25 (review feedback) — NEEDS YOUR VERIFICATION
+
+Agent contact fields, so the buyer's/listing agent's email + phone (present in
+the RPA "Real Estate Brokers" / signature block) are extracted and land on the
+Party record. **Informational, NON-deadline-driving** — no timeline risk.
+
+| New field | Group | Deadline-driving | Source on the RPA |
+|---|---|---|---|
+| `buyer_agent_email` | contacts | **No** | Real Estate Brokers / signature block |
+| `buyer_agent_phone` | contacts | **No** | Real Estate Brokers / signature block |
+| `listing_agent_email` | contacts | **No** | Real Estate Brokers / signature block |
+| `listing_agent_phone` | contacts | **No** | Real Estate Brokers / signature block |
+
+Party derivation now populates each agent Party's email/phone from these, and
+**backfills** an existing agent Party on the next confirm (so agents added
+before these fields existed get their contact info filled in).
+
+### v4 sign-off
+- [ ] I verified these four agent-contact fields against the current RPA 12/25.
+      APPROVED for use.
+
+Verified by: ______________________  Date: ____________

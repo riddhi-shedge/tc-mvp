@@ -316,25 +316,36 @@ class InMemoryRepo:
             if f["transaction_id"] == transaction_id and f["confirmed"]
         }
         desired = derive_parties(confirmed)
-        have = {
-            party_key(p["role"], p["name"])
+        by_key = {
+            party_key(p["role"], p["name"]): p
             for p in self.parties.values()
             if p["transaction_id"] == transaction_id
         }
         created = 0
         for d in desired:
-            if party_key(d.role, d.name) in have:
+            match = by_key.get(party_key(d.role, d.name))
+            if match is not None:
+                patch = {
+                    col: val
+                    for col, val in (("email", d.email), ("phone", d.phone), ("company", d.company))
+                    if val and not match.get(col)
+                }
+                if patch:
+                    self.update_party(
+                        transaction_id=transaction_id, party_id=match["id"], fields=patch, actor=actor
+                    )
                 continue
-            self.create_party(
+            new_party = self.create_party(
                 transaction_id=transaction_id,
                 name=d.name,
                 role=d.role,
-                email=None,
+                email=d.email,
+                phone=d.phone,
                 company=d.company,
                 permission_tier=tier_for(d.role),
                 actor=actor,
             )
-            have.add(party_key(d.role, d.name))
+            by_key[party_key(d.role, d.name)] = new_party
             created += 1
         return created
 

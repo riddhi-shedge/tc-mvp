@@ -53,6 +53,18 @@ def test_derive_agent_splits_name_and_brokerage():
     assert agent.name == "Jane Doe" and agent.company == "XYZ Realty"
 
 
+def test_derive_agent_captures_email_and_phone():
+    d = derive_parties(
+        {
+            "buyer_agent": "Jane Doe, XYZ Realty",
+            "buyer_agent_email": "jane@xyz.test",
+            "buyer_agent_phone": "408-555-0101",
+        }
+    )
+    agent = next(p for p in d if p.role == "buyer_agent")
+    assert agent.email == "jane@xyz.test" and agent.phone == "408-555-0101"
+
+
 def test_derive_escrow_and_title_are_companies():
     d = derive_parties({"escrow_holder": "Placer Title Escrow", "title_company": "First American"})
     by_role = {p.role: p for p in d}
@@ -98,6 +110,38 @@ def test_confirming_fields_creates_party_records(client, tc_headers, extractor):
     agent = next(p for p in parties if p["role"] == "buyer_agent")
     assert agent["company"] == "XYZ Realty"
     assert {"escrow", "title", "listing_agent"} <= {p["role"] for p in parties}
+
+
+def test_agent_email_phone_populate_and_backfill(client, tc_headers, extractor):
+    """First confirm creates the agent with no contact; adding the agent's email
+    field then re-deriving backfills it onto the existing party."""
+    extractor.fields = extractor.fields + [
+        ExtractedField(name="buyer_agent", value="Jane Doe, XYZ Realty", confidence=0.9),
+    ]
+    item_id = client.post(WEBHOOK_URL, json=postmark_inbound()).json()["id"]
+    txn = client.post(
+        f"/ingestion/inbox/{item_id}/confirm", json={"decision": "new"}, headers=tc_headers
+    ).json()["transaction_id"]
+    ids = [f["id"] for f in client.get(f"/transactions/{txn}", headers=tc_headers).json()["extracted_fields"]]
+    client.post(f"/transactions/{txn}/fields/confirm", json={"field_ids": ids}, headers=tc_headers)
+
+    agent = next(
+        p for p in client.get(f"/transactions/{txn}", headers=tc_headers).json()["parties"]
+        if p["role"] == "buyer_agent"
+    )
+    assert agent["email"] is None
+
+    client.post(
+        f"/transactions/{txn}/fields",
+        json={"name": "buyer_agent_email", "value": "jane@xyz.test"},
+        headers=tc_headers,
+    )
+    client.post(f"/transactions/{txn}/fields/confirm", json={"field_ids": ids}, headers=tc_headers)
+    agent2 = next(
+        p for p in client.get(f"/transactions/{txn}", headers=tc_headers).json()["parties"]
+        if p["role"] == "buyer_agent"
+    )
+    assert agent2["email"] == "jane@xyz.test"
 
 
 def test_derivation_is_idempotent(client, tc_headers, extractor):

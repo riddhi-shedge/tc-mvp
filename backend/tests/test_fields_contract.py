@@ -51,9 +51,9 @@ def test_verification_of_funds_is_deadline_driving():
 def test_field_count_and_uniqueness():
     names = [f.name for f in S5_FIELDS]
     assert len(names) == len(set(names))
-    # 30 verified v2 fields + 5 informational v3 additions (items in/excluded,
-    # home-warranty paid_by/issued_by, other_terms) — all non-deadline-driving.
-    assert len(names) == 35
+    # 30 verified v2 + 5 v3 (items, home-warranty, other_terms) + 4 v4 agent
+    # contact fields (buyer/listing agent email+phone) — v3/v4 non-deadline-driving.
+    assert len(names) == 39
 
 
 def test_membership_helpers():

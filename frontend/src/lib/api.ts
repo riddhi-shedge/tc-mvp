@@ -62,6 +62,7 @@ export interface DealDocument {
   doc_type: string | null;
   storage_path: string | null;
   status: string;
+  created_at?: string;
 }
 
 export interface TransactionSummary {

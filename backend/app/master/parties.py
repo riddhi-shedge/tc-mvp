@@ -43,6 +43,8 @@ class DerivedParty:
     role: str
     name: str
     company: str | None
+    email: str | None = None
+    phone: str | None = None
 
 
 # Split a multi-name field into people: "A, B", "A and B", "A & B", "A; B".
@@ -77,7 +79,9 @@ def derive_parties(confirmed: dict[str, str]) -> list[DerivedParty]:
         value = (confirmed.get(field) or "").strip()
         if value:
             name, company = _agent(value)
-            out.append(DerivedParty(role, name, company))
+            email = (confirmed.get(f"{field}_email") or "").strip() or None
+            phone = (confirmed.get(f"{field}_phone") or "").strip() or None
+            out.append(DerivedParty(role, name, company, email, phone))
     for field, role in (("escrow_holder", "escrow"), ("title_company", "title")):
         value = (confirmed.get(field) or "").strip()
         if value:

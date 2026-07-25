@@ -151,7 +151,31 @@ S5_FIELDS: tuple[FieldSpec, ...] = (
     ),
     # -- Contacts (no wiring data ever; lender/title often absent from the form) --
     FieldSpec("buyer_agent", "contacts", False, "Buyer's agent and brokerage"),
+    FieldSpec(
+        "buyer_agent_email",
+        "contacts",
+        False,
+        "Buyer's agent email from the Real Estate Brokers / signature block; null if absent",
+    ),
+    FieldSpec(
+        "buyer_agent_phone",
+        "contacts",
+        False,
+        "Buyer's agent phone from the Real Estate Brokers / signature block; null if absent",
+    ),
     FieldSpec("listing_agent", "contacts", False, "Listing agent and brokerage"),
+    FieldSpec(
+        "listing_agent_email",
+        "contacts",
+        False,
+        "Listing agent email from the Real Estate Brokers / signature block; null if absent",
+    ),
+    FieldSpec(
+        "listing_agent_phone",
+        "contacts",
+        False,
+        "Listing agent phone from the Real Estate Brokers / signature block; null if absent",
+    ),
     FieldSpec(
         "escrow_holder",
         "contacts",

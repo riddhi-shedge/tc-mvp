@@ -367,7 +367,12 @@ export function Deal({ id, onBack }: { id: string; onBack: () => void }) {
               <div key={d.id} className="doc-card">
                 <div className="doc-ic">{docIcon(d.doc_type)}</div>
                 <div style={{ minWidth: 0 }}>
-                  <div className="doc-name">{(d.doc_type ?? "unknown").replace(/_/g, " ")}</div>
+                  <div className="doc-name">{humanize(d.doc_type ?? "unknown")}</div>
+                  {d.created_at && (
+                    <div className="muted" style={{ fontSize: "0.76rem", margin: "1px 0 4px" }}>
+                      Uploaded {fmtDate(d.created_at)}
+                    </div>
+                  )}
                   <span className={`badge ${d.status === "confirmed" ? "ok" : "draft"}`}>
                     {d.status}
                   </span>
