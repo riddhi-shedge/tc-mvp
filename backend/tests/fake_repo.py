@@ -12,6 +12,7 @@ from typing import Any
 
 from app.contracts.fields import DEADLINE_DRIVING
 from app.contracts.payload import Payload
+from app.master.parties import derive_parties, party_key, tier_for
 from app.master.repo import (
     _STUB_DRAFT_BODY,
     _STUB_DRAFT_SUBJECT,
@@ -228,7 +229,7 @@ class InMemoryRepo:
         return {"message": message, "why": _STUB_DRAFT_WHY}
 
     def create_party(
-        self, *, transaction_id, name, role, email, permission_tier, actor
+        self, *, transaction_id, name, role, email, permission_tier, actor, phone=None, company=None
     ) -> dict[str, Any]:
         party = {
             "id": str(uuid.uuid4()),
@@ -236,6 +237,8 @@ class InMemoryRepo:
             "name": name,
             "role": role,
             "email": email,
+            "phone": phone,
+            "company": company,
             "permission_tier": permission_tier,
         }
         self.parties[party["id"]] = party
@@ -248,6 +251,52 @@ class InMemoryRepo:
             details={"role": role},
         )
         return party
+
+    def update_party(
+        self, *, transaction_id: str, party_id: str, fields: dict[str, Any], actor: str
+    ) -> dict[str, Any] | None:
+        party = self.parties.get(party_id)
+        if party is None or party["transaction_id"] != transaction_id:
+            return None
+        party.update(fields)
+        self._audit(
+            transaction_id=transaction_id,
+            actor=actor,
+            action="party.updated",
+            entity_type="party",
+            entity_id=party_id,
+            details={"fields": sorted(fields.keys())},
+        )
+        return party
+
+    def derive_parties_from_fields(self, *, transaction_id: str, actor: str) -> int:
+        confirmed = {
+            f["name"]: f["value"]
+            for f in self.extracted_fields
+            if f["transaction_id"] == transaction_id and f["confirmed"]
+        }
+        desired = derive_parties(confirmed)
+        have = {
+            party_key(p["role"], p["name"])
+            for p in self.parties.values()
+            if p["transaction_id"] == transaction_id
+        }
+        created = 0
+        for d in desired:
+            if party_key(d.role, d.name) in have:
+                continue
+            self.create_party(
+                transaction_id=transaction_id,
+                name=d.name,
+                role=d.role,
+                email=None,
+                company=d.company,
+                permission_tier=tier_for(d.role),
+                actor=actor,
+            )
+            have.add(party_key(d.role, d.name))
+            created += 1
+        return created
 
     def lender_party(self, transaction_id: str) -> dict[str, Any] | None:
         return next(

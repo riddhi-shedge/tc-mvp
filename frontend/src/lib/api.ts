@@ -35,6 +35,8 @@ export const api = {
   get: <T>(path: string) => request<T>(path),
   post: <T>(path: string, body?: unknown) =>
     request<T>(path, { method: "POST", body: body === undefined ? undefined : JSON.stringify(body) }),
+  patch: <T>(path: string, body?: unknown) =>
+    request<T>(path, { method: "PATCH", body: body === undefined ? undefined : JSON.stringify(body) }),
 };
 
 // ---- API types (mirror the backend responses we use) -----------------------
@@ -154,8 +156,42 @@ export interface DealParty {
   name: string | null;
   role: string;
   email: string | null;
+  phone?: string | null;
+  company?: string | null;
   permission_tier?: string;
 }
+
+// The full expected cast of a CA residential deal, grouped for display. The
+// backend (app/master/parties.ROLE_TIERS) owns permission tiers; this drives the
+// roster UI — which roles to show and label, and where a slot is still empty.
+export const PARTY_ROSTER: { group: string; roles: { role: string; label: string }[] }[] = [
+  { group: "Principals", roles: [
+    { role: "buyer", label: "Buyer" },
+    { role: "seller", label: "Seller" },
+  ] },
+  { group: "Agents", roles: [
+    { role: "buyer_agent", label: "Buyer's agent" },
+    { role: "listing_agent", label: "Listing agent" },
+  ] },
+  { group: "Escrow · Title · Lender", roles: [
+    { role: "escrow", label: "Escrow" },
+    { role: "title", label: "Title" },
+    { role: "lender", label: "Lender / loan officer" },
+  ] },
+  { group: "Inspection & vendors", roles: [
+    { role: "inspector_general", label: "General inspector" },
+    { role: "inspector_termite", label: "Termite inspector" },
+    { role: "inspector_roof", label: "Roof inspector" },
+    { role: "inspector_sewer", label: "Sewer inspector" },
+    { role: "appraiser", label: "Appraiser" },
+    { role: "home_warranty", label: "Home warranty" },
+    { role: "insurance", label: "Insurance" },
+  ] },
+];
+
+export const PARTY_ROLE_LABEL: Record<string, string> = Object.fromEntries(
+  PARTY_ROSTER.flatMap((g) => g.roles.map((r) => [r.role, r.label])),
+);
 
 export interface AuditRow {
   actor: string;

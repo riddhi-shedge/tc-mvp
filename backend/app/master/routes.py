@@ -27,6 +27,7 @@ from app.contracts.fields import EXTRACTABLE_FIELD_NAMES
 from app.contracts.payload import Payload
 from app.master.dashboard import build_dashboard
 from app.master.drafting import ClaudeDrafter, DraftContext, DraftFailed, Drafter
+from app.master.parties import ROLE_TIERS
 from app.master.party_access import (
     AccessIssuanceFailed,
     AccessIssuerNotConfigured,
@@ -154,7 +155,9 @@ def confirm_fields(
     count = repo.confirm_fields(
         transaction_id=transaction_id, field_ids=body.field_ids, actor=tc.actor
     )
-    return {"confirmed": count}
+    # Confirmed names/agents/escrow/title become real Party records (idempotent).
+    parties_created = repo.derive_parties_from_fields(transaction_id=transaction_id, actor=tc.actor)
+    return {"confirmed": count, "parties_created": parties_created}
 
 
 class AddFieldRequest(BaseModel):
@@ -285,30 +288,29 @@ def create_stub_draft(
     return repo.create_stub_draft(transaction_id=transaction_id, actor=tc.actor)
 
 
+_EMAIL_RE = r"^[^@\s]+@[^@\s]+\.[^@\s]+$"
+
+
 class CreatePartyRequest(BaseModel):
     name: str = Field(min_length=1)
     role: str = Field(min_length=1)
     # Light shape check (avoids the email-validator dep) — caught at entry so
     # the TC fixes a typo now, not at send time.
-    email: str | None = Field(default=None, pattern=r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+    email: str | None = Field(default=None, pattern=_EMAIL_RE)
+    phone: str | None = None
+    company: str | None = None
     permission_tier: str | None = None
 
 
-# Which permission tier a role defaults to (§8). Operator is the TC only.
-_ROLE_TIER = {
-    "lender": "email_participant",
-    "loan_officer": "email_participant",
-    "buyer": "email_participant",
-    "seller": "email_participant",
-    "title": "email_participant",
-    "escrow": "email_participant",
-    "appraiser": "receiving_end",
-    "contractor": "receiving_end",
-    "inspector_general": "receiving_end",
-    "inspector_termite": "receiving_end",
-    "inspector_roof": "receiving_end",
-    "inspector_sewer": "receiving_end",
-}
+class UpdatePartyRequest(BaseModel):
+    """Partial update — only the provided fields change (fill a placeholder's
+    phone/email/brokerage, correct a name). exclude_unset drives the patch."""
+
+    name: str | None = Field(default=None, min_length=1)
+    role: str | None = Field(default=None, min_length=1)
+    email: str | None = Field(default=None, pattern=_EMAIL_RE)
+    phone: str | None = None
+    company: str | None = None
 
 
 @router.post("/transactions/{transaction_id}/parties", status_code=201)
@@ -320,15 +322,52 @@ def create_party(
 ) -> dict[str, Any]:
     if not repo.transaction_exists(transaction_id):
         raise HTTPException(status_code=404, detail="Transaction not found")
-    tier = body.permission_tier or _ROLE_TIER.get(body.role, "email_participant")
+    # Rule 2 defense in depth: no wiring/account language in any contact field.
+    for value in (body.name, body.company, body.email, body.phone):
+        if value and _MONEY_FIELD_NAME.search(value):
+            raise HTTPException(
+                status_code=422, detail="Payment/wiring data is never stored (Rule 2)."
+            )
+    tier = body.permission_tier or ROLE_TIERS.get(body.role, "email_participant")
     return repo.create_party(
         transaction_id=transaction_id,
         name=body.name,
         role=body.role,
         email=body.email,
+        phone=body.phone,
+        company=body.company,
         permission_tier=tier,
         actor=tc.actor,
     )
+
+
+@router.patch("/transactions/{transaction_id}/parties/{party_id}")
+def update_party(
+    transaction_id: str,
+    party_id: str,
+    body: UpdatePartyRequest,
+    tc: TCUser = Depends(require_tc),
+    repo: MasterRepo = Depends(get_repo),
+) -> dict[str, Any]:
+    """Fill in or correct a party's details (a derived contact or an empty
+    roster slot the TC is completing)."""
+    if not repo.transaction_exists(transaction_id):
+        raise HTTPException(status_code=404, detail="Transaction not found")
+    fields = body.model_dump(exclude_unset=True)
+    if not fields:
+        raise HTTPException(status_code=422, detail="No fields to update")
+    # Rule 2 defense in depth: no wiring/account language slips into a contact.
+    for value in fields.values():
+        if isinstance(value, str) and _MONEY_FIELD_NAME.search(value):
+            raise HTTPException(
+                status_code=422, detail="Payment/wiring data is never stored (Rule 2)."
+            )
+    updated = repo.update_party(
+        transaction_id=transaction_id, party_id=party_id, fields=fields, actor=tc.actor
+    )
+    if updated is None:
+        raise HTTPException(status_code=404, detail="Party not found on this transaction")
+    return updated
 
 
 @router.post("/transactions/{transaction_id}/parties/{party_id}/access-token", status_code=201)
@@ -636,4 +675,7 @@ def write_payload(
             status_code=409,
             detail="Payload party_id does not belong to this transaction",
         )
-    return repo.write_payload(transaction_id=transaction_id, payload=payload, actor=tc.actor)
+    written = repo.write_payload(transaction_id=transaction_id, payload=payload, actor=tc.actor)
+    # Manual-entry fields arrive confirmed — derive their parties immediately.
+    repo.derive_parties_from_fields(transaction_id=transaction_id, actor=tc.actor)
+    return written

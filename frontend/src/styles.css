@@ -512,3 +512,33 @@ pre.mail { white-space: pre-wrap; background: var(--surface-2); border: 1px soli
   .gate-row { grid-template-columns: 1fr; }
   .gate-fname { margin-bottom: -0.2rem; }
 }
+
+/* ============================================================================
+   Party roster — grouped cast (principals / agents / escrow-title-lender /
+   vendors), each contact editable, empty expected roles shown as add-slots.
+   ========================================================================== */
+.pgroup { margin-top: 1rem; }
+.pgroup:first-of-type { margin-top: 0.6rem; }
+.pgroup-label {
+  font-size: 0.72rem; letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--navy-600); font-weight: 700; margin-bottom: 0.55rem;
+}
+.party-contact { display: grid; gap: 0.15rem; font-size: 0.84rem; color: var(--ink-2); margin: 0.55rem 0; }
+.party-contact div { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+button.secondary.sm { padding: 0.28rem 0.55rem; font-size: 0.76rem; }
+.pslots { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.55rem; }
+.pslot {
+  padding: 0.32rem 0.6rem; font-size: 0.8rem; border-radius: 999px;
+  background: var(--surface); color: var(--navy-700); border: 1px solid var(--line);
+}
+.pslot:hover:not(:disabled) { border-color: var(--gold-300); background: var(--gold-100); }
+.pslot.empty {
+  border-style: dashed; border-color: var(--gold-300); color: var(--gold-700);
+  background: transparent;
+}
+.pform {
+  margin-top: 0.7rem; padding: 0.8rem; border: 1px solid var(--gold-300);
+  border-radius: var(--r); background: var(--gold-100); display: grid; gap: 0.5rem;
+}
+.pform input { margin: 0; }
+.pform-actions { display: flex; gap: 0.5rem; margin-top: 0.15rem; }

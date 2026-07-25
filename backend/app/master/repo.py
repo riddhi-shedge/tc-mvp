@@ -15,6 +15,7 @@ from typing import Any, Protocol
 from app.contracts.compliance import ComplianceResult
 from app.contracts.fields import DEADLINE_DRIVING
 from app.contracts.payload import Payload
+from app.master.parties import derive_parties, party_key, tier_for
 
 
 class TimelineAlreadyExists(Exception):
@@ -142,7 +143,15 @@ class MasterRepo(Protocol):
         email: str | None,
         permission_tier: str,
         actor: str,
+        phone: str | None = None,
+        company: str | None = None,
     ) -> dict[str, Any]: ...
+
+    def update_party(
+        self, *, transaction_id: str, party_id: str, fields: dict[str, Any], actor: str
+    ) -> dict[str, Any] | None: ...
+
+    def derive_parties_from_fields(self, *, transaction_id: str, actor: str) -> int: ...
 
     def lender_party(self, transaction_id: str) -> dict[str, Any] | None: ...
 
@@ -562,6 +571,8 @@ class SupabaseRepo:
         email: str | None,
         permission_tier: str,
         actor: str,
+        phone: str | None = None,
+        company: str | None = None,
     ) -> dict[str, Any]:
         party = (
             self._db.table("parties")
@@ -571,6 +582,8 @@ class SupabaseRepo:
                     "name": name,
                     "role": role,
                     "email": email,
+                    "phone": phone,
+                    "company": company,
                     "permission_tier": permission_tier,
                 }
             )
@@ -586,6 +599,70 @@ class SupabaseRepo:
             details={"role": role},
         )
         return party
+
+    def update_party(
+        self, *, transaction_id: str, party_id: str, fields: dict[str, Any], actor: str
+    ) -> dict[str, Any] | None:
+        rows = (
+            self._db.table("parties")
+            .update(fields)
+            .eq("id", party_id)
+            .eq("transaction_id", transaction_id)
+            .execute()
+            .data
+        )
+        if not rows:
+            return None
+        self._audit(
+            transaction_id=transaction_id,
+            actor=actor,
+            action="party.updated",
+            entity_type="party",
+            entity_id=party_id,
+            # Field NAMES only — never the contact values (Rule 5 logging).
+            details={"fields": sorted(fields.keys())},
+        )
+        return rows[0]
+
+    def derive_parties_from_fields(self, *, transaction_id: str, actor: str) -> int:
+        """Create the Party records implied by the deal's CONFIRMED §5 fields
+        (buyers/sellers/agents/escrow/title). Idempotent: skips any (role, name)
+        that already exists, so re-confirming never duplicates a contact."""
+        rows = (
+            self._db.table("extracted_fields")
+            .select("name, value")
+            .eq("transaction_id", transaction_id)
+            .eq("confirmed", True)
+            .execute()
+            .data
+        )
+        desired = derive_parties({r["name"]: r["value"] for r in rows})
+        if not desired:
+            return 0
+        existing = (
+            self._db.table("parties")
+            .select("role, name")
+            .eq("transaction_id", transaction_id)
+            .execute()
+            .data
+        )
+        have = {party_key(p["role"], p["name"]) for p in existing}
+        created = 0
+        for d in desired:
+            if party_key(d.role, d.name) in have:
+                continue
+            self.create_party(
+                transaction_id=transaction_id,
+                name=d.name,
+                role=d.role,
+                email=None,
+                company=d.company,
+                permission_tier=tier_for(d.role),
+                actor=actor,
+            )
+            have.add(party_key(d.role, d.name))
+            created += 1
+        return created
 
     def lender_party(self, transaction_id: str) -> dict[str, Any] | None:
         rows = (

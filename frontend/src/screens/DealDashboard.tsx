@@ -2,11 +2,14 @@ import { useCallback, useEffect, useState } from "react";
 import {
   api,
   Dashboard,
+  DashboardPartyView,
   DealParty,
   DealRiskFlag,
   FullState,
   isReceivingEnd,
   PartyAccessToken,
+  PARTY_ROLE_LABEL,
+  PARTY_ROSTER,
   Task,
 } from "../lib/api";
 import { Ring, toast } from "../lib/ui";
@@ -54,6 +57,16 @@ export function DealDashboard({
   const [busy, setBusy] = useState(false);
   const [tokens, setTokens] = useState<Record<string, string>>({});
   const [assignTo, setAssignTo] = useState<Record<string, string>>({});
+  // Party editing / adding: which party id is open for edit, or which role is
+  // being added, plus the in-progress contact fields.
+  const [editing, setEditing] = useState<string | null>(null);
+  const [adding, setAdding] = useState<string | null>(null);
+  const [pForm, setPForm] = useState<{
+    name: string;
+    company: string;
+    phone: string;
+    email: string;
+  }>({ name: "", company: "", phone: "", email: "" });
 
   const refresh = useCallback(async () => {
     try {
@@ -98,6 +111,109 @@ export function DealDashboard({
   const buyers = Math.max(p.buyers_total, 1);
   const unassigned: Task[] = state.tasks.filter((t) => t.assigned_party_id === null);
   const parties: DealParty[] = state.parties;
+
+  const rosterRoles = new Set(PARTY_ROSTER.flatMap((g) => g.roles.map((r) => r.role)));
+  const otherParties = dash.parties.filter((v) => !rosterRoles.has(v.party.role));
+
+  function contactPayload(): Record<string, string> {
+    const out: Record<string, string> = {};
+    if (pForm.name.trim()) out.name = pForm.name.trim();
+    if (pForm.company.trim()) out.company = pForm.company.trim();
+    if (pForm.phone.trim()) out.phone = pForm.phone.trim();
+    if (pForm.email.trim()) out.email = pForm.email.trim();
+    return out;
+  }
+  function startEdit(pt: DealParty) {
+    setAdding(null);
+    setEditing(pt.id);
+    setPForm({
+      name: pt.name ?? "",
+      company: pt.company ?? "",
+      phone: pt.phone ?? "",
+      email: pt.email ?? "",
+    });
+  }
+  function startAdd(role: string) {
+    setEditing(null);
+    setAdding(role);
+    setPForm({ name: "", company: "", phone: "", email: "" });
+  }
+  function cancelForm() {
+    setEditing(null);
+    setAdding(null);
+  }
+  function contactForm(onSave: () => void, saveLabel: string) {
+    return (
+      <div className="pform">
+        <input placeholder="Name" value={pForm.name} onChange={(e) => setPForm({ ...pForm, name: e.target.value })} />
+        <input placeholder="Company / brokerage" value={pForm.company} onChange={(e) => setPForm({ ...pForm, company: e.target.value })} />
+        <input placeholder="Phone" value={pForm.phone} onChange={(e) => setPForm({ ...pForm, phone: e.target.value })} />
+        <input placeholder="Email" value={pForm.email} onChange={(e) => setPForm({ ...pForm, email: e.target.value })} />
+        <div className="pform-actions">
+          <button className="gold" disabled={busy || !pForm.name.trim()} onClick={onSave}>{saveLabel}</button>
+          <button className="secondary" disabled={busy} onClick={cancelForm}>Cancel</button>
+        </div>
+      </div>
+    );
+  }
+  function partyCard(pv: DashboardPartyView) {
+    const pt = pv.party;
+    return (
+      <motion.div key={pt.id} className="party-card" variants={itemUp}>
+        <div className="party-top">
+          <div className="avatar" style={{ background: avatarColor(pt.role) }}>{initials(pt.name, pt.role)}</div>
+          <div style={{ minWidth: 0 }}>
+            <div className="party-name">{pt.name ?? "(unnamed)"}</div>
+            <div className="party-role">{PARTY_ROLE_LABEL[pt.role] ?? pt.role.replace(/_/g, " ")}</div>
+          </div>
+        </div>
+        {(pt.company || pt.phone || pt.email) && (
+          <div className="party-contact">
+            {pt.company && <div>🏢 {pt.company}</div>}
+            {pt.phone && <div>📞 {pt.phone}</div>}
+            {pt.email && <div>✉️ {pt.email}</div>}
+          </div>
+        )}
+        <div className="party-meta">
+          <span className="badge navy">{pv.open_tasks.length} open</span>
+          <span className="badge ok">{pv.done_tasks.length} done</span>
+          {pv.last_message_status && <span className="badge gold">✉ {pv.last_message_status}</span>}
+        </div>
+        <div className="party-actions">
+          <button className="secondary sm" disabled={busy} onClick={() => startEdit(pt)}>✎ Edit</button>
+          {isReceivingEnd(pt) && (
+            <button
+              className="secondary sm"
+              disabled={busy}
+              onClick={() =>
+                void run(async () => {
+                  const r = await api.post<PartyAccessToken>(
+                    `/transactions/${id}/parties/${pt.id}/access-token`,
+                  );
+                  setTokens((t) => ({ ...t, [pt.id]: r.access_token }));
+                }, "Access link generated")
+              }
+            >
+              🔗 Access link
+            </button>
+          )}
+        </div>
+        {editing === pt.id &&
+          contactForm(() => {
+            void run(async () => {
+              await api.patch(`/transactions/${id}/parties/${pt.id}`, contactPayload());
+              cancelForm();
+            }, "Party updated");
+          }, "Save")}
+        {tokens[pt.id] && (
+          <div className="token-box">
+            <textarea readOnly rows={2} value={tokens[pt.id]} />
+            <p className="muted">Scoped to their own task only — enforced by the database.</p>
+          </div>
+        )}
+      </motion.div>
+    );
+  }
 
   return (
     <>
@@ -161,58 +277,67 @@ export function DealDashboard({
         </motion.div>
       </div>
 
-      {/* ---- Party roster ---- */}
+      {/* ---- Party roster (grouped; auto-filled from the contract) ---- */}
       <div className="card">
-        <h2>👥 Parties</h2>
-        {dash.parties.length === 0 && (
-          <div className="empty"><span className="emoji">🤝</span>No parties on the deal yet.</div>
-        )}
-        <motion.div className="roster" initial="hidden" animate="visible" variants={listStagger}>
-          {dash.parties.map((pv) => (
-            <motion.div key={pv.party.id} className="party-card" variants={itemUp}>
-              <div className="party-top">
-                <div className="avatar" style={{ background: avatarColor(pv.party.role) }}>
-                  {initials(pv.party.name, pv.party.role)}
-                </div>
-                <div>
-                  <div className="party-name">{pv.party.name ?? "(unnamed)"}</div>
-                  <div className="party-role">{pv.party.role.replace(/_/g, " ")}</div>
-                </div>
-              </div>
-              <div className="party-meta">
-                <span className="badge navy">{pv.open_tasks.length} open</span>
-                <span className="badge ok">{pv.done_tasks.length} done</span>
-                {pv.last_message_status && (
-                  <span className="badge gold">✉ {pv.last_message_status}</span>
-                )}
-              </div>
-              {isReceivingEnd(pv.party) && (
-                <div className="party-actions">
-                  <button
-                    className="secondary"
-                    disabled={busy}
-                    onClick={() =>
-                      void run(async () => {
-                        const r = await api.post<PartyAccessToken>(
-                          `/transactions/${id}/parties/${pv.party.id}/access-token`,
-                        );
-                        setTokens((t) => ({ ...t, [pv.party.id]: r.access_token }));
-                      }, "Access link generated")
-                    }
-                  >
-                    🔗 Generate access link
-                  </button>
-                </div>
+        <div className="between" style={{ marginBottom: "0.2rem" }}>
+          <h2 style={{ margin: 0 }}>👥 Parties</h2>
+          <span className="muted">Auto-filled from the contract · complete the rest</span>
+        </div>
+
+        {PARTY_ROSTER.map((grp) => {
+          const groupRoles = grp.roles.map((r) => r.role);
+          const cards = dash.parties.filter((v) => groupRoles.includes(v.party.role));
+          return (
+            <div key={grp.group} className="pgroup">
+              <div className="pgroup-label">{grp.group}</div>
+              {cards.length > 0 && (
+                <motion.div
+                  className="roster"
+                  initial="hidden"
+                  animate="visible"
+                  variants={listStagger}
+                >
+                  {cards.map((pv) => partyCard(pv))}
+                </motion.div>
               )}
-              {tokens[pv.party.id] && (
-                <div className="token-box">
-                  <textarea readOnly rows={2} value={tokens[pv.party.id]} />
-                  <p className="muted">Scoped to their own task only — enforced by the database.</p>
-                </div>
-              )}
+              <div className="pslots">
+                {grp.roles.map((r) => {
+                  const has = dash.parties.some((v) => v.party.role === r.role);
+                  return (
+                    <button
+                      key={r.role}
+                      className={`pslot ${has ? "" : "empty"}`}
+                      disabled={busy}
+                      onClick={() => startAdd(r.role)}
+                    >
+                      ＋ {has ? `add ${r.label.toLowerCase()}` : r.label}
+                    </button>
+                  );
+                })}
+              </div>
+              {adding !== null &&
+                groupRoles.includes(adding) &&
+                contactForm(() => {
+                  void run(async () => {
+                    await api.post(`/transactions/${id}/parties`, {
+                      role: adding,
+                      ...contactPayload(),
+                    });
+                    cancelForm();
+                  }, `${PARTY_ROLE_LABEL[adding] ?? adding} added`);
+                }, "Add party")}
+            </div>
+          );
+        })}
+
+        {otherParties.length > 0 && (
+          <div className="pgroup">
+            <div className="pgroup-label">Other</div>
+            <motion.div className="roster" initial="hidden" animate="visible" variants={listStagger}>
+              {otherParties.map((pv) => partyCard(pv))}
             </motion.div>
-          ))}
-        </motion.div>
+          </div>
+        )}
       </div>
 
       {/* ---- Unassigned tasks ---- */}
