@@ -1,5 +1,14 @@
 import { useCallback, useEffect, useState } from "react";
-import { api, FullState, Message } from "../lib/api";
+import {
+  api,
+  Deadline,
+  FIELD_DEADLINE_KEYWORD,
+  FullState,
+  Message,
+  S5_FIELD_GROUP,
+  S5_GROUPS,
+} from "../lib/api";
+import { fmtDate, fmtDateTime } from "../lib/format";
 import { DealDashboard } from "./DealDashboard";
 import { DealTimeline } from "./DealTimeline";
 import { AnimatedTabs, CountUp, toast } from "../lib/ui";
@@ -83,6 +92,43 @@ export function Deal({ id, onBack }: { id: string; onBack: () => void }) {
   const unconfirmed = fields.filter((f) => !f.confirmed);
   const gate = state.timeline_gate;
   const blocking = gate ? gate.missing_fields.length + gate.unconfirmed_fields.length : 0;
+
+  // The CA-engine-computed date for a deadline-driving field (never recomputed
+  // in the browser — we surface the deadline the compliance run produced).
+  const deadlines: Deadline[] = state.deadlines;
+  function exactDate(fieldName: string): string | null {
+    const kw = FIELD_DEADLINE_KEYWORD[fieldName];
+    if (!kw) return null;
+    const dl = deadlines.find((d) => d.name.toLowerCase().includes(kw));
+    return dl ? fmtDate(dl.due_date) : null;
+  }
+  function fieldCard(f: FullState["extracted_fields"][number]) {
+    const pct = Math.round(f.confidence * 100);
+    const resolved = exactDate(f.name);
+    return (
+      <div key={f.id} className={`field-card ${f.confirmed ? "confirmed" : ""}`}>
+        {f.confirmed && <span className="fc-check">✓</span>}
+        <div className="fc-label">
+          {f.name.replace(/_/g, " ")}
+          {f.deadline_driving && <span className="badge gold">deadline</span>}
+        </div>
+        <div className="fc-value">{f.value}</div>
+        {resolved && <div className="fc-date">→ {resolved}</div>}
+        <div className="fc-bar">
+          <span className={f.confidence >= 0.7 ? "high" : "low"} style={{ width: `${pct}%` }} />
+        </div>
+        <div className="fc-foot">
+          <span className="muted">{pct}% confidence</span>
+          <span
+            className={f.confirmed ? "" : "muted"}
+            style={f.confirmed ? { color: "var(--green-700)", fontWeight: 600 } : undefined}
+          >
+            {f.confirmed ? "confirmed" : "pending"}
+          </span>
+        </div>
+      </div>
+    );
+  }
   const drafts: Message[] = state.messages.filter((m) => m.status === "draft");
   const approved: Message[] = state.messages.filter((m) => m.status === "approved");
   const sent = state.messages.filter((m) => m.status === "sent");
@@ -115,7 +161,7 @@ export function Deal({ id, onBack }: { id: string; onBack: () => void }) {
           <div className="kpi">
             <div className="k-label">Close of escrow</div>
             <div className="k-value accent">
-              {coe ? coe.due_date : "—"}
+              {coe ? fmtDate(coe.due_date) : "—"}
             </div>
           </div>
           <div className="kpi">
@@ -294,30 +340,20 @@ export function Deal({ id, onBack }: { id: string; onBack: () => void }) {
         )}
         {fields.length > 0 && (
           <>
-            <div className="field-grid">
-              {fields.map((f) => {
-                const pct = Math.round(f.confidence * 100);
-                return (
-                  <div key={f.id} className={`field-card ${f.confirmed ? "confirmed" : ""}`}>
-                    {f.confirmed && <span className="fc-check">✓</span>}
-                    <div className="fc-label">
-                      {f.name.replace(/_/g, " ")}
-                      {f.deadline_driving && <span className="badge gold">deadline</span>}
-                    </div>
-                    <div className="fc-value">{f.value}</div>
-                    <div className="fc-bar">
-                      <span className={f.confidence >= 0.7 ? "high" : "low"} style={{ width: `${pct}%` }} />
-                    </div>
-                    <div className="fc-foot">
-                      <span className="muted">{pct}% confidence</span>
-                      <span className={f.confirmed ? "" : "muted"} style={f.confirmed ? { color: "var(--green-700)", fontWeight: 600 } : undefined}>
-                        {f.confirmed ? "confirmed" : "pending"}
-                      </span>
-                    </div>
+            {S5_GROUPS.map((grp) => {
+              const inGroup = fields.filter(
+                (f) => (S5_FIELD_GROUP[f.name] ?? "other") === grp.key,
+              );
+              if (inGroup.length === 0) return null;
+              return (
+                <div key={grp.key} className="fgroup">
+                  <div className="fgroup-label">
+                    {grp.icon} {grp.label}
                   </div>
-                );
-              })}
-            </div>
+                  <div className="field-grid">{inGroup.map((f) => fieldCard(f))}</div>
+                </div>
+              );
+            })}
             {unconfirmed.length > 0 && (
               <div style={{ marginTop: "1rem" }}>
                 <button
@@ -507,7 +543,7 @@ export function Deal({ id, onBack }: { id: string; onBack: () => void }) {
           <div key={m.id} className="mailcard">
             <div className="mailcard-head">
               <span className="mailcard-to">{m.subject}</span>
-              <span className="badge sent">✓ sent · {m.sent_at}</span>
+              <span className="badge sent">✓ sent · {fmtDateTime(m.sent_at)}</span>
             </div>
           </div>
         ))}
@@ -530,7 +566,7 @@ export function Deal({ id, onBack }: { id: string; onBack: () => void }) {
               <div>
                 <div className="fd-title">{humanize(a.action)}</div>
                 <div className="fd-actor">
-                  {a.actor} · {new Date(a.created_at).toLocaleString()}
+                  {a.actor} · {fmtDateTime(a.created_at)}
                 </div>
               </div>
             </li>

@@ -128,6 +128,50 @@ export const S5_FIELD_NAMES = [
   "lender_contact",
 ] as const;
 
+// §5 field → display group (mirror of app/contracts/fields.py FieldSpec.group).
+export const S5_FIELD_GROUP: Record<string, string> = {
+  buyer_names: "parties", seller_names: "parties",
+  property_address: "property", apn: "property",
+  purchase_price: "financial", initial_deposit_amount: "financial",
+  increased_deposit_amount: "financial", loan_amount: "financial",
+  financing_type: "financial", down_payment: "financial", all_cash: "financial",
+  acceptance_date: "dates", close_of_escrow: "dates", possession_date: "dates",
+  emd_due_days: "contingency", inspection_contingency_days: "contingency",
+  loan_contingency_days: "contingency", appraisal_contingency_days: "contingency",
+  insurance_contingency_days: "contingency", disclosure_delivery_days: "contingency",
+  verification_of_funds_days: "contingency",
+  loan_contingency_present: "flags", appraisal_contingency_present: "flags",
+  inspection_contingency_present: "flags", insurance_contingency_present: "flags",
+  buyer_agent: "contacts", listing_agent: "contacts", escrow_holder: "contacts",
+  title_company: "contacts", lender_contact: "contacts",
+};
+
+// Ordered, labelled groups for the extraction-review sections.
+export const S5_GROUPS: { key: string; label: string; icon: string }[] = [
+  { key: "property", label: "Property", icon: "🏠" },
+  { key: "parties", label: "Parties", icon: "👥" },
+  { key: "financial", label: "Financial", icon: "💵" },
+  { key: "dates", label: "Dates", icon: "📅" },
+  { key: "contingency", label: "Contingencies", icon: "⏳" },
+  { key: "flags", label: "Contingency flags", icon: "🚩" },
+  { key: "contacts", label: "Contacts", icon: "📇" },
+  { key: "other", label: "Other", icon: "•" },
+];
+
+// A deadline-driving field → keyword found in its computed Deadline's name, so
+// the extraction card can show the resolved calendar date (from the CA engine —
+// never recomputed in the browser) next to the raw day-count.
+export const FIELD_DEADLINE_KEYWORD: Record<string, string> = {
+  acceptance_date: "acceptance",
+  close_of_escrow: "escrow",
+  emd_due_days: "earnest",
+  inspection_contingency_days: "inspection",
+  loan_contingency_days: "loan",
+  appraisal_contingency_days: "appraisal",
+  insurance_contingency_days: "insurance",
+  disclosure_delivery_days: "disclosure",
+};
+
 export interface Deadline {
   id: string;
   name: string;

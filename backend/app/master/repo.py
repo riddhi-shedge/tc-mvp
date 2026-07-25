@@ -159,6 +159,20 @@ class MasterRepo(Protocol):
         self, *, transaction_id: str, task_id: str, party_id: str, actor: str
     ) -> dict[str, Any] | None: ...
 
+    def create_task(
+        self,
+        *,
+        transaction_id: str,
+        title: str,
+        actor: str,
+        deadline_id: str | None = None,
+        assigned_party_id: str | None = None,
+    ) -> dict[str, Any]: ...
+
+    def set_task_status(
+        self, *, transaction_id: str, task_id: str, status: str, actor: str
+    ) -> dict[str, Any] | None: ...
+
     def loan_deadline_iso(self, transaction_id: str) -> str | None: ...
 
     def create_message(
@@ -696,6 +710,65 @@ class SupabaseRepo:
             entity_type="task",
             entity_id=task_id,
             details={"party_id": party_id},
+        )
+        return rows[0]
+
+    def create_task(
+        self,
+        *,
+        transaction_id: str,
+        title: str,
+        actor: str,
+        deadline_id: str | None = None,
+        assigned_party_id: str | None = None,
+    ) -> dict[str, Any]:
+        """A TC's own ad-hoc task. Tagged generated_by='tc' so a compliance
+        re-run (which only clears its own prior-run rows) never removes it."""
+        task = (
+            self._db.table("tasks")
+            .insert(
+                {
+                    "transaction_id": transaction_id,
+                    "title": title,
+                    "status": "pending",
+                    "deadline_id": deadline_id,
+                    "assigned_party_id": assigned_party_id,
+                    "generated_by": "tc",
+                }
+            )
+            .execute()
+            .data[0]
+        )
+        self._audit(
+            transaction_id=transaction_id,
+            actor=actor,
+            action="task.created",
+            entity_type="task",
+            entity_id=task["id"],
+            details={"source": "tc"},
+        )
+        return task
+
+    def set_task_status(
+        self, *, transaction_id: str, task_id: str, status: str, actor: str
+    ) -> dict[str, Any] | None:
+        rows = (
+            self._db.table("tasks")
+            .update({"status": status})
+            .eq("id", task_id)
+            .eq("transaction_id", transaction_id)
+            .execute()
+            .data
+        )
+        if not rows:
+            return None
+        self._audit(
+            transaction_id=transaction_id,
+            actor=actor,
+            action="task.status_changed",
+            entity_type="task",
+            entity_id=task_id,
+            details={"status": status},
         )
         return rows[0]
 

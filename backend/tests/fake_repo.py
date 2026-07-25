@@ -333,6 +333,55 @@ class InMemoryRepo:
         )
         return task
 
+    def create_task(
+        self,
+        *,
+        transaction_id: str,
+        title: str,
+        actor: str,
+        deadline_id: str | None = None,
+        assigned_party_id: str | None = None,
+    ) -> dict[str, Any]:
+        task = {
+            "id": str(uuid.uuid4()),
+            "transaction_id": transaction_id,
+            "title": title,
+            "status": "pending",
+            "deadline_id": deadline_id,
+            "assigned_party_id": assigned_party_id,
+            "generated_by": "tc",
+        }
+        self.tasks.append(task)
+        self._audit(
+            transaction_id=transaction_id,
+            actor=actor,
+            action="task.created",
+            entity_type="task",
+            entity_id=task["id"],
+            details={"source": "tc"},
+        )
+        return task
+
+    def set_task_status(
+        self, *, transaction_id: str, task_id: str, status: str, actor: str
+    ) -> dict[str, Any] | None:
+        task = next(
+            (t for t in self.tasks if t["id"] == task_id and t["transaction_id"] == transaction_id),
+            None,
+        )
+        if task is None:
+            return None
+        task["status"] = status
+        self._audit(
+            transaction_id=transaction_id,
+            actor=actor,
+            action="task.status_changed",
+            entity_type="task",
+            entity_id=task_id,
+            details={"status": status},
+        )
+        return task
+
     def loan_deadline_iso(self, transaction_id: str) -> str | None:
         return next(
             (

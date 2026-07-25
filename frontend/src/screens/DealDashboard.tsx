@@ -13,6 +13,7 @@ import {
   Task,
 } from "../lib/api";
 import { Ring, toast } from "../lib/ui";
+import { fmtDateTime } from "../lib/format";
 import { motion } from "framer-motion";
 
 const listStagger = { visible: { transition: { staggerChildren: 0.055 } } };
@@ -57,6 +58,7 @@ export function DealDashboard({
   const [busy, setBusy] = useState(false);
   const [tokens, setTokens] = useState<Record<string, string>>({});
   const [assignTo, setAssignTo] = useState<Record<string, string>>({});
+  const [newTask, setNewTask] = useState("");
   // Party editing / adding: which party id is open for edit, or which role is
   // being added, plus the in-progress contact fields.
   const [editing, setEditing] = useState<string | null>(null);
@@ -215,6 +217,15 @@ export function DealDashboard({
     );
   }
 
+  function addTask() {
+    const title = newTask.trim();
+    if (!title) return;
+    void run(async () => {
+      await api.post(`/transactions/${id}/tasks`, { title });
+      setNewTask("");
+    }, "Task added");
+  }
+
   return (
     <>
       {/* ---- Bento overview ---- */}
@@ -340,6 +351,67 @@ export function DealDashboard({
         )}
       </div>
 
+      {/* ---- Tasks (compliance + the TC's own) ---- */}
+      <div className="card">
+        <div className="between" style={{ marginBottom: "0.6rem" }}>
+          <h2 style={{ margin: 0 }}>✅ Tasks</h2>
+          <span className="muted">
+            {state.tasks.filter((t) => !["done", "complete"].includes(t.status)).length} open
+          </span>
+        </div>
+        <div className="row" style={{ gap: "0.5rem", marginBottom: "0.7rem" }}>
+          <input
+            placeholder="Add your own task…"
+            value={newTask}
+            onChange={(e) => setNewTask(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && newTask.trim()) addTask();
+            }}
+          />
+          <button className="gold" disabled={busy || !newTask.trim()} onClick={addTask}>
+            ＋ Add task
+          </button>
+        </div>
+        {state.tasks.length === 0 && (
+          <div className="empty"><span className="emoji">📋</span>No tasks yet.</div>
+        )}
+        <div className="stack">
+          {state.tasks.map((t) => {
+            const done = ["done", "complete"].includes(t.status);
+            const who = t.assigned_party_id
+              ? parties.find((p) => p.id === t.assigned_party_id)?.name ?? "assigned"
+              : null;
+            return (
+              <div key={t.id} className={`task-row ${done ? "done" : ""}`}>
+                <button
+                  className="task-check"
+                  disabled={busy}
+                  title={done ? "Reopen" : "Mark done"}
+                  onClick={() =>
+                    void run(
+                      () =>
+                        api.patch(`/transactions/${id}/tasks/${t.id}`, {
+                          status: done ? "pending" : "done",
+                        }),
+                      done ? "Reopened" : "Task done",
+                    )
+                  }
+                >
+                  {done ? "✓" : ""}
+                </button>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div className="task-title">{t.title}</div>
+                  {who && (
+                    <div className="muted" style={{ fontSize: "0.78rem" }}>→ {who}</div>
+                  )}
+                </div>
+                <span className={`badge ${done ? "ok" : "draft"}`}>{t.status.replace(/_/g, " ")}</span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
       {/* ---- Unassigned tasks ---- */}
       {unassigned.length > 0 && (
         <div className="card">
@@ -412,7 +484,7 @@ export function DealDashboard({
                   <div className="doc-ic">📤</div>
                   <div style={{ minWidth: 0, flex: 1 }} className="between">
                     <span style={{ color: "var(--ink)" }}>{m.subject ?? "(no subject)"}</span>
-                    <span className="badge sent">sent · {m.sent_at}</span>
+                    <span className="badge sent">sent · {fmtDateTime(m.sent_at)}</span>
                   </div>
                 </div>
               ))}

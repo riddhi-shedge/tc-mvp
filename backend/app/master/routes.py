@@ -407,6 +407,62 @@ class AssignTaskRequest(BaseModel):
     party_id: str = Field(min_length=1)
 
 
+_TASK_STATUSES = frozenset({"pending", "in_progress", "done", "blocked"})
+
+
+class CreateTaskRequest(BaseModel):
+    title: str = Field(min_length=1)
+    deadline_id: str | None = None
+    assigned_party_id: str | None = None
+
+
+class UpdateTaskRequest(BaseModel):
+    status: str = Field(min_length=1)
+
+
+@router.post("/transactions/{transaction_id}/tasks", status_code=201)
+def create_task(
+    transaction_id: str,
+    body: CreateTaskRequest,
+    tc: TCUser = Depends(require_tc),
+    repo: MasterRepo = Depends(get_repo),
+) -> dict[str, Any]:
+    """A TC's own ad-hoc task, alongside the compliance-generated ones."""
+    if not repo.transaction_exists(transaction_id):
+        raise HTTPException(status_code=404, detail="Transaction not found")
+    if body.assigned_party_id is not None and not repo.party_belongs_to_transaction(
+        party_id=body.assigned_party_id, transaction_id=transaction_id
+    ):
+        raise HTTPException(status_code=404, detail="Party not found on this transaction")
+    return repo.create_task(
+        transaction_id=transaction_id,
+        title=body.title.strip(),
+        deadline_id=body.deadline_id,
+        assigned_party_id=body.assigned_party_id,
+        actor=tc.actor,
+    )
+
+
+@router.patch("/transactions/{transaction_id}/tasks/{task_id}")
+def update_task(
+    transaction_id: str,
+    task_id: str,
+    body: UpdateTaskRequest,
+    tc: TCUser = Depends(require_tc),
+    repo: MasterRepo = Depends(get_repo),
+) -> dict[str, Any]:
+    if body.status not in _TASK_STATUSES:
+        raise HTTPException(
+            status_code=422, detail=f"status must be one of {sorted(_TASK_STATUSES)}"
+        )
+    task = repo.set_task_status(
+        transaction_id=transaction_id, task_id=task_id, status=body.status, actor=tc.actor
+    )
+    if task is None:
+        raise HTTPException(status_code=404, detail="Task not found")
+    return task
+
+
 @router.post("/transactions/{transaction_id}/tasks/{task_id}/assign")
 def assign_task(
     transaction_id: str,
