@@ -45,6 +45,29 @@ function titleize(s: string | null): string {
   return (s ?? "Attention").replace(/_/g, " ").replace(/\b\w/g, (m) => m.toUpperCase());
 }
 
+// Smart routing: a task's wording implies who should own it. First matching
+// rule wins; `roles` is the party-role preference order for the suggestion.
+const TASK_ROUTES: { match: RegExp; icon: string; roles: string[]; ctx: string }[] = [
+  { match: /walk-?through/i, icon: "🚶", roles: ["buyer_agent"], ctx: "final walk-through" },
+  { match: /inspection/i, icon: "🔍", roles: ["inspector_general", "buyer_agent"], ctx: "inspection contingency" },
+  { match: /appraisal/i, icon: "🏷️", roles: ["appraiser", "lender"], ctx: "appraisal contingency" },
+  { match: /loan/i, icon: "🏦", roles: ["lender", "loan_officer"], ctx: "loan contingency" },
+  { match: /earnest|deposit|\bemd\b/i, icon: "📌", roles: ["escrow"], ctx: "earnest money" },
+  { match: /verification of funds|proof of funds/i, icon: "💵", roles: ["buyer_agent"], ctx: "verification of funds" },
+  { match: /disclosure/i, icon: "📄", roles: ["listing_agent"], ctx: "seller disclosures" },
+  { match: /warranty/i, icon: "🛡️", roles: ["buyer_agent", "listing_agent"], ctx: "home warranty" },
+  { match: /escrow|closing|close of escrow/i, icon: "🔑", roles: ["escrow"], ctx: "closing" },
+  { match: /possession/i, icon: "🔑", roles: ["buyer_agent"], ctx: "possession" },
+  { match: /insurance/i, icon: "🛡️", roles: ["buyer_agent"], ctx: "insurance contingency" },
+];
+function routeFor(title: string): { icon: string; roles: string[]; ctx: string } {
+  return TASK_ROUTES.find((r) => r.match.test(title)) ?? { icon: "📋", roles: [], ctx: "" };
+}
+const ROLE_SHORT: Record<string, string> = {
+  lender: "lender", loan_officer: "loan officer", escrow: "escrow", appraiser: "appraiser",
+  inspector_general: "inspector", listing_agent: "listing agent", buyer_agent: "buyer's agent",
+};
+
 export function DealDashboard({
   id,
   state,
@@ -57,7 +80,6 @@ export function DealDashboard({
   const [dash, setDash] = useState<Dashboard | null>(null);
   const [busy, setBusy] = useState(false);
   const [tokens, setTokens] = useState<Record<string, string>>({});
-  const [assignTo, setAssignTo] = useState<Record<string, string>>({});
   const [newTask, setNewTask] = useState("");
   // Party editing / adding: which party id is open for edit, or which role is
   // being added, plus the in-progress contact fields.
@@ -455,48 +477,86 @@ export function DealDashboard({
         </div>
       </div>
 
-      {/* ---- Unassigned tasks ---- */}
+      {/* ---- Needs an owner (smart routing) ---- */}
       {unassigned.length > 0 && (
         <div className="card">
-          <h2>Unassigned tasks</h2>
-          <table>
-            <tbody>
-              {unassigned.map((t) => (
-                <tr key={t.id}>
-                  <td>{t.title}</td>
-                  <td style={{ width: 200 }}>
-                    <select
-                      value={assignTo[t.id] ?? ""}
-                      onChange={(e) => setAssignTo((a) => ({ ...a, [t.id]: e.target.value }))}
-                    >
-                      <option value="">— assign to —</option>
-                      {parties.map((pp) => (
-                        <option key={pp.id} value={pp.id}>
-                          {pp.name ?? pp.role} ({pp.role})
-                        </option>
-                      ))}
-                    </select>
-                  </td>
-                  <td style={{ width: 90, textAlign: "right" }}>
-                    <button
-                      disabled={busy || !assignTo[t.id]}
-                      onClick={() =>
-                        void run(
-                          () =>
-                            api.post(`/transactions/${id}/tasks/${t.id}/assign`, {
-                              party_id: assignTo[t.id],
-                            }),
-                          "Task assigned",
-                        )
-                      }
-                    >
-                      Assign
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <div className="between" style={{ marginBottom: "0.7rem" }}>
+            <h2 style={{ margin: 0 }}>🧭 Needs an owner</h2>
+            <span className="muted">{unassigned.length} unassigned · sorted by urgency</span>
+          </div>
+          <div className="stack">
+            {[...unassigned]
+              .sort((a, b) => {
+                const da = state.deadlines.find((d) => d.id === a.deadline_id)?.due_date ?? "9999";
+                const db = state.deadlines.find((d) => d.id === b.deadline_id)?.due_date ?? "9999";
+                return da.localeCompare(db);
+              })
+              .map((t) => {
+                const r = routeFor(t.title);
+                const suggested = r.roles
+                  .map((role) => parties.find((p) => p.role === role))
+                  .find((p) => p);
+                const due = t.deadline_id
+                  ? state.deadlines.find((d) => d.id === t.deadline_id)?.due_date ?? null
+                  : null;
+                const daysLeft = due
+                  ? Math.round((new Date(due + "T00:00:00").getTime() - Date.now()) / 86_400_000)
+                  : null;
+                const dueColor =
+                  daysLeft == null ? "var(--muted)"
+                    : daysLeft < 0 ? "var(--red-600)"
+                    : daysLeft <= 5 ? "var(--gold-700)"
+                    : "var(--muted)";
+                const assign = (partyId: string) =>
+                  void run(
+                    () => api.post(`/transactions/${id}/tasks/${t.id}/assign`, { party_id: partyId }),
+                    "Task assigned",
+                  );
+                return (
+                  <div key={t.id} className="route-row">
+                    <div className="route-ic">{r.icon}</div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div className="route-title">{t.title}</div>
+                      <div className="route-meta">
+                        {due && (
+                          <span style={{ color: dueColor, fontWeight: daysLeft != null && daysLeft <= 5 ? 600 : 400 }}>
+                            📅 {fmtDate(due)}
+                            {daysLeft != null && (daysLeft < 0 ? ` · ${-daysLeft}d overdue` : daysLeft === 0 ? " · today" : ` · ${daysLeft}d`)}
+                          </span>
+                        )}
+                        {due && r.ctx && <span className="muted"> · </span>}
+                        {r.ctx && <span className="muted">{r.ctx}</span>}
+                      </div>
+                    </div>
+                    <div className="route-act">
+                      {suggested ? (
+                        <button className="gold sm" disabled={busy} onClick={() => assign(suggested.id)}>
+                          → {suggested.name ?? suggested.role} · Assign
+                        </button>
+                      ) : r.roles.length > 0 ? (
+                        <span className="route-need">no {ROLE_SHORT[r.roles[0]] ?? r.roles[0]} yet</span>
+                      ) : null}
+                      {parties.length > 0 && (
+                        <select
+                          className="route-sel"
+                          value=""
+                          disabled={busy}
+                          onChange={(e) => e.target.value && assign(e.target.value)}
+                          title="Assign to someone else"
+                        >
+                          <option value="">{suggested ? "or…" : "assign to…"}</option>
+                          {parties.map((pp) => (
+                            <option key={pp.id} value={pp.id}>
+                              {pp.name ?? pp.role} · {(pp.role ?? "").replace(/_/g, " ")}
+                            </option>
+                          ))}
+                        </select>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+          </div>
         </div>
       )}
 
