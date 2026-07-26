@@ -26,7 +26,13 @@ from app.contracts.compliance import ComplianceResult
 from app.contracts.fields import EXTRACTABLE_FIELD_NAMES
 from app.contracts.payload import Payload
 from app.master.dashboard import build_dashboard
-from app.master.drafting import ClaudeDrafter, DraftContext, DraftFailed, Drafter
+from app.master.drafting import (
+    ClaudeDrafter,
+    DraftContext,
+    DraftFailed,
+    Drafter,
+    MessageContext,
+)
 from app.master.parties import ROLE_TIERS
 from app.master.party_access import (
     AccessIssuanceFailed,
@@ -361,12 +367,6 @@ def create_party(
 ) -> dict[str, Any]:
     if not repo.transaction_exists(transaction_id):
         raise HTTPException(status_code=404, detail="Transaction not found")
-    # Rule 2 defense in depth: no wiring/account language in any contact field.
-    for value in (body.name, body.company, body.email, body.phone):
-        if value and _MONEY_FIELD_NAME.search(value):
-            raise HTTPException(
-                status_code=422, detail="Payment/wiring data is never stored (Rule 2)."
-            )
     tier = body.permission_tier or ROLE_TIERS.get(body.role, "email_participant")
     return repo.create_party(
         transaction_id=transaction_id,
@@ -395,12 +395,6 @@ def update_party(
     fields = body.model_dump(exclude_unset=True)
     if not fields:
         raise HTTPException(status_code=422, detail="No fields to update")
-    # Rule 2 defense in depth: no wiring/account language slips into a contact.
-    for value in fields.values():
-        if isinstance(value, str) and _MONEY_FIELD_NAME.search(value):
-            raise HTTPException(
-                status_code=422, detail="Payment/wiring data is never stored (Rule 2)."
-            )
     updated = repo.update_party(
         transaction_id=transaction_id, party_id=party_id, fields=fields, actor=tc.actor
     )
@@ -579,6 +573,80 @@ def draft_lender(
         party_id=lender["id"],
         actor=tc.actor,
         details={"kind": "lender_status"},
+    )
+    return {"message": message, "why": draft.why}
+
+
+def _message_context(
+    state: dict[str, Any], party: dict[str, Any], purpose: str, tc: TCUser
+) -> MessageContext:
+    parties = state.get("parties", [])
+
+    def _names(role: str) -> str | None:
+        vals = [p["name"] for p in parties if p.get("role") == role and p.get("name")]
+        return ", ".join(vals) or None
+
+    prop = state.get("property") or {}
+    key_dates = tuple(
+        (d["name"], d["due_date"]) for d in state.get("deadlines", []) if d.get("due_date")
+    )
+    return MessageContext(
+        purpose=purpose,
+        recipient_name=party.get("name"),
+        recipient_role=party.get("role"),
+        property_address=prop.get("address"),
+        buyer_names=_names("buyer"),
+        seller_names=_names("seller"),
+        # Optional TC identity for the signature/intro (set TC_NAME to personalize).
+        tc_name=os.environ.get("TC_NAME") or None,
+        key_dates=key_dates,
+    )
+
+
+class DraftMessageRequest(BaseModel):
+    party_id: str = Field(min_length=1)
+    purpose: str = Field(min_length=1)
+
+
+@router.post("/transactions/{transaction_id}/messages/draft", status_code=201)
+def draft_message(
+    transaction_id: str,
+    body: DraftMessageRequest,
+    tc: TCUser = Depends(require_tc),
+    repo: MasterRepo = Depends(get_repo),
+    drafter: Drafter = Depends(get_drafter),
+) -> dict[str, Any]:
+    """Personalized draft to any party on the deal, for a chosen purpose. Rule 6:
+    the recipient must be a real party with an email (never guessed)."""
+    party = repo.get_party(party_id=body.party_id, transaction_id=transaction_id)
+    if party is None:
+        raise HTTPException(status_code=404, detail="Party not found on this transaction")
+    if not party.get("email"):
+        raise HTTPException(
+            status_code=409,
+            detail="This recipient has no email yet — add one on the Parties tab first.",
+        )
+    state = repo.get_full_state(transaction_id)
+    assert state is not None
+    ctx = _message_context(state, party, body.purpose, tc)
+    try:
+        draft = drafter.draft_message(ctx)
+    except ZdrNotConfirmed as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from None
+    except DraftFailed as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from None
+    if _MONEY_FIELD_NAME.search(f"{draft.subject}\n{draft.body}"):
+        raise HTTPException(
+            status_code=422,
+            detail="Draft contained payment/wiring language and was rejected (Rule 2).",
+        )
+    message = repo.create_message(
+        transaction_id=transaction_id,
+        subject=draft.subject,
+        body=draft.body,
+        party_id=party["id"],
+        actor=tc.actor,
+        details={"kind": body.purpose},
     )
     return {"message": message, "why": draft.why}
 

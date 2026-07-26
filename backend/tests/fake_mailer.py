@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from app.master.drafting import DraftContext, LenderDraft
+from app.master.drafting import DraftContext, LenderDraft, MessageContext, MessageDraft
 from app.master.mailer import SentMessage
 
 
@@ -57,3 +57,31 @@ class FakeDrafter:
             ),
             why=f"Loan contingency ({deadline}) is approaching and status isn't confirmed.",
         )
+
+    def draft_message(self, ctx: MessageContext) -> MessageDraft:
+        if self._raises is not None:
+            raise self._raises
+        self.calls.append(ctx)
+        who = ctx.recipient_name or "there"
+        buyers = ctx.buyer_names or "the buyers"
+        prop = ctx.property_address or "the property"
+        return MessageDraft(
+            subject=f"{ctx.purpose.replace('_', ' ').title()} — {prop}",
+            body=(
+                f"Hi {who}, I'm {ctx.tc_name or 'the transaction coordinator'} on the "
+                f"purchase of {prop} by {buyers}. {PURPOSES_HINT.get(ctx.purpose, '')} "
+                "Thanks!"
+            ),
+            why=f"{ctx.purpose} for {who} on {prop}.",
+        )
+
+
+# Short canned hints so the fake body varies by purpose (mirrors the real intent).
+PURPOSES_HINT = {
+    "lender_status": "Could you confirm the loan and appraisal are on track?",
+    "inspection_schedule": "Can we get the inspection scheduled this week?",
+    "disclosure_reminder": "Following up on the outstanding seller disclosures.",
+    "escrow_checkin": "Checking that the deposit is in and escrow is open.",
+    "intro": "I'll be your point of contact for paperwork and deadlines.",
+    "general": "Just checking in on status.",
+}

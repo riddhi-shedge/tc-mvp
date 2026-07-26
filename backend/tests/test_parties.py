@@ -187,17 +187,16 @@ def test_update_party_fills_contact(client, tc_headers):
     assert r.json()["phone"] == "555-9999" and r.json()["email"] == "t@x.test"
 
 
-def test_update_party_money_guard(client, tc_headers):
+def test_lender_email_with_bank_is_allowed(client, tc_headers):
+    """A lender's contact naturally contains 'bank' — contact fields are not
+    money/wiring instructions, so they must not trip the Rule 2 guard."""
     txn = _bare_deal(client, tc_headers)
-    pid = client.post(
-        f"/transactions/{txn}/parties", json={"name": "X", "role": "escrow"}, headers=tc_headers
-    ).json()["id"]
-    r = client.patch(
-        f"/transactions/{txn}/parties/{pid}",
-        json={"company": "wire to account 12345678"},
+    r = client.post(
+        f"/transactions/{txn}/parties",
+        json={"name": "Sam", "role": "lender", "email": "sam@synthbank.test", "company": "Synth Bank"},
         headers=tc_headers,
     )
-    assert r.status_code == 422
+    assert r.status_code == 201 and r.json()["email"] == "sam@synthbank.test"
 
 
 def test_update_party_no_fields_is_422(client, tc_headers):

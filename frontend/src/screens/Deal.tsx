@@ -50,6 +50,17 @@ function fieldSuggestion(name: string): string {
   return "";
 }
 
+// Email purposes the drafter personalizes to the deal (mirror of drafting.PURPOSES).
+const MESSAGE_PURPOSES: { value: string; label: string }[] = [
+  { value: "lender_status", label: "Lender status request" },
+  { value: "appraisal_status", label: "Appraisal status" },
+  { value: "inspection_schedule", label: "Schedule inspection" },
+  { value: "disclosure_reminder", label: "Disclosure reminder" },
+  { value: "escrow_checkin", label: "Escrow check-in" },
+  { value: "intro", label: "Intro / point of contact" },
+  { value: "general", label: "General check-in" },
+];
+
 /** The deal screen: extraction review → confirm → timeline → risk flags →
  *  lender contact → real lender draft (editable) → Approve & Send (guarded). */
 export function Deal({ id, onBack }: { id: string; onBack: () => void }) {
@@ -57,8 +68,8 @@ export function Deal({ id, onBack }: { id: string; onBack: () => void }) {
   const [draftWhy, setDraftWhy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [lenderName, setLenderName] = useState("");
-  const [lenderEmail, setLenderEmail] = useState("");
+  const [recipientId, setRecipientId] = useState("");
+  const [purpose, setPurpose] = useState("lender_status");
   // TC edits to a draft before approval: messageId -> {subject, body}
   const [edits, setEdits] = useState<Record<string, { subject: string; body: string }>>({});
   // TC entries for deadline-driving fields the extraction missed: name -> value
@@ -138,7 +149,7 @@ export function Deal({ id, onBack }: { id: string; onBack: () => void }) {
   const drafts: Message[] = state.messages.filter((m) => m.status === "draft");
   const approved: Message[] = state.messages.filter((m) => m.status === "approved");
   const sent = state.messages.filter((m) => m.status === "sent");
-  const lender = state.parties.find((p) => p.role === "lender" || p.role === "loan_officer");
+  const recipients = state.parties.filter((p) => p.email);
 
   const coe = state.deadlines.find((d) => d.name.toLowerCase().includes("escrow"));
   const coeDays =
@@ -430,57 +441,67 @@ export function Deal({ id, onBack }: { id: string; onBack: () => void }) {
             ),
           },
           {
-            id: "lender",
-            label: "Lender",
-            icon: "🏦",
+            id: "comms",
+            label: "Communication",
+            icon: "💬",
             content: (
               <>
       <div className="card">
-        <h2>🏦 Lender contact</h2>
-        {lender ? (
-          <div className="party-top">
-            <div className="avatar" style={{ background: "#2f7d5b" }}>
-              {(lender.name ?? "L").slice(0, 2).toUpperCase()}
-            </div>
-            <div>
-              <div className="party-name">{lender.name}</div>
-              <div className="party-role" style={{ textTransform: "none" }}>
-                {lender.email ?? "no email on file"}
-              </div>
-            </div>
+        <h2>✉️ New message</h2>
+        <p className="muted" style={{ margin: "-0.4rem 0 0.85rem" }}>
+          Claude drafts it personalized to this deal · you review the WHY, edit, and approve.
+          Nothing sends without your tap (Rule 3).
+        </p>
+        {recipients.length === 0 ? (
+          <div className="empty">
+            <span className="emoji">📭</span>
+            No recipients with an email yet — add emails on the Parties (Overview) tab.
           </div>
         ) : (
-          <div className="row">
-            <div>
-              <input
-                placeholder="Lender / loan officer name"
-                value={lenderName}
-                onChange={(e) => setLenderName(e.target.value)}
-              />
+          <div className="row" style={{ gap: "0.6rem", alignItems: "flex-end" }}>
+            <div style={{ flex: 1, minWidth: 190 }}>
+              <label>To</label>
+              <select value={recipientId} onChange={(e) => setRecipientId(e.target.value)}>
+                <option value="">— choose recipient —</option>
+                {recipients.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name} · {humanize(p.role)} ({p.email})
+                  </option>
+                ))}
+              </select>
             </div>
-            <div>
-              <input
-                placeholder="lender email"
-                value={lenderEmail}
-                onChange={(e) => setLenderEmail(e.target.value)}
-              />
+            <div style={{ flex: 1, minWidth: 190 }}>
+              <label>Purpose</label>
+              <select value={purpose} onChange={(e) => setPurpose(e.target.value)}>
+                {MESSAGE_PURPOSES.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
             </div>
             <div style={{ flex: "0 0 auto" }}>
               <button
-                disabled={busy || !lenderName || !lenderEmail}
+                className="gold"
+                disabled={busy || !recipientId}
                 onClick={() =>
                   void run(async () => {
-                    await api.post(`/transactions/${id}/parties`, {
-                      name: lenderName,
-                      role: "lender",
-                      email: lenderEmail,
-                    });
-                    setLenderName("");
-                    setLenderEmail("");
-                  })
+                    const r = await api.post<{ why: string }>(
+                      `/transactions/${id}/messages/draft`,
+                      { party_id: recipientId, purpose },
+                    );
+                    setDraftWhy(r.why);
+                  }, "Draft ready for review")
                 }
               >
-                Add lender
+                {busy ? (
+                  <>
+                    <span className="spinner" />
+                    Drafting…
+                  </>
+                ) : (
+                  "✨ Draft with Claude"
+                )}
               </button>
             </div>
           </div>
@@ -488,34 +509,21 @@ export function Deal({ id, onBack }: { id: string; onBack: () => void }) {
       </div>
 
       <div className="card">
-        <h2>✉️ Lender follow-up</h2>
-        <p className="muted" style={{ margin: "-0.4rem 0 0.85rem" }}>
-          Claude drafts it · you review the WHY, edit, and approve. Nothing sends without your tap (Rule 3).
-        </p>
+        <h2>📨 Drafts &amp; sent</h2>
         {drafts.length === 0 && sent.length === 0 && approved.length === 0 && (
-          <button
-            className="gold"
-            disabled={busy || !lender}
-            title={!lender ? "Add a lender contact first" : undefined}
-            onClick={() =>
-              void run(async () => {
-                const r = await api.post<{ why: string }>(
-                  `/transactions/${id}/messages/draft-lender`,
-                );
-                setDraftWhy(r.why);
-              }, "Draft ready for review")
-            }
-          >
-            ✨ Draft with Claude
-          </button>
+          <div className="empty">
+            <span className="emoji">✉️</span>
+            No messages yet — draft one above.
+          </div>
         )}
         {drafts.map((draft) => {
           const edit = edits[draft.id] ?? { subject: draft.subject ?? "", body: draft.body ?? "" };
+          const toParty = state.parties.find((p) => p.id === draft.party_id);
           return (
             <div key={draft.id} className="mailcard">
               <div className="mailcard-head">
                 <span className="mailcard-to">
-                  To: {lender?.name ?? "lender"} &lt;{lender?.email ?? "—"}&gt;
+                  To: {toParty?.name ?? "recipient"} &lt;{toParty?.email ?? "—"}&gt;
                 </span>
                 <span className="badge draft">draft</span>
               </div>
