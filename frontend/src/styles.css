@@ -678,3 +678,28 @@ button.secondary.sm { padding: 0.28rem 0.55rem; font-size: 0.76rem; }
   .xr-snap { grid-template-columns: 1fr 1fr; }
   .xr-sides, .xr-terms { grid-template-columns: 1fr; }
 }
+
+/* ============================================================================
+   Collapsible sidebar — hide it away and bring it back.
+   ========================================================================== */
+.app.collapsed { grid-template-columns: 1fr; }
+.app.collapsed .sidebar { display: none; }
+
+.side-collapse {
+  margin-left: auto; flex: 0 0 auto; width: 26px; height: 26px; padding: 0;
+  border-radius: 7px; border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.06); color: #dfe6f2;
+  font-size: 0.95rem; line-height: 1; cursor: pointer; transition: background 0.14s;
+}
+.side-collapse:hover { background: rgba(255, 255, 255, 0.14); }
+
+.side-open {
+  position: fixed; top: 0.9rem; left: 0.9rem; z-index: 40;
+  width: 38px; height: 38px; padding: 0; border-radius: 10px;
+  border: 1px solid var(--line); background: var(--surface); color: var(--navy-700);
+  font-size: 1.05rem; line-height: 1; cursor: pointer; box-shadow: var(--shadow);
+  transition: border-color 0.14s, transform 0.14s;
+}
+.side-open:hover { border-color: var(--gold-300); transform: translateY(-1px); }
+/* Give the page a little breathing room so content clears the floating button. */
+.app.collapsed .page { padding-top: 3.4rem; }

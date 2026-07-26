@@ -13,6 +13,14 @@ export default function App() {
   const [signedIn, setSignedIn] = useState(false);
   const [email, setEmail] = useState<string | null>(null);
   const [view, setView] = useState<View>({ name: "inbox" });
+  const [collapsed, setCollapsed] = useState(() => localStorage.getItem("sidebar_collapsed") === "1");
+
+  function toggleSidebar() {
+    setCollapsed((c) => {
+      localStorage.setItem("sidebar_collapsed", c ? "0" : "1");
+      return !c;
+    });
+  }
 
   useEffect(() => {
     void supabase.auth.getSession().then(async ({ data }) => {
@@ -29,7 +37,12 @@ export default function App() {
   if (!signedIn) return <Login onSignedIn={() => setSignedIn(true)} />;
 
   return (
-    <div className="app">
+    <div className={`app ${collapsed ? "collapsed" : ""}`}>
+      {collapsed && (
+        <button className="side-open" title="Show sidebar" aria-label="Show sidebar" onClick={toggleSidebar}>
+          ☰
+        </button>
+      )}
       <aside className="sidebar">
         <div className="brand">
           <div className="mark">T</div>
@@ -37,6 +50,14 @@ export default function App() {
             <div className="name">Terra</div>
             <div className="sub">Coordinator</div>
           </div>
+          <button
+            className="side-collapse"
+            title="Hide sidebar"
+            aria-label="Hide sidebar"
+            onClick={toggleSidebar}
+          >
+            «
+          </button>
         </div>
 
         <button
