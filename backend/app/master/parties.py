@@ -17,8 +17,10 @@ from dataclasses import dataclass
 ROLE_TIERS: dict[str, str] = {
     "buyer": "email_participant",
     "seller": "email_participant",
-    "buyer_agent": "email_participant",
-    "listing_agent": "email_participant",
+    # Agents + broker collaborate: a read-only scoped view of the deal (§8).
+    "buyer_agent": "collaborator",
+    "listing_agent": "collaborator",
+    "broker": "collaborator",
     "lender": "email_participant",
     "loan_officer": "email_participant",
     "escrow": "email_participant",

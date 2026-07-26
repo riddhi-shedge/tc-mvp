@@ -82,7 +82,7 @@ def test_party_key_normalizes_case_and_space():
 
 
 def test_tier_defaults():
-    assert tier_for("buyer_agent") == "email_participant"
+    assert tier_for("buyer_agent") == "collaborator"
     assert tier_for("inspector_termite") == "receiving_end"
     assert tier_for("unknown_role") == "email_participant"
 

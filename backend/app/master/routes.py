@@ -460,14 +460,23 @@ def create_party_access_token(
     party = repo.get_party(party_id=party_id, transaction_id=transaction_id)
     if party is None:
         raise HTTPException(status_code=404, detail="Party not found on this transaction")
-    # §8: only receiving-end parties get a live DB credential. Other tiers
-    # (email participants: buyer/seller/lender/title/escrow) are out of scope.
-    if party.get("permission_tier") != "receiving_end":
+    # §8: receiving-end vendors (own task only) and collaborators (agents/broker —
+    # read-only scoped view) get a live DB credential. Email-only participants
+    # (buyer/seller/lender/title/escrow) do not.
+    _COLLAB_ROLES = {"buyer_agent", "listing_agent", "broker", "agent"}
+    if party.get("permission_tier") == "receiving_end":
+        token_tier = "receiving_end"
+    elif party.get("permission_tier") == "collaborator" or party.get("role") in _COLLAB_ROLES:
+        token_tier = "collaborator"
+    else:
         raise HTTPException(
-            status_code=409, detail="Access tokens are only for receiving-end parties"
+            status_code=409,
+            detail="Invite links are for receiving-end vendors and agents/broker only.",
         )
     try:
-        result = issuer.issue(party_id=party_id, transaction_id=transaction_id, email=None)
+        result = issuer.issue(
+            party_id=party_id, transaction_id=transaction_id, email=None, tier=token_tier
+        )
     except AccessIssuerNotConfigured as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from None
     except AccessIssuanceFailed:

@@ -35,9 +35,12 @@ def _is_already_registered(exc: Exception) -> bool:
 
 class PartyAccessIssuer(Protocol):
     def issue(
-        self, *, party_id: str, transaction_id: str, email: str | None
+        self, *, party_id: str, transaction_id: str, email: str | None,
+        tier: str = "receiving_end",
     ) -> dict[str, Any]:
-        """Return {"party_id", "access_token"} for a receiving-end party."""
+        """Return {"party_id", "access_token"} for a scoped party session. `tier`
+        goes into app_metadata and the RLS policies gate on it (receiving_end vs
+        collaborator)."""
         ...
 
 
@@ -62,7 +65,8 @@ class SupabasePartyAccessIssuer:
         return email or f"party+{party_id}@{self._email_domain}"
 
     def issue(
-        self, *, party_id: str, transaction_id: str, email: str | None
+        self, *, party_id: str, transaction_id: str, email: str | None,
+        tier: str = "receiving_end",
     ) -> dict[str, Any]:
         if not (self._url and self._service_key and self._anon_key):
             raise AccessIssuerNotConfigured(
@@ -75,7 +79,9 @@ class SupabasePartyAccessIssuer:
         admin = create_client(self._url, self._service_key)
         auth_email = self._auth_email(party_id=party_id, email=email)
         password = secrets.token_urlsafe(32)
-        app_metadata = {"party_id": party_id, "transaction_id": transaction_id}
+        # tier gates the RLS policies: 'receiving_end' → own task only;
+        # 'collaborator' → read-only scoped view of the deal.
+        app_metadata = {"party_id": party_id, "transaction_id": transaction_id, "tier": tier}
 
         try:
             try:

@@ -43,7 +43,7 @@ def test_access_token_delegates_to_issuer_and_audits(client, tc_headers, party_a
     assert body["access_token"] == f"fake-token-{party_id}"
     # The issuer was called with this exact party + transaction.
     assert party_access_issuer.calls == [
-        {"party_id": party_id, "transaction_id": txn_id, "email": None}
+        {"party_id": party_id, "transaction_id": txn_id, "email": None, "tier": "receiving_end"}
     ]
     # Rule 5: issuing a live credential is audited (never the token itself).
     audit = [a for a in repo.audit_log if a["action"] == "party.access_token_issued"]

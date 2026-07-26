@@ -26,9 +26,12 @@ class FakePartyAccessIssuer:
     def __init__(self) -> None:
         self.calls: list[dict[str, str | None]] = []
 
-    def issue(self, *, party_id: str, transaction_id: str, email: str | None) -> dict[str, str]:
+    def issue(
+        self, *, party_id: str, transaction_id: str, email: str | None,
+        tier: str = "receiving_end",
+    ) -> dict[str, str]:
         self.calls.append(
-            {"party_id": party_id, "transaction_id": transaction_id, "email": email}
+            {"party_id": party_id, "transaction_id": transaction_id, "email": email, "tier": tier}
         )
         return {"party_id": party_id, "access_token": f"fake-token-{party_id}"}
 
