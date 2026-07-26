@@ -274,7 +274,14 @@ export function Inbox({ onOpenDeal }: { onOpenDeal: (id: string) => void }) {
                 }
                 onClick={() => void confirm(item)}
               >
-                Confirm
+                {busy === item.id ? (
+                  <>
+                    <span className="spinner" />
+                    Reading…
+                  </>
+                ) : (
+                  "Confirm"
+                )}
               </button>
               <button
                 className="secondary"
@@ -343,7 +350,14 @@ export function Inbox({ onOpenDeal }: { onOpenDeal: (id: string) => void }) {
                     );
                 }}
               >
-                Confirm with manual fields
+                {manualFor && busy === manualFor ? (
+                  <>
+                    <span className="spinner" />
+                    Saving…
+                  </>
+                ) : (
+                  "Confirm with manual fields"
+                )}
               </button>
               <button className="secondary" onClick={() => setManualFor(null)}>
                 Cancel
@@ -386,7 +400,14 @@ export function Inbox({ onOpenDeal }: { onOpenDeal: (id: string) => void }) {
           <input type="file" accept="application/pdf" onChange={onFilePicked} />
           <div style={{ marginTop: "0.7rem" }}>
             <button disabled={!uploadB64 || busy === "upload"} onClick={() => void uploadManual()}>
-              Upload{uploadName ? ` ${uploadName}` : ""}
+              {busy === "upload" ? (
+                <>
+                  <span className="spinner" />
+                  Uploading…
+                </>
+              ) : (
+                `Upload${uploadName ? ` ${uploadName}` : ""}`
+              )}
             </button>
           </div>
           <p className="muted" style={{ marginTop: "0.5rem" }}>
