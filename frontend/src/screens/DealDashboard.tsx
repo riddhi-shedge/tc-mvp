@@ -13,7 +13,7 @@ import {
   Task,
 } from "../lib/api";
 import { Ring, toast } from "../lib/ui";
-import { fmtDate, fmtDateTime } from "../lib/format";
+import { fmtDate } from "../lib/format";
 import { motion } from "framer-motion";
 
 const listStagger = { visible: { transition: { staggerChildren: 0.055 } } };
@@ -500,41 +500,6 @@ export function DealDashboard({
         </div>
       )}
 
-      {/* ---- Communication center ---- */}
-      <div className="card">
-        <h2>💬 Communication</h2>
-        <h3>Pending ({dash.communication.pending.length})</h3>
-        {dash.communication.pending.length === 0 && (
-          <div className="empty" style={{ padding: "1rem" }}><span className="emoji">📭</span>Nothing pending.</div>
-        )}
-        <div className="stack">
-          {dash.communication.pending.map((m) => (
-            <div key={m.id} className="doc-card">
-              <div className="doc-ic">✉️</div>
-              <div style={{ minWidth: 0, flex: 1 }} className="between">
-                <span style={{ color: "var(--ink)" }}>{m.subject ?? "(no subject)"}</span>
-                <span className={`badge ${m.status === "approved" ? "ok" : "draft"}`}>{m.status}</span>
-              </div>
-            </div>
-          ))}
-        </div>
-        {dash.communication.sent.length > 0 && (
-          <>
-            <h3>Sent ({dash.communication.sent.length})</h3>
-            <div className="stack">
-              {dash.communication.sent.map((m) => (
-                <div key={m.id} className="doc-card">
-                  <div className="doc-ic">📤</div>
-                  <div style={{ minWidth: 0, flex: 1 }} className="between">
-                    <span style={{ color: "var(--ink)" }}>{m.subject ?? "(no subject)"}</span>
-                    <span className="badge sent">sent · {fmtDateTime(m.sent_at)}</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </>
-        )}
-      </div>
     </>
   );
 }
