@@ -310,12 +310,13 @@ class InMemoryRepo:
         return party
 
     def derive_parties_from_fields(self, *, transaction_id: str, actor: str) -> int:
-        confirmed = {
+        # Contacts are informational — populate from ALL extracted fields.
+        fields = {
             f["name"]: f["value"]
             for f in self.extracted_fields
-            if f["transaction_id"] == transaction_id and f["confirmed"]
+            if f["transaction_id"] == transaction_id
         }
-        desired = derive_parties(confirmed)
+        desired = derive_parties(fields)
         by_key = {
             party_key(p["role"], p["name"]): p
             for p in self.parties.values()
@@ -657,6 +658,29 @@ class InMemoryRepo:
                 ),
             },
         )
+        # A re-uploaded PA supersedes the prior one (cascade its payload+fields).
+        if payload.document_type == "purchase_agreement":
+            old_docs = [
+                d["id"]
+                for d in self.documents.values()
+                if d["transaction_id"] == transaction_id
+                and d["doc_type"] == "purchase_agreement"
+                and d["id"] != doc["id"]
+            ]
+            old_payloads = {
+                p["id"] for p in self.payloads.values() if p["document_id"] in old_docs
+            }
+            for did in old_docs:
+                del self.documents[did]
+            for pid in old_payloads:
+                del self.payloads[pid]
+            self.extracted_fields = [
+                f for f in self.extracted_fields if f["payload_id"] not in old_payloads
+            ]
+        # A document reopens an archived deal.
+        txn = self.transactions.get(transaction_id)
+        if txn is not None and txn.get("status") == "archived":
+            txn["status"] = "open"
         return row
 
     def apply_compliance_result(self, *, result, actor: str) -> dict[str, Any]:

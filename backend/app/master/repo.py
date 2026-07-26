@@ -474,6 +474,19 @@ class SupabaseRepo:
                     ),
                 },
             )
+            # A re-uploaded purchase agreement SUPERSEDES the prior one — there is
+            # exactly one PA per deal, so older PA documents (and their cascaded
+            # payloads + fields) are removed rather than piling up as duplicates.
+            # Other doc types (disclosures, addenda) may legitimately repeat and
+            # are never superseded.
+            if payload.document_type == "purchase_agreement":
+                self._db.table("documents").delete().eq(
+                    "transaction_id", transaction_id
+                ).eq("doc_type", "purchase_agreement").neq("id", doc["id"]).execute()
+            # A document arriving reopens an archived deal (work resumed).
+            self._db.table("transactions").update({"status": "open"}).eq(
+                "id", transaction_id
+            ).eq("status", "archived").execute()
         except Exception:
             self._db.table("documents").delete().eq("id", doc["id"]).execute()
             raise
@@ -707,11 +720,13 @@ class SupabaseRepo:
         """Create the Party records implied by the deal's CONFIRMED §5 fields
         (buyers/sellers/agents/escrow/title). Idempotent: skips any (role, name)
         that already exists, so re-confirming never duplicates a contact."""
+        # Contacts are informational (not deadline-driving), so parties populate
+        # from ALL extracted fields — the TC sees them right after upload, and
+        # agent email/phone backfill without waiting on field confirmation.
         rows = (
             self._db.table("extracted_fields")
             .select("name, value")
             .eq("transaction_id", transaction_id)
-            .eq("confirmed", True)
             .execute()
             .data
         )
