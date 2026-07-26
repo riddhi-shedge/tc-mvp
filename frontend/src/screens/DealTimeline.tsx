@@ -104,9 +104,12 @@ export function DealTimeline({
   const start = milestones[0].t;
   const end = Math.max(coe.t, milestones[milestones.length - 1].t);
   const span = Math.max(end - start, DAY);
-  const pct = (t: number) => Math.max(0, Math.min(100, ((t - start) / span) * 100));
-  const todayPct = pct(now);
-  const showToday = now >= start && now <= end;
+  // Inset the plot so the first/last markers (and their centered labels) never
+  // overflow the card edges.
+  const PAD = 7;
+  const pos = (t: number) => PAD + Math.max(0, Math.min(1, (t - start) / span)) * (100 - 2 * PAD);
+  const todayPos = pos(now);
+  const showToday = now >= start - DAY && now <= end + DAY;
 
   // per-milestone task state
   const tasksByDeadline = new Map<string, Task[]>();
@@ -140,19 +143,21 @@ export function DealTimeline({
   const nextM = milestones.find((m) => m.key === nextKey);
   const nextDays = nextM ? Math.round((nextM.t - now) / DAY) : null;
 
-  // phases: Contingency period → (Removed) → Closing
-  const contEnd = Math.max(
-    ...milestones.filter((m) => /inspection|appraisal|loan|insurance/i.test(m.names.join(" "))).map((m) => m.t),
-    start,
-  );
-  const walk = milestones.find((m) => /walk/i.test(m.names.join(" ")))?.t;
+  // phases: Contingency period, then Closing (only when contingencies clear
+  // meaningfully before COE — avoids a zero-width band when the last contingency
+  // lands on the close date, as in an all-cash deal).
+  const contTs = milestones
+    .filter((m) => /inspection|appraisal|loan|insurance/i.test(m.names.join(" ")))
+    .map((m) => m.t);
+  const contEnd = contTs.length ? Math.max(...contTs) : start;
   const phases: { n: string; from: number; to: number; c: string }[] = [];
-  if (contEnd > start) phases.push({ n: "Contingency period", from: start, to: contEnd, c: "cont" });
-  if (walk && walk > contEnd) {
-    phases.push({ n: "Removed", from: contEnd, to: walk, c: "rem" });
-    phases.push({ n: "Closing", from: walk, to: end, c: "close" });
+  if (contEnd > start && contEnd < end) {
+    phases.push({ n: "Contingency period", from: start, to: contEnd, c: "cont" });
+    phases.push({ n: "Closing", from: contEnd, to: end, c: "close" });
+  } else if (contEnd >= end) {
+    phases.push({ n: "Contingency period", from: start, to: end, c: "cont" });
   } else {
-    phases.push({ n: "Closing", from: Math.max(contEnd, start), to: end, c: "close" });
+    phases.push({ n: "In escrow", from: start, to: end, c: "cont" });
   }
 
   async function markDone(taskId: string, done: boolean) {
@@ -192,28 +197,27 @@ export function DealTimeline({
         )}
       </div>
 
+      <div className="tlr-phasebar">
+        {phases.map((p, i) => {
+          const w = pos(p.to) - pos(p.from);
+          return (
+            <div key={i} className={`tlr-seg b-${p.c}`} style={{ left: `${pos(p.from)}%`, width: `${w}%` }}>
+              {w >= 10 && <span>{p.n}</span>}
+            </div>
+          );
+        })}
+      </div>
+
       <div
         className={`tlr ${played ? "play" : ""}`}
-        style={{ ["--today" as keyof CSSProperties]: `${todayPct}%` } as CSSProperties}
+        style={{
+          ["--today" as keyof CSSProperties]: `${todayPos}%`,
+          ["--fillw" as keyof CSSProperties]: `${todayPos - PAD}%`,
+        } as CSSProperties}
       >
-        <div className="tlr-bands">
-          {phases.map((p, i) => (
-            <div
-              key={i}
-              className={`tlr-band b-${p.c}`}
-              style={{ left: `${pct(p.from)}%`, width: `${pct(p.to) - pct(p.from)}%` }}
-            >
-              <span className="tlr-bl">{p.n}</span>
-            </div>
-          ))}
-        </div>
         <div className="tlr-track" />
         <div className="tlr-fill" />
-        {showToday && (
-          <div className="tlr-today">
-            <span className="tlr-tl">Today · {fmtDate(new Date().toISOString()).replace(/,.*/, "")}</span>
-          </div>
-        )}
+        {showToday && <div className="tlr-today" />}
 
         {milestones.map((m, i) => {
           const st = m.key === nextKey ? "next" : stateOf(m);
@@ -231,13 +235,13 @@ export function DealTimeline({
             <div
               key={m.key}
               className={`tlr-mk ${above ? "above" : "below"} ${st}`}
-              style={{ left: `${pct(m.t)}%`, transitionDelay: `${0.35 + i * 0.08}s` }}
+              style={{ left: `${pos(m.t)}%`, transitionDelay: `${0.35 + i * 0.08}s` }}
             >
               {st === "next" && <span className="tlr-nexttag">NEXT</span>}
               <div className="tlr-conn" />
               <div className="tlr-ic">{st === "done" ? "✓" : iconFor(m.names[0])}</div>
               <div className="tlr-lab">
-                <div className="tlr-nm">{label}</div>
+                <div className="tlr-nm" title={m.names.join(", ")}>{label}</div>
                 <div className="tlr-dt">{fmtDate(m.dateIso).replace(/,\s*\d{4}$/, "")}</div>
                 <span className={`tlr-pill ${pillCls}`}>{status}</span>
               </div>
