@@ -3,12 +3,27 @@ import { supabase } from "./lib/supabase";
 import { Deal } from "./screens/Deal";
 import { Inbox } from "./screens/Inbox";
 import { Login } from "./screens/Login";
+import { InviteView } from "./screens/InviteView";
 import { Toaster } from "./lib/ui";
 import { motion } from "framer-motion";
+
+// An invited party arrives with their scoped token in the URL fragment
+// (#invite=<token>) — the fragment never reaches a server or a log.
+const inviteToken = (() => {
+  const m = /[#&]invite=([^&]+)/.exec(window.location.hash);
+  return m ? decodeURIComponent(m[1]) : null;
+})();
 
 type View = { name: "inbox" } | { name: "deal"; id: string };
 
 export default function App() {
+  // An invited party (not a TC) lands here — no login, just their scoped view.
+  if (inviteToken) return <InviteView token={inviteToken} />;
+
+  return <TcApp />;
+}
+
+function TcApp() {
   const [ready, setReady] = useState(false);
   const [signedIn, setSignedIn] = useState(false);
   const [email, setEmail] = useState<string | null>(null);

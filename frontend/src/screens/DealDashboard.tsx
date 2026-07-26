@@ -6,7 +6,8 @@ import {
   DealParty,
   DealRiskFlag,
   FullState,
-  isReceivingEnd,
+  isCollaborator,
+  isInvitable,
   PartyAccessToken,
   PARTY_ROLE_LABEL,
   PARTY_ROSTER,
@@ -213,7 +214,7 @@ export function DealDashboard({
         </div>
         <div className="party-actions">
           <button className="secondary sm" disabled={busy} onClick={() => startEdit(pt)}>✎ Edit</button>
-          {isReceivingEnd(pt) && (
+          {isInvitable(pt) && (
             <button
               className="secondary sm"
               disabled={busy}
@@ -222,11 +223,12 @@ export function DealDashboard({
                   const r = await api.post<PartyAccessToken>(
                     `/transactions/${id}/parties/${pt.id}/access-token`,
                   );
-                  setTokens((t) => ({ ...t, [pt.id]: r.access_token }));
-                }, "Access link generated")
+                  const link = `${window.location.origin}${window.location.pathname}#invite=${encodeURIComponent(r.access_token)}`;
+                  setTokens((t) => ({ ...t, [pt.id]: link }));
+                }, "Invite link ready")
               }
             >
-              🔗 Access link
+              🔗 Invite
             </button>
           )}
         </div>
@@ -239,8 +241,23 @@ export function DealDashboard({
           }, "Save")}
         {tokens[pt.id] && (
           <div className="token-box">
-            <textarea readOnly rows={2} value={tokens[pt.id]} />
-            <p className="muted">Scoped to their own task only — enforced by the database.</p>
+            <div className="between" style={{ marginBottom: "0.4rem" }}>
+              <span className="muted" style={{ fontSize: "0.76rem" }}>
+                {isCollaborator(pt)
+                  ? "Read-only view of this deal — no other party's private info."
+                  : "Scoped to their own task only — enforced by the database."}
+              </span>
+              <button
+                className="secondary sm"
+                onClick={() => {
+                  void navigator.clipboard?.writeText(tokens[pt.id]);
+                  toast("Link copied");
+                }}
+              >
+                Copy
+              </button>
+            </div>
+            <textarea readOnly rows={2} value={tokens[pt.id]} onFocus={(e) => e.target.select()} />
           </div>
         )}
       </motion.div>

@@ -331,6 +331,16 @@ export function isReceivingEnd(p: DealParty): boolean {
   return p.permission_tier === "receiving_end" || RECEIVING_END_ROLES.has(p.role);
 }
 
+const COLLABORATOR_ROLES = new Set(["buyer_agent", "listing_agent", "broker", "agent"]);
+export function isCollaborator(p: DealParty): boolean {
+  return p.permission_tier === "collaborator" || COLLABORATOR_ROLES.has(p.role);
+}
+/** Parties who can receive a live invite link (vendors: own task; agents/broker:
+ *  read-only deal view). Email-only parties (buyer/seller/lender/escrow) can't. */
+export function isInvitable(p: DealParty): boolean {
+  return isReceivingEnd(p) || isCollaborator(p);
+}
+
 // Timeline-readiness breakdown (backend _deadline_gate_state): which
 // deadline-driving §5 fields still block the timeline. `missing_fields` need
 // hand-entry, `unconfirmed_fields` need a one-tap confirm.

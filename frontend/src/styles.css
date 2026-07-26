@@ -861,3 +861,16 @@ button.secondary.sm { padding: 0.28rem 0.55rem; font-size: 0.76rem; }
 .d-up { background: var(--surface); border: 2px solid var(--line); } .d-over { background: var(--surface); border: 2px solid var(--red-600); } .d-goal { background: var(--surface); border: 2px solid var(--gold-500); }
 @media (prefers-reduced-motion: reduce) { .tlr-band, .tlr-today, .tlr-mk, .tlr-fill { opacity: 1 !important; animation: none !important; } .tlr.play .tlr-fill { width: var(--today); } .tlr-mk { transition: none !important; } }
 @media (max-width: 640px) { .tlr-lab { width: 78px; } .tlr-nm { font-size: 0.66rem; } }
+
+/* Invite landing (the party's scoped read-only view). */
+.inv-wrap { min-height: 100vh; background: var(--cream); padding: clamp(1rem, 4vw, 2.5rem); }
+.inv-shell { max-width: 720px; margin: 0 auto; display: flex; flex-direction: column; gap: 1rem; }
+.inv-top { margin-bottom: 0.2rem; }
+.inv-hero { background: linear-gradient(158deg, var(--gold-100), var(--surface) 70%); }
+.inv-eyebrow { font-size: 0.68rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--gold-700); font-weight: 700; }
+.inv-hero h1 { font-family: var(--serif); font-size: 1.7rem; font-weight: 600; }
+.inv-dl { display: flex; align-items: baseline; gap: 0.9rem; padding: 0.5rem 0; border-bottom: 1px solid var(--line-2); }
+.inv-dl:last-child { border-bottom: 0; }
+.inv-dl-date { font-family: var(--serif); font-weight: 600; min-width: 96px; }
+.inv-dl-name { color: var(--ink-2); }
+.inv-foot { font-size: 0.8rem; text-align: center; padding: 0.5rem 0 1rem; }
