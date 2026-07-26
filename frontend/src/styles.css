@@ -817,13 +817,15 @@ button.secondary.sm { padding: 0.28rem 0.55rem; font-size: 0.76rem; }
   background: linear-gradient(90deg, var(--gold-600), var(--navy-600)); transition: width 1.1s cubic-bezier(.4,.8,.3,1) .15s; }
 .tlr.play .tlr-fill { width: var(--fillw, 43%); }
 
-.tlr-today { position: absolute; top: 62px; bottom: 60px; width: 2px; background: var(--navy-600); left: var(--today, 50%); opacity: 0; transition: opacity 0.5s ease 0.8s; }
-.tlr.play .tlr-today { opacity: 1; }
-.tlr-today::before { content: ""; position: absolute; top: -4px; left: -4px; width: 10px; height: 10px; border-radius: 50%; background: var(--navy-600); animation: tlr-ping 2.4s ease-out infinite; }
-.tlr-tl { position: absolute; top: -22px; left: 50%; transform: translateX(-50%); white-space: nowrap; font-size: 0.64rem; font-weight: 700; color: var(--navy-600); background: var(--surface); border: 1px solid var(--line); padding: 0.08rem 0.4rem; border-radius: 6px; }
-@keyframes tlr-ping { 0% { box-shadow: 0 0 0 0 rgba(44,74,124,.4); } 70% { box-shadow: 0 0 0 12px rgba(44,74,124,0); } 100% { box-shadow: 0 0 0 0 rgba(44,74,124,0); } }
+/* "today" — a subtle line through the track, behind the milestones, so it never
+   crowds the end markers even when today sits a day before close. */
+.tlr-today { position: absolute; top: 82px; height: 36px; width: 2px; left: var(--today, 50%); z-index: 0;
+  background: var(--navy-600); border-radius: 2px; opacity: 0; transition: opacity 0.5s ease 0.8s;
+  box-shadow: 0 0 7px 1px rgba(44,74,124,.25); animation: tlr-glow 2.6s ease-in-out infinite; }
+.tlr.play .tlr-today { opacity: 0.85; }
+@keyframes tlr-glow { 0%,100% { box-shadow: 0 0 6px 1px rgba(44,74,124,.2); } 50% { box-shadow: 0 0 11px 2px rgba(44,74,124,.4); } }
 
-.tlr-mk { position: absolute; top: 98px; transform: translate(-50%, -50%); opacity: 0; }
+.tlr-mk { position: absolute; top: 98px; transform: translate(-50%, -50%); opacity: 0; z-index: 2; }
 .tlr.play .tlr-mk { opacity: 1; transition: opacity 0.5s ease, transform 0.5s cubic-bezier(.3,1.3,.5,1); }
 .tlr-ic { width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; font-size: 1rem; cursor: pointer;
   background: var(--surface); border: 2px solid var(--line); color: var(--ink-2); position: relative; z-index: 2; transition: transform 0.14s; }

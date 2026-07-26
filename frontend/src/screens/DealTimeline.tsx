@@ -223,7 +223,12 @@ export function DealTimeline({
           const st = m.key === nextKey ? "next" : stateOf(m);
           const above = i % 2 === 0;
           const days = Math.round((m.t - now) / DAY);
-          const label = m.names.slice(0, 1).join(", ") + (m.names.length > 1 ? ` +${m.names.length - 1}` : "");
+          // For the close-of-escrow group (loan contingency often shares the
+          // date), lead with "Close of escrow" — it's the milestone that matters.
+          const dispNames = m.isCoe
+            ? ["Close of escrow", ...m.names.filter((n) => !/escrow/i.test(n))]
+            : m.names;
+          const label = dispNames[0] + (dispNames.length > 1 ? ` +${dispNames.length - 1}` : "");
           const status =
             st === "done" ? "✓ done"
               : days < 0 ? `${-days}d ago`
