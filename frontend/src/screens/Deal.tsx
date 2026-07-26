@@ -1,14 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
-import {
-  api,
-  Deadline,
-  FIELD_DEADLINE_KEYWORD,
-  FullState,
-  Message,
-  S5_FIELD_GROUP,
-  S5_GROUPS,
-} from "../lib/api";
+import { api, FullState, Message } from "../lib/api";
 import { fmtDate, fmtDateTime } from "../lib/format";
+import { ExtractionReview } from "./ExtractionReview";
 import { DealDashboard } from "./DealDashboard";
 import { DealTimeline } from "./DealTimeline";
 import { AnimatedTabs, CountUp, toast } from "../lib/ui";
@@ -110,42 +103,6 @@ export function Deal({ id, onBack }: { id: string; onBack: () => void }) {
   const gate = state.timeline_gate;
   const blocking = gate ? gate.missing_fields.length + gate.unconfirmed_fields.length : 0;
 
-  // The CA-engine-computed date for a deadline-driving field (never recomputed
-  // in the browser — we surface the deadline the compliance run produced).
-  const deadlines: Deadline[] = state.deadlines;
-  function exactDate(fieldName: string): string | null {
-    const kw = FIELD_DEADLINE_KEYWORD[fieldName];
-    if (!kw) return null;
-    const dl = deadlines.find((d) => d.name.toLowerCase().includes(kw));
-    return dl ? fmtDate(dl.due_date) : null;
-  }
-  function fieldCard(f: FullState["extracted_fields"][number]) {
-    const pct = Math.round(f.confidence * 100);
-    const resolved = exactDate(f.name);
-    return (
-      <div key={f.id} className={`field-card ${f.confirmed ? "confirmed" : ""}`}>
-        {f.confirmed && <span className="fc-check">✓</span>}
-        <div className="fc-label">
-          {f.name.replace(/_/g, " ")}
-          {f.deadline_driving && <span className="badge gold">deadline</span>}
-        </div>
-        <div className="fc-value">{f.value}</div>
-        {resolved && <div className="fc-date">→ {resolved}</div>}
-        <div className="fc-bar">
-          <span className={f.confidence >= 0.7 ? "high" : "low"} style={{ width: `${pct}%` }} />
-        </div>
-        <div className="fc-foot">
-          <span className="muted">{pct}% confidence</span>
-          <span
-            className={f.confirmed ? "" : "muted"}
-            style={f.confirmed ? { color: "var(--green-700)", fontWeight: 600 } : undefined}
-          >
-            {f.confirmed ? "confirmed" : "pending"}
-          </span>
-        </div>
-      </div>
-    );
-  }
   const drafts: Message[] = state.messages.filter((m) => m.status === "draft");
   const approved: Message[] = state.messages.filter((m) => m.status === "approved");
   const sent = state.messages.filter((m) => m.status === "sent");
@@ -394,48 +351,19 @@ export function Deal({ id, onBack }: { id: string; onBack: () => void }) {
         )}
       </div>
 
-      <div className="ex-head">
-        <div className="between">
-          <div>
-            <h2 style={{ margin: 0 }}>🔎 Extraction review</h2>
-            <span className="muted">Claude · §5 fields, grouped · per-field confidence</span>
-          </div>
-          {unconfirmed.length > 0 && (
-            <button
-              className="gold"
-              disabled={busy}
-              onClick={() =>
-                void run(
-                  () =>
-                    api.post(`/transactions/${id}/fields/confirm`, {
-                      field_ids: unconfirmed.map((f) => f.id),
-                    }),
-                  `${unconfirmed.length} field${unconfirmed.length > 1 ? "s" : ""} confirmed`,
-                )
-              }
-            >
-              ✓ Confirm {unconfirmed.length} field{unconfirmed.length > 1 ? "s" : ""}
-            </button>
-          )}
-        </div>
-      </div>
-      {fields.length === 0 && (
-        <div className="card">
-          <div className="empty"><span className="emoji">🔎</span>No extracted fields yet.</div>
-        </div>
-      )}
-      {S5_GROUPS.map((grp) => {
-        const inGroup = fields.filter((f) => (S5_FIELD_GROUP[f.name] ?? "other") === grp.key);
-        if (inGroup.length === 0) return null;
-        return (
-          <div key={grp.key} className="card fcard">
-            <div className="fgroup-label">
-              {grp.icon} {grp.label}
-            </div>
-            <div className="field-grid">{inGroup.map((f) => fieldCard(f))}</div>
-          </div>
-        );
-      })}
+      <ExtractionReview
+        state={state}
+        busy={busy}
+        onConfirmAll={() =>
+          void run(
+            () =>
+              api.post(`/transactions/${id}/fields/confirm`, {
+                field_ids: unconfirmed.map((f) => f.id),
+              }),
+            `${unconfirmed.length} field${unconfirmed.length > 1 ? "s" : ""} confirmed`,
+          )
+        }
+      />
 
               </>
             ),

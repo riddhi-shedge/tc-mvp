@@ -595,3 +595,86 @@ button.secondary.sm { padding: 0.28rem 0.55rem; font-size: 0.76rem; }
 
 /* Task meta line: due date (urgency-colored) + assignee. */
 .task-meta { font-size: 0.78rem; margin-top: 2px; }
+
+/* ============================================================================
+   Extraction Review — the contract dashboard (snapshot → parties → deadline
+   spine → grouped term rows). State encoded in form: confidence dots, verify
+   stripes, resolved-date chips.
+   ========================================================================== */
+.xr { display: flex; flex-direction: column; gap: 1.05rem; }
+.xr .tnum { font-variant-numeric: tabular-nums; }
+.xr-muted { color: var(--muted); }
+
+.xr-top { display: flex; align-items: flex-end; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+.xr-eyebrow { font-size: 0.7rem; letter-spacing: 0.13em; text-transform: uppercase; color: var(--gold-700); font-weight: 700; }
+.xr-h { font-family: var(--serif); font-size: 1.5rem; font-weight: 600; letter-spacing: -0.01em; margin-top: 0.15rem; }
+.xr-topright { display: flex; align-items: center; gap: 1rem; }
+.xr-conf { display: flex; align-items: center; gap: 0.55rem; }
+.xr-ring { width: 44px; height: 44px; flex: 0 0 auto; }
+.xr-ringtxt { font-size: 0.77rem; color: var(--ink-2); line-height: 1.25; }
+.xr-ringtxt b { color: var(--ink); }
+
+/* snapshot */
+.xr-snap { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px; background: var(--line);
+  border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; box-shadow: var(--shadow-sm); }
+.xr-stat { background: var(--surface); padding: 1rem 1.1rem; display: flex; flex-direction: column; gap: 0.26rem; min-width: 0; }
+.xr-stat.hero { background: linear-gradient(158deg, var(--gold-100), var(--surface) 72%); }
+.xr-k { font-size: 0.64rem; letter-spacing: 0.09em; text-transform: uppercase; color: var(--muted); font-weight: 700; }
+.xr-v { font-family: var(--serif); font-size: 1.42rem; font-weight: 600; letter-spacing: -0.01em; line-height: 1.05; word-break: break-word; }
+.xr-stat.hero .xr-v { color: var(--gold-700); }
+.xr-m { font-size: 0.75rem; color: var(--ink-2); min-height: 1em; }
+.xr-pill { display: inline-flex; align-items: center; gap: 0.3rem; font-size: 0.71rem; font-weight: 700;
+  padding: 0.14rem 0.5rem; border-radius: 999px; width: max-content; }
+.xr-pill.cash { background: var(--green-100); color: var(--green-700); }
+
+/* parties */
+.xr-sides { display: grid; grid-template-columns: 1fr 1fr; gap: 1.05rem; }
+.xr-side { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r);
+  box-shadow: var(--shadow-sm); padding: 1.05rem 1.1rem; }
+.xr-lbl { font-size: 0.68rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--navy-600); font-weight: 700; }
+.xr-side .xr-lbl { margin-bottom: 0.65rem; }
+.xr-prin { display: flex; flex-direction: column; gap: 0.1rem; margin-bottom: 0.8rem; }
+.xr-who { font-family: var(--serif); font-size: 1.1rem; font-weight: 600; }
+.xr-role { font-size: 0.7rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.07em; font-weight: 700; margin-top: 0.15rem; }
+.xr-agent { border-top: 1px dashed var(--line); padding-top: 0.7rem; display: flex; gap: 0.65rem; align-items: flex-start; }
+.xr-av { width: 34px; height: 34px; border-radius: 9px; flex: 0 0 auto; display: grid; place-items: center;
+  font-family: var(--serif); font-weight: 700; color: var(--navy-900); background: linear-gradient(145deg, var(--gold-500), var(--gold-700)); }
+.xr-nm { font-weight: 600; font-size: 0.92rem; }
+.xr-co { font-size: 0.76rem; color: var(--muted); }
+.xr-chips { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-top: 0.35rem; }
+.xr-chip { font-size: 0.73rem; color: var(--ink-2); background: var(--surface-2); border: 1px solid var(--line); padding: 0.14rem 0.5rem; border-radius: 7px; }
+
+/* deadline spine */
+.xr-spinecard { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); box-shadow: var(--shadow-sm); padding: 0.85rem 1rem 0.95rem; }
+.xr-spineh { display: flex; align-items: baseline; justify-content: space-between; padding: 0 0.15rem 0.3rem; }
+.xr-spine { display: flex; gap: 0.65rem; overflow-x: auto; padding: 0.3rem 0.15rem 0.5rem; }
+.xr-stop { flex: 0 0 auto; width: 128px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-sm); padding: 0.65rem 0.7rem; }
+.xr-stop.anchor { background: rgba(44, 74, 124, 0.07); border-color: var(--navy-500); }
+.xr-d { font-family: var(--serif); font-size: 1.12rem; font-weight: 600; }
+.xr-nm2 { font-size: 0.75rem; color: var(--ink-2); margin-top: 0.3rem; line-height: 1.25; }
+.xr-rel { font-size: 0.68rem; color: var(--muted); margin-top: 0.15rem; }
+
+/* term rows */
+.xr-terms { display: grid; grid-template-columns: 1fr 1fr; gap: 1.05rem; }
+.xr-grp { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); box-shadow: var(--shadow-sm); padding: 0.95rem 1.1rem 1rem; }
+.xr-grp > .xr-lbl { margin-bottom: 0.45rem; }
+.xr-row { display: grid; grid-template-columns: 1fr auto; gap: 0.8rem; align-items: baseline; padding: 0.5rem 0; border-bottom: 1px solid var(--line-2); }
+.xr-row:last-child { border-bottom: 0; }
+.xr-t { color: var(--ink-2); font-size: 0.86rem; display: flex; align-items: center; gap: 0.42rem; }
+.xr-val { font-weight: 600; text-align: right; font-size: 0.88rem; word-break: break-word; }
+.xr-row.verify { margin: 0 -1.1rem; padding-left: calc(1.1rem - 3px); padding-right: 1.1rem;
+  border-left: 3px solid var(--amber-600); background: linear-gradient(90deg, var(--amber-100), transparent 62%); }
+.xr-datechip { display: inline-flex; align-items: center; gap: 0.25rem; font-size: 0.72rem; font-weight: 700;
+  color: var(--gold-700); background: var(--gold-100); padding: 0.08rem 0.42rem; border-radius: 6px; margin-left: 0.4rem; }
+.xr-vpill { font-size: 0.62rem; font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase; color: var(--amber-700);
+  background: var(--amber-100); padding: 0.08rem 0.34rem; border-radius: 5px; }
+.xr-dot { width: 7px; height: 7px; border-radius: 50%; flex: 0 0 auto; display: inline-block; }
+.xr-dot.ok { background: var(--green-600); }
+.xr-dot.low { background: var(--amber-600); }
+.xr-legend { display: flex; flex-wrap: wrap; gap: 1.1rem; font-size: 0.76rem; color: var(--muted); padding: 0.1rem 0.2rem; }
+.xr-legend span { display: inline-flex; align-items: center; gap: 0.35rem; }
+
+@media (max-width: 760px) {
+  .xr-snap { grid-template-columns: 1fr 1fr; }
+  .xr-sides, .xr-terms { grid-template-columns: 1fr; }
+}
