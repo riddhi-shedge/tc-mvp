@@ -20,6 +20,16 @@ _INSPECTOR_ROLES = {
 }
 
 
+def _fmt(d: date) -> str:
+    """Human date for a flag description: 'Aug 11, 2026' (portable, no %-d)."""
+    return f"{d:%b} {d.day}, {d.year}"
+
+
+def _days_phrase(due: date, as_of: date) -> str:
+    n = (due - as_of).days
+    return f"{n} day{'s' if n != 1 else ''}"
+
+
 def _deadline(deadlines: list[ComputedDeadline], key: str) -> ComputedDeadline | None:
     return next((d for d in deadlines if d.key == key), None)
 
@@ -52,7 +62,11 @@ def detect_risk_flags(
             flags.append(
                 RiskFlag(
                     case="inspection_not_scheduled",
-                    description="No inspection party is on the deal as the inspection contingency nears.",
+                    description=(
+                        f"No inspection is scheduled yet — the inspection contingency ends "
+                        f"{_fmt(insp.due_date)}. Book a general inspection and add the "
+                        "inspector to the deal."
+                    ),
                     deadline_key="inspection_contingency",
                 )
             )
@@ -64,7 +78,11 @@ def detect_risk_flags(
             flags.append(
                 RiskFlag(
                     case="appraisal_not_ordered",
-                    description="No appraiser is on the deal as the appraisal contingency nears.",
+                    description=(
+                        f"The appraisal doesn't appear ordered — the appraisal contingency "
+                        f"ends {_fmt(appr.due_date)}. Confirm with the lender that it's been "
+                        "ordered."
+                    ),
                     deadline_key="appraisal_contingency",
                 )
             )
@@ -77,7 +95,11 @@ def detect_risk_flags(
         flags.append(
             RiskFlag(
                 case="loan_contingency_approaching",
-                description="The loan contingency deadline is approaching.",
+                description=(
+                    f"The loan contingency ends {_fmt(loan.due_date)} "
+                    f"({_days_phrase(loan.due_date, as_of)}). Confirm loan approval, then "
+                    "remove or extend the contingency."
+                ),
                 deadline_key="loan_contingency",
             )
         )
@@ -88,7 +110,10 @@ def detect_risk_flags(
         flags.append(
             RiskFlag(
                 case="earnest_money_not_confirmed",
-                description="The earnest money deposit due date has passed without confirmation.",
+                description=(
+                    f"The earnest money deposit was due {_fmt(emd.due_date)} and escrow "
+                    "hasn't confirmed receipt."
+                ),
                 deadline_key="emd",
             )
         )
@@ -99,7 +124,10 @@ def detect_risk_flags(
         flags.append(
             RiskFlag(
                 case="disclosures_unsigned",
-                description="Seller disclosures are not confirmed past their delivery deadline.",
+                description=(
+                    f"Seller disclosures were due {_fmt(disc.due_date)} and none are "
+                    "confirmed delivered."
+                ),
                 deadline_key="disclosure_delivery",
             )
         )
@@ -109,7 +137,10 @@ def detect_risk_flags(
         flags.append(
             RiskFlag(
                 case="missing_escrow_contact",
-                description="No escrow holder contact is on the deal.",
+                description=(
+                    "No escrow holder is on the deal — earnest-money confirmation and closing "
+                    "can't proceed until one is added."
+                ),
             )
         )
 
@@ -118,11 +149,16 @@ def detect_risk_flags(
     if coe is not None and 0 <= (coe.due_date - as_of).days <= _lead(
         rules, "closing_near_open_tasks"
     ):
-        if any(t.status not in ("done", "complete") for t in state.tasks):
+        open_n = sum(1 for t in state.tasks if t.status not in ("done", "complete"))
+        if open_n:
             flags.append(
                 RiskFlag(
                     case="closing_near_open_tasks",
-                    description="Close of escrow is near while tasks remain open.",
+                    description=(
+                        f"Close of escrow is {_fmt(coe.due_date)} "
+                        f"({_days_phrase(coe.due_date, as_of)}) with {open_n} "
+                        f"task{'s' if open_n != 1 else ''} still open."
+                    ),
                     deadline_key="coe",
                 )
             )

@@ -118,3 +118,15 @@ def test_closing_near_but_all_tasks_done():
     )
     dls = [_dl("coe", date(2026, 7, 15))]
     assert "closing_near_open_tasks" not in _cases(state, dls, date(2026, 7, 10))
+
+
+def test_descriptions_are_specific_with_dates():
+    """The 'attention' text names the concrete deadline date + an instruction —
+    not a generic 'is approaching'."""
+    state = DealState(transaction_id="t", parties=[DealPartyState(role="escrow")])
+    dls = [_dl("loan_contingency", date(2026, 8, 11))]
+    flags = detect_risk_flags(state, dls, RULES, as_of=date(2026, 8, 6))
+    loan = next(f for f in flags if f.case == "loan_contingency_approaching")
+    assert "Aug 11, 2026" in loan.description
+    assert "5 days" in loan.description
+    assert "is approaching." not in loan.description  # no longer generic

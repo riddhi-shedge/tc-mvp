@@ -13,7 +13,7 @@ import {
   Task,
 } from "../lib/api";
 import { Ring, toast } from "../lib/ui";
-import { fmtDateTime } from "../lib/format";
+import { fmtDate, fmtDateTime } from "../lib/format";
 import { motion } from "framer-motion";
 
 const listStagger = { visible: { transition: { staggerChildren: 0.055 } } };
@@ -384,11 +384,32 @@ export function DealDashboard({
           <div className="empty"><span className="emoji">📋</span>No tasks yet.</div>
         )}
         <div className="stack">
-          {state.tasks.map((t) => {
+          {[...state.tasks]
+            .sort((a, b) => {
+              const da = state.deadlines.find((d) => d.id === a.deadline_id)?.due_date ?? "9999";
+              const db = state.deadlines.find((d) => d.id === b.deadline_id)?.due_date ?? "9999";
+              return da.localeCompare(db);
+            })
+            .map((t) => {
             const done = ["done", "complete"].includes(t.status);
             const who = t.assigned_party_id
               ? parties.find((p) => p.id === t.assigned_party_id)?.name ?? "assigned"
               : null;
+            const due = t.deadline_id
+              ? state.deadlines.find((d) => d.id === t.deadline_id)?.due_date ?? null
+              : null;
+            const daysLeft =
+              due && !done
+                ? Math.round((new Date(due + "T00:00:00").getTime() - Date.now()) / 86_400_000)
+                : null;
+            const dueColor =
+              daysLeft == null
+                ? undefined
+                : daysLeft < 0
+                  ? "var(--red-600)"
+                  : daysLeft <= 5
+                    ? "var(--gold-700)"
+                    : "var(--muted)";
             return (
               <div key={t.id} className={`task-row ${done ? "done" : ""}`}>
                 <button
@@ -409,8 +430,22 @@ export function DealDashboard({
                 </button>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div className="task-title">{t.title}</div>
-                  {who && (
-                    <div className="muted" style={{ fontSize: "0.78rem" }}>→ {who}</div>
+                  {(due || who) && (
+                    <div className="task-meta">
+                      {due && (
+                        <span style={{ color: dueColor, fontWeight: daysLeft != null && daysLeft <= 5 ? 600 : 400 }}>
+                          📅 {fmtDate(due)}
+                          {daysLeft != null &&
+                            (daysLeft < 0
+                              ? ` · ${-daysLeft}d overdue`
+                              : daysLeft === 0
+                                ? " · today"
+                                : ` · ${daysLeft}d`)}
+                        </span>
+                      )}
+                      {due && who && <span className="muted"> · </span>}
+                      {who && <span className="muted">→ {who}</span>}
+                    </div>
                   )}
                 </div>
                 <span className={`badge ${done ? "ok" : "draft"}`}>{t.status.replace(/_/g, " ")}</span>

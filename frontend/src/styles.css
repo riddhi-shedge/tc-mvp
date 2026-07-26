@@ -592,3 +592,6 @@ button.secondary.sm { padding: 0.28rem 0.55rem; font-size: 0.76rem; }
   border-radius: 50%; animation: spin 0.7s linear infinite;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
+
+/* Task meta line: due date (urgency-colored) + assignee. */
+.task-meta { font-size: 0.78rem; margin-top: 2px; }
