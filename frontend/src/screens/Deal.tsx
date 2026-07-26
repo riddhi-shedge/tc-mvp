@@ -305,8 +305,11 @@ export function Deal({ id, onBack }: { id: string; onBack: () => void }) {
 
       {state.deadlines.length > 0 && (
         <DealTimeline
+          id={id}
           deadlines={state.deadlines}
+          tasks={state.tasks}
           acceptanceDate={fields.find((f) => f.name === "acceptance_date")?.value ?? null}
+          onChanged={refresh}
         />
       )}
 

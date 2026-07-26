@@ -1,30 +1,78 @@
-import { Deadline } from "../lib/api";
+import { CSSProperties, useEffect, useState } from "react";
+import { api, Deadline, Task } from "../lib/api";
+import { fmtDate } from "../lib/format";
+import { toast } from "../lib/ui";
 
-/** A horizontal, date-proportional deal timeline: Acceptance → Close of Escrow,
- *  every deadline plotted by its real date, a live "today" line, and urgency
- *  color. The signature at-a-glance view for the deal. */
+const DAY = 86_400_000;
+
+function iconFor(name: string): string {
+  const s = name.toLowerCase();
+  if (s.includes("acceptance")) return "🚩";
+  if (s.includes("earnest") || s.includes("deposit") || s.includes("emd")) return "📌";
+  if (s.includes("disclosure")) return "📄";
+  if (s.includes("inspection")) return "🔍";
+  if (s.includes("appraisal")) return "🏷️";
+  if (s.includes("loan")) return "🏦";
+  if (s.includes("insurance")) return "🛡️";
+  if (s.includes("verification") || s.includes("funds")) return "💵";
+  if (s.includes("walk")) return "🚶";
+  if (s.includes("escrow") || s.includes("closing")) return "🔑";
+  if (s.includes("possession")) return "🔑";
+  return "◆";
+}
+function shortName(name: string): string {
+  return name
+    .replace(/ (ends|due|delivery|contingency|\(.*\))/gi, "")
+    .replace(/Close of escrow/i, "Close of escrow")
+    .trim();
+}
+const isDone = (t: Task) => t.status === "done" || t.status === "complete";
+
+type Milestone = {
+  key: string;
+  t: number;
+  dateIso: string;
+  names: string[];
+  deadlineIds: string[];
+  anchor: boolean;
+  isCoe: boolean;
+};
+
+/** The "deal runway": a proportional timeline (Acceptance → Close of Escrow) with
+ *  phase bands, icon milestones that show done/next/upcoming state, a live pulsing
+ *  "today", a draw-in on load, and hover-for-task actions. */
 export function DealTimeline({
+  id,
   deadlines,
+  tasks,
   acceptanceDate,
+  onChanged,
 }: {
+  id: string;
   deadlines: Deadline[];
+  tasks: Task[];
   acceptanceDate: string | null;
+  onChanged: () => void;
 }) {
-  function shortName(name: string): string {
-    return name
-      .replace(/ (ends|due|delivery|contingency|\(.*\))/gi, "")
-      .replace(/Close of escrow/i, "COE")
-      .trim();
-  }
+  const [played, setPlayed] = useState(false);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    const r = requestAnimationFrame(() => requestAnimationFrame(() => setPlayed(true)));
+    return () => cancelAnimationFrame(r);
+  }, []);
 
-  // Group deadlines that share a date (e.g. inspection/appraisal/insurance all
-  // land on the same day) into one marker so flags don't stack.
-  const byDate = new Map<string, { t: number; names: string[]; id: string }>();
+  // group deadlines that share a date into one milestone
+  const byDate = new Map<string, Milestone>();
   for (const d of deadlines) {
     const t = Date.parse(d.due_date);
     if (Number.isNaN(t)) continue;
-    const g = byDate.get(d.due_date) ?? { t, names: [], id: d.id };
+    const g = byDate.get(d.due_date) ?? {
+      key: d.due_date, t, dateIso: d.due_date, names: [], deadlineIds: [], anchor: false,
+      isCoe: false,
+    };
     g.names.push(shortName(d.name));
+    g.deadlineIds.push(d.id);
+    if (/escrow/i.test(d.name)) g.isCoe = true;
     byDate.set(d.due_date, g);
   }
   const dated = [...byDate.values()].sort((a, b) => a.t - b.t);
@@ -41,76 +89,187 @@ export function DealTimeline({
     );
   }
 
-  const acc = acceptanceDate ? Date.parse(acceptanceDate) : NaN;
-  const start = !Number.isNaN(acc) ? Math.min(acc, dated[0].t) : dated[0].t;
-  const end = dated[dated.length - 1].t;
-  const span = Math.max(end - start, 86_400_000);
+  const accT = acceptanceDate ? Date.parse(acceptanceDate) : NaN;
+  const milestones: Milestone[] = [];
+  if (!Number.isNaN(accT)) {
+    milestones.push({
+      key: "acceptance", t: accT, dateIso: acceptanceDate as string,
+      names: ["Acceptance"], deadlineIds: [], anchor: true, isCoe: false,
+    });
+  }
+  milestones.push(...dated);
+
   const now = Date.now();
+  const coe = milestones.find((m) => m.isCoe) ?? milestones[milestones.length - 1];
+  const start = milestones[0].t;
+  const end = Math.max(coe.t, milestones[milestones.length - 1].t);
+  const span = Math.max(end - start, DAY);
   const pct = (t: number) => Math.max(0, Math.min(100, ((t - start) / span) * 100));
   const todayPct = pct(now);
   const showToday = now >= start && now <= end;
 
-  const dayMs = 86_400_000;
-  function urgency(t: number): "overdue" | "danger" | "warn" | "ok" {
-    const days = Math.round((t - now) / dayMs);
-    if (days < 0) return "overdue";
-    if (days <= 3) return "danger";
-    if (days <= 10) return "warn";
-    return "ok";
+  // per-milestone task state
+  const tasksByDeadline = new Map<string, Task[]>();
+  for (const tk of tasks) {
+    if (tk.deadline_id) {
+      const arr = tasksByDeadline.get(tk.deadline_id) ?? [];
+      arr.push(tk);
+      tasksByDeadline.set(tk.deadline_id, arr);
+    }
+  }
+  const linkedTasks = (m: Milestone) => m.deadlineIds.flatMap((d) => tasksByDeadline.get(d) ?? []);
+  const doneOf = (m: Milestone) => {
+    const ts = linkedTasks(m);
+    return ts.length > 0 && ts.every(isDone);
+  };
+
+  type State = "done" | "overdue" | "next" | "up" | "goal";
+  const stateOf = (m: Milestone): State => {
+    if (m.anchor) return "done";
+    if (doneOf(m)) return "done";
+    if (m.t < now - DAY) return "overdue";
+    if (m.isCoe) return "goal";
+    return "up";
+  };
+  // nearest upcoming, not-done milestone → the "next"
+  const nextKey = milestones
+    .filter((m) => !m.anchor && m.t >= now - DAY && !doneOf(m))
+    .sort((a, b) => a.t - b.t)[0]?.key;
+
+  const daysToClose = Math.round((coe.t - now) / DAY);
+  const nextM = milestones.find((m) => m.key === nextKey);
+  const nextDays = nextM ? Math.round((nextM.t - now) / DAY) : null;
+
+  // phases: Contingency period → (Removed) → Closing
+  const contEnd = Math.max(
+    ...milestones.filter((m) => /inspection|appraisal|loan|insurance/i.test(m.names.join(" "))).map((m) => m.t),
+    start,
+  );
+  const walk = milestones.find((m) => /walk/i.test(m.names.join(" ")))?.t;
+  const phases: { n: string; from: number; to: number; c: string }[] = [];
+  if (contEnd > start) phases.push({ n: "Contingency period", from: start, to: contEnd, c: "cont" });
+  if (walk && walk > contEnd) {
+    phases.push({ n: "Removed", from: contEnd, to: walk, c: "rem" });
+    phases.push({ n: "Closing", from: walk, to: end, c: "close" });
+  } else {
+    phases.push({ n: "Closing", from: Math.max(contEnd, start), to: end, c: "close" });
+  }
+
+  async function markDone(taskId: string, done: boolean) {
+    setBusy(true);
+    try {
+      await api.patch(`/transactions/${id}/tasks/${taskId}`, { status: done ? "done" : "pending" });
+      toast(done ? "Task done" : "Reopened");
+      onChanged();
+    } catch (err) {
+      toast(err instanceof Error ? err.message : "Failed", { error: true });
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (
-    <div className="card timeline-card">
-      <div className="between" style={{ marginBottom: "1.1rem" }}>
-        <h2 style={{ margin: 0 }}>◷ Deal timeline</h2>
-        <span className="muted">Acceptance → Close of Escrow</span>
+    <div className="card tlr-card">
+      <div className="tlr-hero">
+        <div>
+          <div className="tlr-eyebrow">◷ Deal timeline</div>
+          <div className="tlr-count">
+            {daysToClose < 0 ? (
+              <>Closed <b>{-daysToClose}d ago</b></>
+            ) : (
+              <>Closing in <b>{daysToClose}d</b></>
+            )}
+          </div>
+        </div>
+        {nextM && nextDays != null && (
+          <div className="tlr-next">
+            <div className="tlr-nlab">Next up</div>
+            <div className="tlr-nval">
+              {iconFor(nextM.names[0])} {nextM.names[0]} ·{" "}
+              {nextDays < 0 ? `${-nextDays}d overdue` : nextDays === 0 ? "today" : `in ${nextDays}d`}
+            </div>
+          </div>
+        )}
       </div>
 
-      <div className="tl">
-        <div className="tl-track" />
-        <div
-          className="tl-progress"
-          style={{ width: `${showToday ? todayPct : now > end ? 100 : 0}%` }}
-        />
+      <div
+        className={`tlr ${played ? "play" : ""}`}
+        style={{ ["--today" as keyof CSSProperties]: `${todayPct}%` } as CSSProperties}
+      >
+        <div className="tlr-bands">
+          {phases.map((p, i) => (
+            <div
+              key={i}
+              className={`tlr-band b-${p.c}`}
+              style={{ left: `${pct(p.from)}%`, width: `${pct(p.to) - pct(p.from)}%` }}
+            >
+              <span className="tlr-bl">{p.n}</span>
+            </div>
+          ))}
+        </div>
+        <div className="tlr-track" />
+        <div className="tlr-fill" />
         {showToday && (
-          <div className="tl-today" style={{ left: `${todayPct}%` }}>
-            <span className="tl-today-label">Today</span>
+          <div className="tlr-today">
+            <span className="tlr-tl">Today · {fmtDate(new Date().toISOString()).replace(/,.*/, "")}</span>
           </div>
         )}
 
-        {dated.map((d, i) => {
-          const u = urgency(d.t);
+        {milestones.map((m, i) => {
+          const st = m.key === nextKey ? "next" : stateOf(m);
           const above = i % 2 === 0;
-          const days = Math.round((d.t - now) / dayMs);
+          const days = Math.round((m.t - now) / DAY);
+          const label = m.names.slice(0, 1).join(", ") + (m.names.length > 1 ? ` +${m.names.length - 1}` : "");
+          const status =
+            st === "done" ? "✓ done"
+              : days < 0 ? `${-days}d ago`
+              : days === 0 ? "today"
+              : `${days}d`;
+          const pillCls = st === "done" ? "p-done" : st === "next" ? "p-next" : st === "overdue" ? "p-over" : "p-up";
+          const openTask = linkedTasks(m).find((t) => !isDone(t)) ?? linkedTasks(m)[0] ?? null;
           return (
             <div
-              key={d.id}
-              className={`tl-marker ${above ? "above" : "below"}`}
-              style={{ left: `${pct(d.t)}%` }}
+              key={m.key}
+              className={`tlr-mk ${above ? "above" : "below"} ${st}`}
+              style={{ left: `${pct(m.t)}%`, transitionDelay: `${0.35 + i * 0.08}s` }}
             >
-              <span className={`tl-dot ${u}`} />
-              <div className="tl-flag">
-                <div className="tl-flag-name">
-                  {d.names.slice(0, 2).join(", ")}
-                  {d.names.length > 2 ? ` +${d.names.length - 2}` : ""}
-                </div>
-                <div className="tl-flag-date">
-                  {new Date(d.t).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
-                  <span className={`tl-days ${u}`}>
-                    {days < 0 ? `${-days}d ago` : days === 0 ? "today" : `${days}d`}
-                  </span>
-                </div>
+              {st === "next" && <span className="tlr-nexttag">NEXT</span>}
+              <div className="tlr-conn" />
+              <div className="tlr-ic">{st === "done" ? "✓" : iconFor(m.names[0])}</div>
+              <div className="tlr-lab">
+                <div className="tlr-nm">{label}</div>
+                <div className="tlr-dt">{fmtDate(m.dateIso).replace(/,\s*\d{4}$/, "")}</div>
+                <span className={`tlr-pill ${pillCls}`}>{status}</span>
+              </div>
+              <div className="tlr-pop">
+                <div className="tlr-pt">{iconFor(m.names[0])} {m.names.join(", ")} · {fmtDate(m.dateIso).replace(/,\s*\d{4}$/, "")}</div>
+                {openTask ? (
+                  <>
+                    <div className="tlr-pn">{openTask.title}</div>
+                    <div className="tlr-acts">
+                      {isDone(openTask) ? (
+                        <button disabled={busy} onClick={() => void markDone(openTask.id, false)}>Reopen</button>
+                      ) : (
+                        <button className="pri" disabled={busy} onClick={() => void markDone(openTask.id, true)}>Mark done</button>
+                      )}
+                    </div>
+                  </>
+                ) : (
+                  <div className="tlr-pn muted">{m.anchor ? "Contract executed" : "No task linked"}</div>
+                )}
               </div>
             </div>
           );
         })}
       </div>
 
-      <div className="tl-legend">
-        <span><span className="tl-dot ok" /> on track</span>
-        <span><span className="tl-dot warn" /> approaching</span>
-        <span><span className="tl-dot danger" /> imminent</span>
-        <span><span className="tl-dot overdue" /> passed</span>
+      <div className="tlr-legend">
+        <span><span className="tlr-dot d-done" /> done</span>
+        <span><span className="tlr-dot d-next" /> next up</span>
+        <span><span className="tlr-dot d-up" /> upcoming</span>
+        <span><span className="tlr-dot d-over" /> overdue</span>
+        <span><span className="tlr-dot d-goal" /> close of escrow</span>
+        <span style={{ marginLeft: "auto" }} className="muted">hover a milestone for its task →</span>
       </div>
     </div>
   );
