@@ -48,6 +48,7 @@ from app.master.mailer import (
     SendFailed,
 )
 from app.master.repo import (
+    DEAL_STAGES,
     DeadlineFieldsUnconfirmed,
     MasterRepo,
     MessageNotSendable,
@@ -180,6 +181,48 @@ def delete_transaction(
     for synthetic/test cleanup. Archive is the compliance-safe alternative."""
     if not repo.delete_transaction(transaction_id=transaction_id, actor=tc.actor):
         raise HTTPException(status_code=404, detail="Transaction not found")
+
+
+# NOTE: these static paths are registered BEFORE GET /transactions/{id} so
+# "board"/"calendar" are not captured as a transaction id.
+@router.get("/transactions/board")
+def deals_board(
+    tc: TCUser = Depends(require_tc),
+    repo: MasterRepo = Depends(get_repo),
+) -> list[dict[str, Any]]:
+    """Enriched per-deal rollups for the pipeline board (COE, price, tasks, risks, stage)."""
+    return repo.list_deal_summaries()
+
+
+@router.get("/transactions/calendar")
+def deals_calendar(
+    tc: TCUser = Depends(require_tc),
+    repo: MasterRepo = Depends(get_repo),
+) -> list[dict[str, Any]]:
+    """Every deadline across non-archived deals, for the cross-deal calendar."""
+    return repo.list_active_deadlines()
+
+
+class StageRequest(BaseModel):
+    stage: str = Field(min_length=1)
+
+
+@router.post("/transactions/{transaction_id}/stage")
+def set_stage(
+    transaction_id: str,
+    body: StageRequest,
+    tc: TCUser = Depends(require_tc),
+    repo: MasterRepo = Depends(get_repo),
+) -> dict[str, Any]:
+    """Move a deal to a pipeline stage (drag on the board)."""
+    if body.stage not in DEAL_STAGES:
+        raise HTTPException(status_code=422, detail=f"stage must be one of {list(DEAL_STAGES)}")
+    txn = repo.set_transaction_stage(
+        transaction_id=transaction_id, stage=body.stage, actor=tc.actor
+    )
+    if txn is None:
+        raise HTTPException(status_code=404, detail="Transaction not found")
+    return txn
 
 
 class ConfirmFieldsRequest(BaseModel):

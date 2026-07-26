@@ -6,6 +6,7 @@ import {
   S5_FIELD_NAMES,
   TransactionSummary,
 } from "../lib/api";
+import { DealsBoard } from "./DealsBoard";
 
 const DOC_TYPE_LABELS: Record<string, string> = {
   purchase_agreement: "Purchase agreement",
@@ -31,7 +32,6 @@ export function Inbox({ onOpenDeal }: { onOpenDeal: (id: string) => void }) {
   const [manualFor, setManualFor] = useState<string | null>(null);
   const [manualReasons, setManualReasons] = useState<string[]>([]);
   const [manualRows, setManualRows] = useState<{ name: string; value: string }[]>([]);
-  const [showArchived, setShowArchived] = useState(false);
 
   const refresh = useCallback(async () => {
     try {
@@ -143,65 +143,7 @@ export function Inbox({ onOpenDeal }: { onOpenDeal: (id: string) => void }) {
         </div>
       </div>
 
-      {(() => {
-        const active = transactions.filter((t) => t.status !== "archived");
-        const archived = transactions.filter((t) => t.status === "archived");
-        return (
-          <div className="card">
-            <div className="between" style={{ marginBottom: "1rem" }}>
-              <h2 style={{ margin: 0 }}>🏠 Deals</h2>
-              {archived.length > 0 && (
-                <button className="secondary sm" onClick={() => setShowArchived((s) => !s)}>
-                  {showArchived ? "Hide" : "Show"} archived ({archived.length})
-                </button>
-              )}
-            </div>
-            {active.length === 0 && (
-              <div className="empty">
-                <span className="emoji">🗂️</span>
-                No active deals — confirm an inbound document to create one.
-              </div>
-            )}
-            <div className="deal-grid">
-              {active.map((t) => (
-                <div key={t.id} className="deal-tile" onClick={() => onOpenDeal(t.id)}>
-                  <div className="dt-addr">{t.property_address ?? "(no property on file)"}</div>
-                  <span className={`badge ${t.status === "open" ? "ok" : ""}`} style={{ alignSelf: "flex-start" }}>
-                    <span className="dot open" /> {t.status}
-                  </span>
-                  <div className="dt-meta">
-                    <span className="dt-id">{t.id.slice(0, 8)}</span>
-                    <span className="dt-open">Open →</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-            {showArchived && archived.length > 0 && (
-              <div className="deal-grid" style={{ marginTop: "0.8rem" }}>
-                {archived.map((t) => (
-                  <div key={t.id} className="deal-tile archived" onClick={() => onOpenDeal(t.id)}>
-                    <div className="dt-addr">{t.property_address ?? "(no property on file)"}</div>
-                    <span className="badge" style={{ alignSelf: "flex-start" }}>archived</span>
-                    <div className="dt-meta">
-                      <span className="dt-id">{t.id.slice(0, 8)}</span>
-                      <button
-                        className="secondary sm"
-                        onClick={async (e) => {
-                          e.stopPropagation();
-                          await api.post(`/transactions/${t.id}/unarchive`);
-                          await refresh();
-                        }}
-                      >
-                        Unarchive
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        );
-      })()}
+      <DealsBoard onOpenDeal={onOpenDeal} />
 
       <div className="card">
         <h2>📥 Inbound — dedicated deal address</h2>

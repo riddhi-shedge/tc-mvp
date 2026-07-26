@@ -703,3 +703,77 @@ button.secondary.sm { padding: 0.28rem 0.55rem; font-size: 0.76rem; }
 .side-open:hover { border-color: var(--gold-300); transform: translateY(-1px); }
 /* Give the page a little breathing room so content clears the floating button. */
 .app.collapsed .page { padding-top: 3.4rem; }
+
+/* ============================================================================
+   Deals board — Notion-style multi-view workspace (Board / Calendar / Table).
+   ========================================================================== */
+.db { display: flex; flex-direction: column; gap: 1rem; }
+.db-head { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+.db-tabs { display: flex; gap: 0.15rem; }
+.db-tab { font-size: 0.84rem; font-weight: 600; color: var(--muted); background: none; border: 0;
+  border-bottom: 2px solid transparent; padding: 0.4rem 0.6rem; cursor: pointer; }
+.db-tab.on { color: var(--ink); border-bottom-color: var(--gold-500); }
+.db .tnum { font-variant-numeric: tabular-nums; }
+
+/* board */
+.db-board { display: flex; gap: 0.8rem; overflow-x: auto; padding-bottom: 0.5rem; }
+.db-col { flex: 0 0 244px; background: var(--cream-2); border: 1px solid var(--line); border-radius: var(--r);
+  padding: 0.55rem 0.5rem; transition: background 0.14s, border-color 0.14s; }
+.db-col.over { background: var(--gold-100); border-color: var(--gold-300); }
+.db-col-h { display: flex; align-items: center; gap: 0.5rem; padding: 0.25rem 0.4rem 0.55rem; }
+.db-cdot { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto; }
+.db-cdot.s-new { background: var(--muted); } .db-cdot.s-funds { background: var(--amber-600); }
+.db-cdot.s-cont { background: var(--navy-600); } .db-cdot.s-removed { background: var(--gold-600); }
+.db-cdot.s-closing { background: var(--green-600); } .db-cdot.s-closed { background: var(--muted); }
+.db-cname { font-size: 0.72rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-2); flex: 1; }
+.db-cn { font-size: 0.7rem; color: var(--muted); background: var(--surface); border: 1px solid var(--line); border-radius: 999px; padding: 0.02rem 0.4rem; font-weight: 700; }
+.db-stack { display: flex; flex-direction: column; gap: 0.5rem; min-height: 20px; }
+.db-deal { position: relative; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-sm);
+  box-shadow: var(--shadow-sm); padding: 0.6rem 0.65rem 0.55rem 0.8rem; cursor: pointer; overflow: hidden;
+  transition: transform 0.12s, box-shadow 0.12s; }
+.db-deal:hover { transform: translateY(-2px); box-shadow: var(--shadow); }
+.db-deal:active { cursor: grabbing; }
+.db-stripe { position: absolute; left: 0; top: 0; bottom: 0; width: 4px; }
+[data-u=red] .db-stripe { background: var(--red-600); } [data-u=amber] .db-stripe { background: var(--amber-600); }
+[data-u=green] .db-stripe { background: var(--green-600); } [data-u=done] .db-stripe { background: var(--muted); }
+.db-addr { font-family: var(--serif); font-size: 0.98rem; font-weight: 600; line-height: 1.15; }
+.db-chips { display: flex; flex-wrap: wrap; gap: 0.3rem; margin: 0.5rem 0 0.45rem; }
+.db-chip { font-size: 0.69rem; font-weight: 600; padding: 0.1rem 0.42rem; border-radius: 6px;
+  background: var(--surface-2); color: var(--ink-2); border: 1px solid var(--line); }
+.db-chip.coe[data-u=red] { background: var(--red-100); color: var(--red-700); border-color: transparent; }
+.db-chip.coe[data-u=amber] { background: var(--amber-100); color: var(--amber-700); border-color: transparent; }
+.db-chip.coe[data-u=green] { background: var(--green-100); color: var(--green-700); border-color: transparent; }
+.db-chip.cash { background: var(--green-100); color: var(--green-700); border-color: transparent; }
+.db-foot { display: flex; align-items: center; gap: 0.5rem; }
+.db-prog { flex: 1; height: 5px; background: var(--line); border-radius: 3px; overflow: hidden; }
+.db-prog > i { display: block; height: 100%; background: var(--navy-600); border-radius: 3px; }
+.db-ptxt { font-size: 0.69rem; color: var(--muted); font-weight: 600; }
+.db-risk { font-size: 0.69rem; font-weight: 700; color: var(--red-700); background: var(--red-100); border-radius: 6px; padding: 0.05rem 0.35rem; }
+
+/* table */
+.db-tblwrap { overflow-x: auto; border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); box-shadow: var(--shadow-sm); }
+.db-tbl { border-collapse: collapse; width: 100%; min-width: 620px; font-size: 0.85rem; }
+.db-tbl th { text-align: left; font-size: 0.66rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); font-weight: 700; padding: 0.65rem 0.9rem; border-bottom: 1px solid var(--line); }
+.db-tbl td { padding: 0.65rem 0.9rem; border-bottom: 1px solid var(--line-2); }
+.db-tbl tr:last-child td { border-bottom: 0; }
+.db-tbl tbody tr:hover td { background: var(--surface-2); }
+.db-badge { font-size: 0.7rem; font-weight: 700; padding: 0.1rem 0.5rem; border-radius: 999px; }
+.db-badge.red { background: var(--red-100); color: var(--red-700); } .db-badge.amber { background: var(--amber-100); color: var(--amber-700); }
+.db-badge.green { background: var(--green-100); color: var(--green-700); } .db-badge.done { background: var(--surface-2); color: var(--muted); }
+
+/* calendar */
+.db-calwrap { overflow-x: auto; }
+.db-cal { display: grid; grid-template-columns: repeat(7, minmax(96px, 1fr)); gap: 1px; background: var(--line);
+  border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; }
+.db-dow { background: var(--surface-2); font-size: 0.64rem; letter-spacing: 0.05em; text-transform: uppercase; color: var(--muted); font-weight: 700; text-align: center; padding: 0.5rem 0; }
+.db-cell { background: var(--surface); min-height: 88px; padding: 0.32rem 0.36rem; display: flex; flex-direction: column; gap: 0.2rem; }
+.db-dn { font-size: 0.72rem; color: var(--ink-2); font-weight: 600; align-self: flex-end; }
+.db-cell.today .db-dn { background: var(--gold-500); color: var(--navy-900); width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; }
+.db-calchip { font-size: 0.65rem; font-weight: 600; padding: 0.08rem 0.34rem; border-radius: 5px; line-height: 1.3;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; border-left: 3px solid; cursor: pointer; }
+.cc-coe { background: var(--red-100); color: var(--red-700); border-color: var(--red-600); }
+.cc-loan { background: var(--amber-100); color: var(--amber-700); border-color: var(--amber-600); }
+.cc-insp { background: var(--surface-2); color: var(--navy-600); border-color: var(--navy-600); }
+.cc-other { background: var(--surface-2); color: var(--ink-2); border-color: var(--muted); }
+
+@media (max-width: 640px) { .db-col { flex-basis: 80vw; } }

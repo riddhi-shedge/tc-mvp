@@ -65,6 +65,37 @@ def _deadline_gate_violations(rows: list[dict[str, Any]]) -> list[str]:
     return sorted(set(gate["missing_fields"]) | set(gate["unconfirmed_fields"]))
 
 
+# Valid pipeline stages for the Deals board (order = left-to-right flow).
+DEAL_STAGES: tuple[str, ...] = ("new", "funds", "cont", "removed", "closing", "closed")
+
+
+def _deal_summary(
+    txn: dict[str, Any],
+    props: dict[str, Any],
+    coe: dict[str, Any],
+    tasks: dict[str, list[int]],
+    risks: dict[str, int],
+    fields: dict[str, dict[str, str]],
+) -> dict[str, Any]:
+    """Shape one board card from the pre-aggregated lookups (shared by both repos)."""
+    tid = txn["id"]
+    total, done = tasks.get(tid, [0, 0])
+    fx = fields.get(tid, {})
+    return {
+        "id": tid,
+        "status": txn.get("status", "open"),
+        "stage": txn.get("stage") or "new",
+        "property_address": props.get(tid),
+        "coe_date": coe.get(tid),
+        "purchase_price": fx.get("purchase_price"),
+        "all_cash": fx.get("all_cash") == "true",
+        "total_tasks": total,
+        "done_tasks": done,
+        "open_tasks": total - done,
+        "risk_count": risks.get(tid, 0),
+    }
+
+
 class MessageNotSendable(Exception):
     """The message is not in 'draft' state — it cannot be approved and sent."""
 
@@ -117,6 +148,14 @@ class MasterRepo(Protocol):
     ) -> dict[str, Any] | None: ...
 
     def delete_transaction(self, *, transaction_id: str, actor: str) -> bool: ...
+
+    def set_transaction_stage(
+        self, *, transaction_id: str, stage: str, actor: str
+    ) -> dict[str, Any] | None: ...
+
+    def list_deal_summaries(self) -> list[dict[str, Any]]: ...
+
+    def list_active_deadlines(self) -> list[dict[str, Any]]: ...
 
     def list_active_transaction_ids(self) -> list[str]: ...
 
@@ -357,6 +396,109 @@ class SupabaseRepo:
             return False
         self._db.table("transactions").delete().eq("id", transaction_id).execute()
         return True
+
+    def set_transaction_stage(
+        self, *, transaction_id: str, stage: str, actor: str
+    ) -> dict[str, Any] | None:
+        rows = (
+            self._db.table("transactions")
+            .update({"stage": stage})
+            .eq("id", transaction_id)
+            .execute()
+            .data
+        )
+        if not rows:
+            return None
+        self._audit(
+            transaction_id=transaction_id,
+            actor=actor,
+            action="transaction.staged",
+            entity_type="transaction",
+            entity_id=transaction_id,
+            details={"stage": stage},
+        )
+        return rows[0]
+
+    def list_deal_summaries(self) -> list[dict[str, Any]]:
+        """Enriched per-deal rollup for the pipeline board — COE, price, task
+        progress, risk count, stage — aggregated in a few bulk reads."""
+        txns = (
+            self._db.table("transactions")
+            .select("id, status, stage, created_at")
+            .neq("status", "archived")
+            .order("created_at", desc=True)
+            .execute()
+            .data
+        )
+        if not txns:
+            return []
+        ids = [t["id"] for t in txns]
+        props = {
+            p["transaction_id"]: p["address"]
+            for p in self._db.table("properties")
+            .select("transaction_id, address")
+            .in_("transaction_id", ids)
+            .execute()
+            .data
+        }
+        coe = {
+            d["transaction_id"]: d["due_date"]
+            for d in self._db.table("deadlines")
+            .select("transaction_id, due_date")
+            .eq("compute_key", "coe")
+            .in_("transaction_id", ids)
+            .execute()
+            .data
+        }
+        tasks: dict[str, list[int]] = {}
+        for t in (
+            self._db.table("tasks").select("transaction_id, status").in_("transaction_id", ids)
+            .execute().data
+        ):
+            agg = tasks.setdefault(t["transaction_id"], [0, 0])
+            agg[0] += 1
+            if t["status"] in ("done", "complete"):
+                agg[1] += 1
+        risks: dict[str, int] = {}
+        for r in (
+            self._db.table("risk_flags").select("transaction_id").eq("resolved", False)
+            .in_("transaction_id", ids).execute().data
+        ):
+            risks[r["transaction_id"]] = risks.get(r["transaction_id"], 0) + 1
+        fields: dict[str, dict[str, str]] = {}
+        for f in (
+            self._db.table("extracted_fields").select("transaction_id, name, value")
+            .in_("transaction_id", ids).in_("name", ["purchase_price", "all_cash"])
+            .execute().data
+        ):
+            fields.setdefault(f["transaction_id"], {})[f["name"]] = f["value"]
+        return [_deal_summary(t, props, coe, tasks, risks, fields) for t in txns]
+
+    def list_active_deadlines(self) -> list[dict[str, Any]]:
+        """Every deadline across non-archived deals, for the cross-deal calendar."""
+        txns = (
+            self._db.table("transactions").select("id").neq("status", "archived").execute().data
+        )
+        ids = [t["id"] for t in txns]
+        if not ids:
+            return []
+        props = {
+            p["transaction_id"]: p["address"]
+            for p in self._db.table("properties")
+            .select("transaction_id, address").in_("transaction_id", ids).execute().data
+        }
+        return [
+            {
+                "transaction_id": d["transaction_id"],
+                "property_address": props.get(d["transaction_id"]),
+                "name": d["name"],
+                "due_date": d["due_date"],
+                "key": d.get("compute_key"),
+            }
+            for d in self._db.table("deadlines")
+            .select("transaction_id, name, due_date, compute_key")
+            .in_("transaction_id", ids).execute().data
+        ]
 
     def list_active_transaction_ids(self) -> list[str]:
         rows = (

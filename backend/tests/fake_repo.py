@@ -86,7 +86,7 @@ class InMemoryRepo:
     # -- MasterRepo interface --------------------------------------------------
     def create_transaction(self, *, property_address: str, actor: str) -> dict[str, Any]:
         txn_id = str(uuid.uuid4())
-        txn = {"id": txn_id, "status": "open", "created_at": _now()}
+        txn = {"id": txn_id, "status": "open", "stage": "new", "created_at": _now()}
         prop = {
             "id": str(uuid.uuid4()),
             "transaction_id": txn_id,
@@ -133,6 +133,62 @@ class InMemoryRepo:
             details={"status": status},
         )
         return txn
+
+    def set_transaction_stage(
+        self, *, transaction_id: str, stage: str, actor: str
+    ) -> dict[str, Any] | None:
+        txn = self.transactions.get(transaction_id)
+        if txn is None:
+            return None
+        txn["stage"] = stage
+        self._audit(
+            transaction_id=transaction_id, actor=actor, action="transaction.staged",
+            entity_type="transaction", entity_id=transaction_id, details={"stage": stage},
+        )
+        return txn
+
+    def list_deal_summaries(self) -> list[dict[str, Any]]:
+        from app.master.repo import _deal_summary
+
+        txns = [t for t in self.transactions.values() if t.get("status") != "archived"]
+        ids = {t["id"] for t in txns}
+        props = {tid: (self.properties.get(tid) or {}).get("address") for tid in ids}
+        coe = {
+            d["transaction_id"]: d["due_date"]
+            for d in self.deadlines
+            if d["transaction_id"] in ids and d.get("compute_key") == "coe"
+        }
+        tasks: dict[str, list[int]] = {}
+        for t in self.tasks:
+            if t["transaction_id"] not in ids:
+                continue
+            agg = tasks.setdefault(t["transaction_id"], [0, 0])
+            agg[0] += 1
+            if t["status"] in ("done", "complete"):
+                agg[1] += 1
+        risks: dict[str, int] = {}
+        for r in self.risk_flags:
+            if r["transaction_id"] in ids and not r.get("resolved"):
+                risks[r["transaction_id"]] = risks.get(r["transaction_id"], 0) + 1
+        fields: dict[str, dict[str, str]] = {}
+        for f in self.extracted_fields:
+            if f["transaction_id"] in ids and f["name"] in ("purchase_price", "all_cash"):
+                fields.setdefault(f["transaction_id"], {})[f["name"]] = f["value"]
+        return [_deal_summary(t, props, coe, tasks, risks, fields) for t in txns]
+
+    def list_active_deadlines(self) -> list[dict[str, Any]]:
+        ids = {t["id"] for t in self.transactions.values() if t.get("status") != "archived"}
+        return [
+            {
+                "transaction_id": d["transaction_id"],
+                "property_address": (self.properties.get(d["transaction_id"]) or {}).get("address"),
+                "name": d["name"],
+                "due_date": d["due_date"],
+                "key": d.get("compute_key"),
+            }
+            for d in self.deadlines
+            if d["transaction_id"] in ids
+        ]
 
     def archive_transaction(self, *, transaction_id: str, actor: str) -> dict[str, Any] | None:
         return self._set_transaction_status(

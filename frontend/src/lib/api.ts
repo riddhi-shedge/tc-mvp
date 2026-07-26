@@ -72,6 +72,39 @@ export interface TransactionSummary {
   created_at: string;
 }
 
+// Enriched per-deal rollup for the pipeline board.
+export interface DealSummary {
+  id: string;
+  status: string;
+  stage: string;
+  property_address: string | null;
+  coe_date: string | null;
+  purchase_price: string | null;
+  all_cash: boolean;
+  total_tasks: number;
+  done_tasks: number;
+  open_tasks: number;
+  risk_count: number;
+}
+
+export interface CalendarDeadline {
+  transaction_id: string;
+  property_address: string | null;
+  name: string;
+  due_date: string;
+  key: string | null;
+}
+
+// Pipeline stages, left-to-right (mirror of repo.DEAL_STAGES).
+export const DEAL_STAGES: { id: string; name: string }[] = [
+  { id: "new", name: "New offer" },
+  { id: "funds", name: "Deposit & funds" },
+  { id: "cont", name: "Contingency period" },
+  { id: "removed", name: "Contingencies removed" },
+  { id: "closing", name: "Closing" },
+  { id: "closed", name: "Closed" },
+];
+
 export interface ExtractedField {
   id: string;
   name: string;
