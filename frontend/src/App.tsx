@@ -121,9 +121,22 @@ function TcApp() {
 
       <main className="main">
         <div className="page">
-          {view.name === "inbox" && <Inbox onOpenDeal={(id) => setView({ name: "deal", id })} />}
+          {view.name === "inbox" && (
+            <Inbox
+              onOpenDeal={(id) => {
+                setView({ name: "deal", id });
+                setCollapsed(true); // focus mode: hide the nav inside a deal
+              }}
+            />
+          )}
           {view.name === "deal" && (
-            <Deal id={view.id} onBack={() => setView({ name: "inbox" })} />
+            <Deal
+              id={view.id}
+              onBack={() => {
+                setView({ name: "inbox" });
+                setCollapsed(false);
+              }}
+            />
           )}
         </div>
       </main>
