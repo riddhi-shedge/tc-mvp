@@ -191,7 +191,7 @@ export function DealTimeline({
           <div className="tlr-next">
             <div className="tlr-nlab">Next up</div>
             <div className="tlr-nval">
-              {iconFor(nextM.names[0])} {nextM.names[0]} ·{" "}
+              <Icon name={iconFor(nextM.names[0])} size={13} /> {nextM.names[0]} ·{" "}
               {nextDays < 0 ? `${-nextDays}d overdue` : nextDays === 0 ? "today" : `in ${nextDays}d`}
             </div>
           </div>
@@ -252,7 +252,7 @@ export function DealTimeline({
                 <span className={`tlr-pill ${pillCls}`}>{status}</span>
               </div>
               <div className="tlr-pop">
-                <div className="tlr-pt">{iconFor(m.names[0])} {m.names.join(", ")} · {fmtDate(m.dateIso).replace(/,\s*\d{4}$/, "")}</div>
+                <div className="tlr-pt"><Icon name={iconFor(m.names[0])} size={12} /> {m.names.join(", ")} · {fmtDate(m.dateIso).replace(/,\s*\d{4}$/, "")}</div>
                 {openTask ? (
                   <>
                     <div className="tlr-pn">{openTask.title}</div>

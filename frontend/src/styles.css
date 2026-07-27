@@ -838,7 +838,8 @@ button.secondary.sm { padding: 0.28rem 0.55rem; font-size: 0.76rem; }
 .tlr-mk.above .tlr-conn { bottom: 17px; height: 26px; } .tlr-mk.below .tlr-conn { top: 17px; height: 26px; }
 .tlr-lab { position: absolute; left: 50%; transform: translateX(-50%); width: 104px; text-align: center; }
 .tlr-mk.above .tlr-lab { bottom: 44px; } .tlr-mk.below .tlr-lab { top: 44px; }
-.tlr-nm { font-size: 0.73rem; font-weight: 600; line-height: 1.15; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tlr-nm { font-size: 0.73rem; font-weight: 600; line-height: 1.15; color: var(--ink);
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .tlr-dt { font-family: var(--serif); font-size: 0.85rem; font-weight: 600; margin-top: 0.1rem; }
 .tlr-pill { display: inline-block; font-size: 0.6rem; font-weight: 700; padding: 0.04rem 0.36rem; border-radius: 999px; margin-top: 0.2rem; }
 .p-done { background: var(--green-100); color: var(--green-700); } .p-up { background: var(--surface-2); color: var(--muted); }
