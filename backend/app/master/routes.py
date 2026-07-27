@@ -446,6 +446,20 @@ def update_party(
     return updated
 
 
+# §8: receiving-end vendors (own task only) and collaborators (agents/broker —
+# read-only scoped view) get a live DB credential; email-only participants
+# (buyer/seller/lender/title/escrow) do not.
+_COLLAB_ROLES = {"buyer_agent", "listing_agent", "broker", "agent"}
+
+
+def _invite_tier(party: dict[str, Any]) -> str | None:
+    if party.get("permission_tier") == "receiving_end":
+        return "receiving_end"
+    if party.get("permission_tier") == "collaborator" or party.get("role") in _COLLAB_ROLES:
+        return "collaborator"
+    return None
+
+
 @router.post("/transactions/{transaction_id}/parties/{party_id}/access-token", status_code=201)
 def create_party_access_token(
     transaction_id: str,
@@ -454,21 +468,15 @@ def create_party_access_token(
     repo: MasterRepo = Depends(get_repo),
     issuer: PartyAccessIssuer = Depends(get_party_access_issuer),
 ) -> dict[str, Any]:
-    """Issue a scoped receiving-end access token (§8) — the magic-link credential.
-    A Supabase-issued session whose admin-set app_metadata.party_id RLS keys off;
-    the token grants nothing but that party's own task (enforced in the DB)."""
+    """Issue a scoped party session (§8) — the magic-link credential. A
+    Supabase-issued session whose admin-set app_metadata RLS keys off; a
+    receiving-end token grants only its own task, a collaborator token a
+    read-only deal view (all enforced in the DB)."""
     party = repo.get_party(party_id=party_id, transaction_id=transaction_id)
     if party is None:
         raise HTTPException(status_code=404, detail="Party not found on this transaction")
-    # §8: receiving-end vendors (own task only) and collaborators (agents/broker —
-    # read-only scoped view) get a live DB credential. Email-only participants
-    # (buyer/seller/lender/title/escrow) do not.
-    _COLLAB_ROLES = {"buyer_agent", "listing_agent", "broker", "agent"}
-    if party.get("permission_tier") == "receiving_end":
-        token_tier = "receiving_end"
-    elif party.get("permission_tier") == "collaborator" or party.get("role") in _COLLAB_ROLES:
-        token_tier = "collaborator"
-    else:
+    token_tier = _invite_tier(party)
+    if token_tier is None:
         raise HTTPException(
             status_code=409,
             detail="Invite links are for receiving-end vendors and agents/broker only.",
@@ -486,6 +494,83 @@ def create_party_access_token(
         transaction_id=transaction_id, party_id=party_id, actor=tc.actor
     )
     return result
+
+
+class InviteEmailRequest(BaseModel):
+    # The app origin (e.g. https://app.example.com/) so the emailed link points at
+    # wherever the workspace is served — the frontend passes its own location.
+    base_url: str = Field(min_length=1)
+
+
+@router.post("/transactions/{transaction_id}/parties/{party_id}/invite-email")
+def email_party_invite(
+    transaction_id: str,
+    party_id: str,
+    body: InviteEmailRequest,
+    tc: TCUser = Depends(require_tc),
+    repo: MasterRepo = Depends(get_repo),
+    issuer: PartyAccessIssuer = Depends(get_party_access_issuer),
+    mailer: Mailer = Depends(get_mailer),
+) -> dict[str, Any]:
+    """Email a party their personalized invite link. Send is guarded (Rule 3):
+    if outbound email is off / the address isn't allow-listed, we return the link
+    so the TC can share it manually instead."""
+    party = repo.get_party(party_id=party_id, transaction_id=transaction_id)
+    if party is None:
+        raise HTTPException(status_code=404, detail="Party not found on this transaction")
+    token_tier = _invite_tier(party)
+    if token_tier is None:
+        raise HTTPException(
+            status_code=409, detail="Invite links are for receiving-end vendors and agents/broker only."
+        )
+    email = party.get("email")
+    if not email:
+        raise HTTPException(
+            status_code=422, detail="This party has no email yet — add one on the Parties tab first."
+        )
+    try:
+        result = issuer.issue(
+            party_id=party_id, transaction_id=transaction_id, email=None, tier=token_tier
+        )
+    except AccessIssuerNotConfigured as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from None
+    except AccessIssuanceFailed:
+        raise HTTPException(status_code=502, detail="Could not issue access token") from None
+
+    link = f"{body.base_url.split('#')[0]}#invite={result['access_token']}"
+    state = repo.get_full_state(transaction_id) or {}
+    address = (state.get("property") or {}).get("address") or "the transaction"
+    tc_name = os.environ.get("TC_NAME") or "your transaction coordinator"
+    what = (
+        "a read-only view of the deal"
+        if token_tier == "collaborator"
+        else "the items that need you"
+    )
+    subject = f"Your view of {address}"
+    text = (
+        f"Hi {party.get('name') or 'there'},\n\n"
+        f"{tc_name} has shared {what} for {address} with you — no login required. "
+        f"Open it here:\n\n{link}\n\n"
+        "You'll see only what's relevant to you.\n\n"
+        f"Thanks,\n{tc_name}"
+    )
+    if _MONEY_FIELD_NAME.search(f"{subject}\n{text}"):
+        raise HTTPException(status_code=422, detail="Draft contained wiring language (Rule 2).")
+    repo.record_access_token_issued(
+        transaction_id=transaction_id, party_id=party_id, actor=tc.actor
+    )
+    try:
+        repo.send_invite(
+            transaction_id=transaction_id, party_id=party_id, to=email,
+            subject=subject, body=text, mailer=mailer, actor=tc.actor,
+        )
+    except SendDisabled as exc:
+        return {"sent": False, "reason": "disabled", "detail": str(exc), "link": link}
+    except RecipientNotAllowed as exc:
+        return {"sent": False, "reason": "not_allowlisted", "detail": str(exc), "link": link}
+    except SendFailed:
+        raise HTTPException(status_code=502, detail="Email provider failed — try again") from None
+    return {"sent": True, "to": email}
 
 
 class AssignTaskRequest(BaseModel):

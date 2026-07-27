@@ -252,6 +252,11 @@ class MasterRepo(Protocol):
         followup_days: int,
     ) -> dict[str, Any] | None: ...
 
+    def send_invite(
+        self, *, transaction_id: str, party_id: str, to: str, subject: str, body: str,
+        mailer: Any, actor: str,
+    ) -> None: ...
+
     def apply_compliance_result(
         self, *, result: ComplianceResult, actor: str
     ) -> dict[str, Any]: ...
@@ -1237,6 +1242,22 @@ class SupabaseRepo:
             }
         ).execute()
         return {"message": sent, "approval": approval}
+
+    def send_invite(
+        self, *, transaction_id: str, party_id: str, to: str, subject: str, body: str,
+        mailer: Any, actor: str,
+    ) -> None:
+        """TC-initiated invite email (a human tap, not auto-send). Sends through
+        the guarded mailer and audits; the caller handles the send-disabled case."""
+        mailer.send(to=to, subject=subject, body=body)
+        self._audit(
+            transaction_id=transaction_id,
+            actor=actor,
+            action="party.invite_sent",
+            entity_type="party",
+            entity_id=party_id,
+            details={},
+        )
 
     def _recipient_email(self, party_id: str | None) -> str | None:
         if not party_id:

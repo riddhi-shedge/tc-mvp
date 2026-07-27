@@ -231,6 +231,28 @@ export function DealDashboard({
               🔗 Invite
             </button>
           )}
+          {isInvitable(pt) && pt.email && (
+            <button
+              className="secondary sm"
+              disabled={busy}
+              onClick={() =>
+                void run(async () => {
+                  const r = await api.post<{ sent: boolean; to?: string; link?: string; detail?: string }>(
+                    `/transactions/${id}/parties/${pt.id}/invite-email`,
+                    { base_url: `${window.location.origin}${window.location.pathname}` },
+                  );
+                  if (r.sent) {
+                    toast(`Invite emailed to ${r.to}`);
+                  } else {
+                    if (r.link) await navigator.clipboard?.writeText(r.link);
+                    toast(`${r.detail ?? "Email sending isn't enabled yet"} — link copied instead`);
+                  }
+                })
+              }
+            >
+              ✉️ Email invite
+            </button>
+          )}
         </div>
         {editing === pt.id &&
           contactForm(() => {

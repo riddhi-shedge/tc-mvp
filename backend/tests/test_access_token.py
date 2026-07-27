@@ -83,3 +83,66 @@ def test_access_token_party_from_other_transaction_is_404(client, tc_headers):
         f"/transactions/{txn_a}/parties/{party_b}/access-token", headers=tc_headers
     )
     assert r.status_code == 404
+
+
+# ---- email invite -----------------------------------------------------------
+
+def _agent(client, tc_headers, txn_id, email="agent@example.test"):
+    return client.post(
+        f"/transactions/{txn_id}/parties",
+        json={"name": "Basant", "role": "buyer_agent", **({"email": email} if email else {})},
+        headers=tc_headers,
+    ).json()["id"]
+
+
+def test_invite_email_sends_with_the_link(client, tc_headers, mailer):
+    txn = _txn(client, tc_headers)
+    agent = _agent(client, tc_headers, txn)
+    r = client.post(
+        f"/transactions/{txn}/parties/{agent}/invite-email",
+        json={"base_url": "https://app.test/"}, headers=tc_headers,
+    )
+    assert r.status_code == 200 and r.json()["sent"] is True
+    assert len(mailer.sent) == 1 and mailer.sent[0]["to"] == "agent@example.test"
+    assert "#invite=" in mailer.sent[0]["body"]  # the personalized link is in the email
+
+
+def test_invite_email_requires_an_address(client, tc_headers):
+    txn = _txn(client, tc_headers)
+    agent = _agent(client, tc_headers, txn, email=None)
+    r = client.post(
+        f"/transactions/{txn}/parties/{agent}/invite-email",
+        json={"base_url": "https://app.test/"}, headers=tc_headers,
+    )
+    assert r.status_code == 422
+
+
+def test_invite_email_rejects_email_only_party(client, tc_headers):
+    txn = _txn(client, tc_headers)
+    lender = client.post(
+        f"/transactions/{txn}/parties",
+        json={"name": "L", "role": "lender", "email": "l@example.test"}, headers=tc_headers,
+    ).json()["id"]
+    r = client.post(
+        f"/transactions/{txn}/parties/{lender}/invite-email",
+        json={"base_url": "https://app.test/"}, headers=tc_headers,
+    )
+    assert r.status_code == 409
+
+
+def test_invite_email_disabled_returns_link_for_manual_share(client, tc_headers):
+    from app.main import app
+    from app.master.mailer import SendDisabled
+    from app.master.routes import get_mailer
+    from tests.fake_mailer import FakeMailer
+
+    app.dependency_overrides[get_mailer] = lambda: FakeMailer(raises=SendDisabled("off"))
+    txn = _txn(client, tc_headers)
+    agent = _agent(client, tc_headers, txn)
+    r = client.post(
+        f"/transactions/{txn}/parties/{agent}/invite-email",
+        json={"base_url": "https://app.test/"}, headers=tc_headers,
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["sent"] is False and body["reason"] == "disabled" and "#invite=" in body["link"]

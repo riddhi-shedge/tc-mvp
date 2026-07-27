@@ -577,6 +577,15 @@ class InMemoryRepo:
         )
         return message
 
+    def send_invite(
+        self, *, transaction_id, party_id, to, subject, body, mailer, actor
+    ) -> None:
+        mailer.send(to=to, subject=subject, body=body)
+        self._audit(
+            transaction_id=transaction_id, actor=actor, action="party.invite_sent",
+            entity_type="party", entity_id=party_id, details={},
+        )
+
     def approve_and_send(
         self, *, transaction_id, message_id, actor, subject, body, mailer, followup_days
     ) -> dict[str, Any] | None:
