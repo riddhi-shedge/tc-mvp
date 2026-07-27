@@ -157,6 +157,8 @@ class MasterRepo(Protocol):
 
     def list_active_deadlines(self) -> list[dict[str, Any]]: ...
 
+    def list_open_tasks(self) -> list[dict[str, Any]]: ...
+
     def list_active_transaction_ids(self) -> list[str]: ...
 
     def transaction_exists(self, transaction_id: str) -> bool: ...
@@ -503,6 +505,41 @@ class SupabaseRepo:
             for d in self._db.table("deadlines")
             .select("transaction_id, name, due_date, compute_key")
             .in_("transaction_id", ids).execute().data
+        ]
+
+    def list_open_tasks(self) -> list[dict[str, Any]]:
+        """Open (not-done) tasks across non-archived deals — the TC's work queue,
+        each with its deal address and linked deadline date."""
+        txns = (
+            self._db.table("transactions").select("id").neq("status", "archived").execute().data
+        )
+        ids = [t["id"] for t in txns]
+        if not ids:
+            return []
+        props = {
+            p["transaction_id"]: p["address"]
+            for p in self._db.table("properties")
+            .select("transaction_id, address").in_("transaction_id", ids).execute().data
+        }
+        due = {
+            d["id"]: d["due_date"]
+            for d in self._db.table("deadlines")
+            .select("id, due_date").in_("transaction_id", ids).execute().data
+        }
+        return [
+            {
+                "id": t["id"],
+                "transaction_id": t["transaction_id"],
+                "property_address": props.get(t["transaction_id"]),
+                "title": t["title"],
+                "status": t["status"],
+                "due_date": due.get(t.get("deadline_id")),
+                "assigned_party_id": t.get("assigned_party_id"),
+            }
+            for t in self._db.table("tasks")
+            .select("id, transaction_id, title, status, deadline_id, assigned_party_id")
+            .in_("transaction_id", ids).execute().data
+            if t["status"] not in ("done", "complete")
         ]
 
     def list_active_transaction_ids(self) -> list[str]:

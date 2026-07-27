@@ -190,6 +190,23 @@ class InMemoryRepo:
             if d["transaction_id"] in ids
         ]
 
+    def list_open_tasks(self) -> list[dict[str, Any]]:
+        ids = {t["id"] for t in self.transactions.values() if t.get("status") != "archived"}
+        due = {d["id"]: d["due_date"] for d in self.deadlines if d["transaction_id"] in ids}
+        return [
+            {
+                "id": t["id"],
+                "transaction_id": t["transaction_id"],
+                "property_address": (self.properties.get(t["transaction_id"]) or {}).get("address"),
+                "title": t["title"],
+                "status": t["status"],
+                "due_date": due.get(t.get("deadline_id")),
+                "assigned_party_id": t.get("assigned_party_id"),
+            }
+            for t in self.tasks
+            if t["transaction_id"] in ids and t["status"] not in ("done", "complete")
+        ]
+
     def archive_transaction(self, *, transaction_id: str, actor: str) -> dict[str, Any] | None:
         return self._set_transaction_status(
             transaction_id, "archived", actor, "transaction.archived"

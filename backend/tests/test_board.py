@@ -67,3 +67,18 @@ def test_calendar_feed_shape(client, tc_headers, repo):
 
 def test_board_requires_auth(client):
     assert client.get("/transactions/board").status_code in (401, 403)
+
+
+def test_open_tasks_feed(client, tc_headers):
+    txn = _deal(client, tc_headers)
+    t1 = client.post(f"/transactions/{txn}/tasks", json={"title": "Call HOA"}, headers=tc_headers).json()["id"]
+    client.post(f"/transactions/{txn}/tasks", json={"title": "Order NHD"}, headers=tc_headers)
+    client.patch(f"/transactions/{txn}/tasks/{t1}", json={"status": "done"}, headers=tc_headers)
+    tasks = client.get("/transactions/tasks", headers=tc_headers).json()
+    mine = [t for t in tasks if t["transaction_id"] == txn]
+    assert len(mine) == 1 and mine[0]["title"] == "Order NHD"  # done task excluded
+    assert mine[0]["property_address"] == "1 Pipeline Way"
+
+
+def test_open_tasks_requires_auth(client):
+    assert client.get("/transactions/tasks").status_code in (401, 403)

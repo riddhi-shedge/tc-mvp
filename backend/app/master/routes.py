@@ -203,6 +203,15 @@ def deals_calendar(
     return repo.list_active_deadlines()
 
 
+@router.get("/transactions/tasks")
+def open_tasks(
+    tc: TCUser = Depends(require_tc),
+    repo: MasterRepo = Depends(get_repo),
+) -> list[dict[str, Any]]:
+    """Open tasks across non-archived deals — the Home work queue."""
+    return repo.list_open_tasks()
+
+
 class StageRequest(BaseModel):
     stage: str = Field(min_length=1)
 

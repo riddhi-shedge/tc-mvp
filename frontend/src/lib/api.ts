@@ -95,6 +95,16 @@ export interface CalendarDeadline {
   key: string | null;
 }
 
+export interface OpenTask {
+  id: string;
+  transaction_id: string;
+  property_address: string | null;
+  title: string;
+  status: string;
+  due_date: string | null;
+  assigned_party_id: string | null;
+}
+
 // Pipeline stages, left-to-right (mirror of repo.DEAL_STAGES).
 export const DEAL_STAGES: { id: string; name: string }[] = [
   { id: "new", name: "New offer" },

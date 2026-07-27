@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { supabase } from "./lib/supabase";
 import { Deal } from "./screens/Deal";
+import { Home } from "./screens/Home";
 import { Inbox } from "./screens/Inbox";
 import { Login } from "./screens/Login";
 import { InviteView } from "./screens/InviteView";
@@ -20,7 +21,7 @@ const _initTheme =
   (window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light");
 document.documentElement.setAttribute("data-theme", _initTheme);
 
-type View = { name: "inbox" } | { name: "deal"; id: string };
+type View = { name: "home" } | { name: "inbox" } | { name: "deal"; id: string };
 
 export default function App() {
   // An invited party (not a TC) lands here — no login, just their scoped view.
@@ -33,7 +34,7 @@ function TcApp() {
   const [ready, setReady] = useState(false);
   const [signedIn, setSignedIn] = useState(false);
   const [email, setEmail] = useState<string | null>(null);
-  const [view, setView] = useState<View>({ name: "inbox" });
+  const [view, setView] = useState<View>({ name: "home" });
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem("sidebar_collapsed") === "1");
 
   const [dark, setDark] = useState(
@@ -98,6 +99,15 @@ function TcApp() {
         </div>
 
         <button
+          className={`nav-item ${view.name === "home" ? "active" : ""}`}
+          onClick={() => setView({ name: "home" })}
+        >
+          {view.name === "home" && (
+            <motion.span layoutId="side-ind" className="side-ind" transition={{ type: "spring", stiffness: 400, damping: 34 }} />
+          )}
+          <span className="ni-label"><span className="ic">◉</span> Home</span>
+        </button>
+        <button
           className={`nav-item ${view.name === "inbox" ? "active" : ""}`}
           onClick={() => setView({ name: "inbox" })}
         >
@@ -108,7 +118,7 @@ function TcApp() {
               transition={{ type: "spring", stiffness: 400, damping: 34 }}
             />
           )}
-          <span className="ni-label"><span className="ic">▤</span> Inbox &amp; Deals</span>
+          <span className="ni-label"><span className="ic">▤</span> Deals &amp; Inbox</span>
         </button>
         {view.name === "deal" && (
           <div className="nav-item active" style={{ cursor: "default" }}>
@@ -151,7 +161,7 @@ function TcApp() {
                 <b>Current deal</b>
               </>
             ) : (
-              <b>Deals</b>
+              <b>{view.name === "home" ? "Home" : "Deals"}</b>
             )}
           </div>
           <div className="top-sp" />
@@ -160,6 +170,14 @@ function TcApp() {
           </button>
         </div>
         <div className="page">
+          {view.name === "home" && (
+            <Home
+              onOpenDeal={(id) => {
+                setView({ name: "deal", id });
+                setCollapsed(true);
+              }}
+            />
+          )}
           {view.name === "inbox" && (
             <Inbox
               onOpenDeal={(id) => {
