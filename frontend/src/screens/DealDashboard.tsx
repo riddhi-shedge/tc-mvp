@@ -83,6 +83,10 @@ export function DealDashboard({
   const [busy, setBusy] = useState(false);
   const [tokens, setTokens] = useState<Record<string, string>>({});
   const [newTask, setNewTask] = useState("");
+  // Drag-to-assign + party peek popover (Pass 2 interactivity)
+  const [dragTaskId, setDragTaskId] = useState<string | null>(null);
+  const [dropParty, setDropParty] = useState<string | null>(null);
+  const [peek, setPeek] = useState<DashboardPartyView | null>(null);
   // Party editing / adding: which party id is open for edit, or which role is
   // being added, plus the in-progress contact fields.
   const [editing, setEditing] = useState<string | null>(null);
@@ -182,11 +186,34 @@ export function DealDashboard({
       </div>
     );
   }
+  function assignTo(taskId: string, pt: DealParty) {
+    void run(
+      () => api.post(`/transactions/${id}/tasks/${taskId}/assign`, { party_id: pt.id }),
+      `Assigned to ${pt.name ?? PARTY_ROLE_LABEL[pt.role] ?? pt.role}`,
+    );
+  }
   function partyCard(pv: DashboardPartyView) {
     const pt = pv.party;
+    const dropping = dragTaskId !== null;
     return (
-      <motion.div key={pt.id} className="party-card" variants={itemUp}>
-        <div className="party-top">
+      <motion.div
+        key={pt.id}
+        className={`party-card ${dropping ? "droppable" : ""} ${dropParty === pt.id ? "drop-on" : ""}`}
+        variants={itemUp}
+        onDragOver={dropping ? (e) => { e.preventDefault(); setDropParty(pt.id); } : undefined}
+        onDragLeave={() => setDropParty((d) => (d === pt.id ? null : d))}
+        onDrop={
+          dropping
+            ? (e) => {
+                e.preventDefault();
+                if (dragTaskId) assignTo(dragTaskId, pt);
+                setDragTaskId(null);
+                setDropParty(null);
+              }
+            : undefined
+        }
+      >
+        <div className="party-top" onClick={() => setPeek(pv)} title="View details">
           <div className="avatar" style={{ background: avatarColor(pt.role) }}>{initials(pt.name, pt.role)}</div>
           <div style={{ minWidth: 0 }}>
             <div className="party-name">{pt.name ?? "(unnamed)"}</div>
@@ -336,6 +363,8 @@ export function DealDashboard({
         </div>
       </div>
 
+      <div className="dgrid">
+      <aside className="dgrid-rail">
       {/* ---- Risk attention feed ---- */}
       <div className="card">
         <h2><Icon name="warning" size={17} /> Attention</h2>
@@ -421,12 +450,15 @@ export function DealDashboard({
         )}
       </div>
 
+      </aside>
+      <div className="dgrid-main">
       {/* ---- Tasks (compliance + the TC's own) ---- */}
       <div className="card">
         <div className="between" style={{ marginBottom: "0.6rem" }}>
           <h2 style={{ margin: 0 }}><Icon name="checkCircle" size={17} /> Tasks</h2>
-          <span className="muted">
+          <span className="assign-hint">
             {state.tasks.filter((t) => !["done", "complete"].includes(t.status)).length} open
+            {parties.length > 0 && " · drag a task onto a party to assign"}
           </span>
         </div>
         <div className="row" style={{ gap: "0.5rem", marginBottom: "0.7rem" }}>
@@ -473,7 +505,14 @@ export function DealDashboard({
                     ? "var(--gold-700)"
                     : "var(--muted)";
             return (
-              <div key={t.id} className={`task-row ${done ? "done" : ""}`}>
+              <div
+                key={t.id}
+                className={`task-row ${done ? "done" : ""} ${dragTaskId === t.id ? "dragging" : ""}`}
+                draggable={!done && parties.length > 0}
+                onDragStart={() => setDragTaskId(t.id)}
+                onDragEnd={() => { setDragTaskId(null); setDropParty(null); }}
+              >
+                <span className="task-grip" title="Drag onto a party to assign">⠿</span>
                 <button
                   className="task-check"
                   disabled={busy}
@@ -599,7 +638,54 @@ export function DealDashboard({
           </div>
         </div>
       )}
+      </div>
+      </div>
 
+      {peek && (
+        <div className="peek-backdrop" onClick={() => setPeek(null)}>
+          <div className="peek-card" onClick={(e) => e.stopPropagation()}>
+            <div className="peek-head">
+              <div className="avatar" style={{ background: avatarColor(peek.party.role) }}>
+                {initials(peek.party.name, peek.party.role)}
+              </div>
+              <div style={{ minWidth: 0 }}>
+                <div className="party-name">{peek.party.name ?? "(unnamed)"}</div>
+                <div className="party-role">{PARTY_ROLE_LABEL[peek.party.role] ?? peek.party.role.replace(/_/g, " ")}</div>
+              </div>
+              <button className="peek-x" onClick={() => setPeek(null)} title="Close"><Icon name="x" size={15} /></button>
+            </div>
+
+            <div className="peek-contact">
+              {peek.party.company && <span><Icon name="bank" size={13} /> {peek.party.company}</span>}
+              <span><Icon name="mail" size={13} /> {peek.party.email || "no email on file"}</span>
+              <span><Icon name="phone" size={13} /> {peek.party.phone || "no phone on file"}</span>
+            </div>
+
+            <div className="peek-sec">Assigned tasks · {peek.open_tasks.length} open</div>
+            {peek.open_tasks.length === 0 && peek.done_tasks.length === 0 ? (
+              <div className="muted" style={{ fontSize: "0.85rem" }}>
+                Nothing assigned yet — drag a task onto this person's card to assign it.
+              </div>
+            ) : (
+              <>
+                {peek.open_tasks.map((t) => (
+                  <div key={t.id} className="peek-task"><Icon name="clipboard" size={13} /> {t.title}</div>
+                ))}
+                {peek.done_tasks.map((t) => (
+                  <div key={t.id} className="peek-task done" style={{ opacity: 0.6 }}>
+                    <Icon name="checkCircle" size={13} /> {t.title}
+                  </div>
+                ))}
+              </>
+            )}
+
+            <div className="pform-actions" style={{ marginTop: "1.1rem" }}>
+              <button className="secondary" onClick={() => { startEdit(peek.party); setPeek(null); }}>Edit contact</button>
+              <button className="secondary" onClick={() => setPeek(null)}>Close</button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }

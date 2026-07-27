@@ -950,3 +950,46 @@ button.secondary.sm { padding: 0.28rem 0.55rem; font-size: 0.76rem; }
   .uplo-house path, .uplo-house rect, .uplo-house line { animation: none; stroke-dashoffset: 0; }
   .uplo-scan, .uplo-bar span { animation: none; }
 }
+
+/* ---- Command-center deal grid (Pass 2) --------------------------------- */
+.dgrid { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(320px, 1fr); gap: 1.1rem; align-items: start; }
+.dgrid-main { order: 1; display: flex; flex-direction: column; gap: 1.1rem; min-width: 0; }
+.dgrid-rail { order: 2; }
+.dgrid-main > .card { margin-bottom: 0; }
+.dgrid-rail { display: flex; flex-direction: column; gap: 1.1rem; min-width: 0; }
+.dgrid-rail > .card { margin-bottom: 0; }
+@media (max-width: 1080px) { .dgrid { grid-template-columns: 1fr; } }
+
+/* Drag-to-assign: task rows are grabbable, party cards are drop targets. */
+.task-row { cursor: default; }
+.task-row[draggable="true"] { cursor: grab; }
+.task-row[draggable="true"]:active { cursor: grabbing; }
+.task-grip { color: var(--muted); opacity: 0; transition: opacity 0.12s; cursor: grab; letter-spacing: -2px; font-size: 15px; user-select: none; }
+.task-row:hover .task-grip { opacity: 0.55; }
+.task-row.dragging { opacity: 0.45; }
+.assign-hint { font-size: 0.72rem; color: var(--muted); }
+.party-card { transition: box-shadow 0.14s, border-color 0.14s, transform 0.14s; }
+.party-card.droppable { border-style: dashed; border-color: var(--gold-300); }
+.party-card.drop-on { border-color: var(--gold-500); border-style: solid; box-shadow: 0 0 0 3px var(--gold-100); transform: translateY(-1px); }
+.party-card.droppable::after {
+  content: "Drop to assign"; position: absolute; inset: auto 10px 10px auto;
+  font-size: 0.68rem; font-weight: 600; color: var(--gold-700);
+  background: var(--gold-100); padding: 2px 8px; border-radius: var(--r-pill);
+}
+.party-card { position: relative; }
+.party-top { cursor: pointer; border-radius: var(--r-sm); }
+.party-top:hover .party-name { color: var(--gold-700); }
+
+/* Party peek popover */
+.peek-backdrop { position: fixed; inset: 0; z-index: 55; display: grid; place-items: center;
+  background: color-mix(in srgb, var(--ink) 26%, transparent); backdrop-filter: blur(3px); animation: uplo-fade 0.18s ease; }
+.peek-card { width: min(440px, 92vw); max-height: 82vh; overflow: auto; background: var(--surface);
+  border: 1px solid var(--line); border-radius: var(--r-lg); box-shadow: var(--shadow-lg); padding: 1.4rem;
+  animation: uplo-pop 0.26s cubic-bezier(0.16, 1, 0.3, 1); }
+.peek-head { display: flex; align-items: center; gap: 0.7rem; margin-bottom: 0.9rem; }
+.peek-x { margin-left: auto; background: transparent; color: var(--muted); box-shadow: none; padding: 4px 8px; font-size: 15px; }
+.peek-x:hover { background: var(--hover); color: var(--ink); }
+.peek-sec { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); font-weight: 600; margin: 1rem 0 0.4rem; }
+.peek-task { display: flex; align-items: center; gap: 0.5rem; padding: 0.4rem 0; border-bottom: 1px solid var(--line-2); font-size: 0.85rem; color: var(--ink-2); }
+.peek-task:last-child { border-bottom: 0; }
+.peek-contact { font-size: 0.85rem; color: var(--ink-2); display: flex; flex-direction: column; gap: 0.25rem; }
