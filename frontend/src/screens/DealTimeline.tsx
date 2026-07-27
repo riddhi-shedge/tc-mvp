@@ -2,23 +2,24 @@ import { CSSProperties, useEffect, useState } from "react";
 import { api, Deadline, Task } from "../lib/api";
 import { fmtDate } from "../lib/format";
 import { toast } from "../lib/ui";
+import { Icon, IconName } from "../lib/icons";
 
 const DAY = 86_400_000;
 
-function iconFor(name: string): string {
+function iconFor(name: string): IconName {
   const s = name.toLowerCase();
-  if (s.includes("acceptance")) return "🚩";
-  if (s.includes("earnest") || s.includes("deposit") || s.includes("emd")) return "📌";
-  if (s.includes("disclosure")) return "📄";
-  if (s.includes("inspection")) return "🔍";
-  if (s.includes("appraisal")) return "🏷️";
-  if (s.includes("loan")) return "🏦";
-  if (s.includes("insurance")) return "🛡️";
-  if (s.includes("verification") || s.includes("funds")) return "💵";
-  if (s.includes("walk")) return "🚶";
-  if (s.includes("escrow") || s.includes("closing")) return "🔑";
-  if (s.includes("possession")) return "🔑";
-  return "◆";
+  if (s.includes("acceptance")) return "flag";
+  if (s.includes("earnest") || s.includes("deposit") || s.includes("emd")) return "pin";
+  if (s.includes("disclosure")) return "clipboard";
+  if (s.includes("inspection")) return "search";
+  if (s.includes("appraisal")) return "tag";
+  if (s.includes("loan")) return "bank";
+  if (s.includes("insurance")) return "shield";
+  if (s.includes("verification") || s.includes("funds")) return "money";
+  if (s.includes("walk")) return "user";
+  if (s.includes("escrow") || s.includes("closing")) return "key";
+  if (s.includes("possession")) return "key";
+  return "flag";
 }
 function shortName(name: string): string {
   return name
@@ -80,9 +81,9 @@ export function DealTimeline({
   if (dated.length === 0) {
     return (
       <div className="card">
-        <h2>◷ Timeline</h2>
+        <h2><Icon name="calendar" size={17} /> Timeline</h2>
         <div className="empty">
-          <span className="emoji">🗓️</span>
+          <span className="empty-ic"><Icon name="calendar" size={26} /></span>
           No deadlines computed yet — confirm the extracted fields to build the timeline.
         </div>
       </div>
@@ -244,7 +245,7 @@ export function DealTimeline({
             >
               {st === "next" && <span className="tlr-nexttag">NEXT</span>}
               <div className="tlr-conn" />
-              <div className="tlr-ic">{st === "done" ? "✓" : iconFor(m.names[0])}</div>
+              <div className="tlr-ic">{st === "done" ? <Icon name="check" size={15} /> : <Icon name={iconFor(m.names[0])} size={15} />}</div>
               <div className="tlr-lab">
                 <div className="tlr-nm" title={m.names.join(", ")}>{label}</div>
                 <div className="tlr-dt">{fmtDate(m.dateIso).replace(/,\s*\d{4}$/, "")}</div>

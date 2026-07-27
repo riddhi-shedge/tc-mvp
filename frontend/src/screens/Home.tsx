@@ -2,6 +2,7 @@ import { ReactNode, useCallback, useEffect, useState } from "react";
 import { api, CalendarDeadline, DEAL_STAGES, DealSummary, OpenTask } from "../lib/api";
 import { fmtDate } from "../lib/format";
 import { toast } from "../lib/ui";
+import { Icon } from "../lib/icons";
 
 const DAY = 86_400_000;
 function daysTo(iso: string | null): number | null {
@@ -111,7 +112,7 @@ export function Home({ onOpenDeal }: { onOpenDeal: (id: string) => void }) {
                       <div className="hm-title">{addr(d.property_address)}</div>
                       <div className="hm-rsub">
                         {stageName(d.stage)}
-                        {d.risk_count > 0 && <span className="hm-warn"> · ⚠ {d.risk_count} risk{d.risk_count > 1 ? "s" : ""}</span>}
+                        {d.risk_count > 0 && <span className="hm-warn"> · <Icon name="warning" size={12} /> {d.risk_count} risk{d.risk_count > 1 ? "s" : ""}</span>}
                       </div>
                     </div>
                     <span className={`pill-${u}`}>COE {countdown(n)}</span>
@@ -145,7 +146,7 @@ export function Home({ onOpenDeal }: { onOpenDeal: (id: string) => void }) {
         <div>
           <Section title="Work queue" count={queue.length}>
             {queue.length === 0 ? (
-              <Empty>No open tasks. 🎉</Empty>
+              <Empty>No open tasks — you're all caught up.</Empty>
             ) : (
               queue.slice(0, 10).map((t) => {
                 const n = daysTo(t.due_date);

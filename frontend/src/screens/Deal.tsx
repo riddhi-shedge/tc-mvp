@@ -5,25 +5,26 @@ import { ExtractionReview } from "./ExtractionReview";
 import { DealDashboard } from "./DealDashboard";
 import { DealTimeline } from "./DealTimeline";
 import { AnimatedTabs, CountUp, toast } from "../lib/ui";
+import { Icon, IconName } from "../lib/icons";
 
-function docIcon(t: string | null): string {
+function docIcon(t: string | null): IconName {
   const s = (t ?? "").toLowerCase();
-  if (s.includes("purchase")) return "🏡";
-  if (s.includes("proof")) return "💵";
-  if (s.includes("disclosure")) return "📋";
-  if (s.includes("inspection")) return "🔍";
-  return "📄";
+  if (s.includes("purchase")) return "home";
+  if (s.includes("proof")) return "money";
+  if (s.includes("disclosure")) return "clipboard";
+  if (s.includes("inspection")) return "search";
+  return "doc";
 }
-function actionIcon(a: string): string {
-  if (a.includes("created")) return "✨";
-  if (a.includes("payload") || a.includes("extract")) return "🔎";
-  if (a.includes("confirm")) return "✓";
-  if (a.includes("message")) return "✉️";
-  if (a.includes("party")) return "👤";
-  if (a.includes("task")) return "📌";
-  if (a.includes("compliance") || a.includes("timeline") || a.includes("deadline")) return "🗓️";
-  if (a.includes("token")) return "🔗";
-  return "•";
+function actionIcon(a: string): IconName {
+  if (a.includes("created")) return "sparkle";
+  if (a.includes("payload") || a.includes("extract")) return "search";
+  if (a.includes("confirm")) return "check";
+  if (a.includes("message")) return "mail";
+  if (a.includes("party")) return "user";
+  if (a.includes("task")) return "pin";
+  if (a.includes("compliance") || a.includes("timeline") || a.includes("deadline")) return "calendar";
+  if (a.includes("token")) return "key";
+  return "chevron";
 }
 function humanize(s: string): string {
   return s.replace(/[._]/g, " ").replace(/\b\w/g, (m) => m.toUpperCase());
@@ -117,7 +118,7 @@ export function Deal({ id, onBack }: { id: string; onBack: () => void }) {
   return (
     <>
       <div className="between" style={{ marginBottom: "1rem" }}>
-        <button className="secondary" onClick={onBack}>← Inbox &amp; Deals</button>
+        <button className="secondary" onClick={onBack}>← Deals</button>
         <div className="row" style={{ gap: "0.5rem" }}>
           <button
             className="secondary"
@@ -199,7 +200,7 @@ export function Deal({ id, onBack }: { id: string; onBack: () => void }) {
       {gate && !gate.ready && (
         <div className="card gate-card">
           <div className="gate-head">
-            <span className="gate-ic">🗓️</span>
+            <span className="gate-ic"><Icon name="calendar" size={20} /></span>
             <div>
               <h2 style={{ margin: 0 }}>Finish the timeline</h2>
               <p className="muted" style={{ margin: "3px 0 0" }}>
@@ -268,7 +269,7 @@ export function Deal({ id, onBack }: { id: string; onBack: () => void }) {
                   )
                 }
               >
-                ✓ Confirm {gate.unconfirmed_fields.length} deadline field
+                <Icon name="check" size={14} /> Confirm {gate.unconfirmed_fields.length} deadline field
                 {gate.unconfirmed_fields.length > 1 ? "s" : ""}
               </button>
             </div>
@@ -279,7 +280,7 @@ export function Deal({ id, onBack }: { id: string; onBack: () => void }) {
       {gate?.ready && fields.length > 0 && state.deadlines.length === 0 && (
         <div className="card gate-card ready">
           <div className="gate-head">
-            <span className="gate-ic">✅</span>
+            <span className="gate-ic"><Icon name="checkCircle" size={20} /></span>
             <div>
               <h2 style={{ margin: 0 }}>Ready to build</h2>
               <p className="muted" style={{ margin: "3px 0 0" }}>
@@ -298,7 +299,7 @@ export function Deal({ id, onBack }: { id: string; onBack: () => void }) {
               )
             }
           >
-            {busy ? "Building…" : "🗓️ Build timeline"}
+            {busy ? "Building…" : <><Icon name="calendar" size={14} /> Build timeline</>}
           </button>
         </div>
       )}
@@ -318,25 +319,25 @@ export function Deal({ id, onBack }: { id: string; onBack: () => void }) {
           {
             id: "overview",
             label: "Overview",
-            icon: "◧",
+            icon: <Icon name="board" size={14} />,
             content: <DealDashboard id={id} state={state} onChanged={refresh} />,
           },
           {
             id: "documents",
             label: "Documents",
-            icon: "📄",
+            icon: <Icon name="doc" size={14} />,
             content: (
               <>
       <div className="card">
-        <h2>📄 Documents</h2>
+        <h2><Icon name="doc" size={17} /> Documents</h2>
         {state.documents.length === 0 && (
-          <div className="empty"><span className="emoji">📄</span>No documents yet.</div>
+          <div className="empty"><span className="empty-ic"><Icon name="doc" size={26} /></span>No documents yet.</div>
         )}
         {state.documents.length > 0 && (
           <div className="doc-grid">
             {state.documents.map((d) => (
               <div key={d.id} className="doc-card">
-                <div className="doc-ic">{docIcon(d.doc_type)}</div>
+                <div className="doc-ic"><Icon name={docIcon(d.doc_type)} size={17} /></div>
                 <div style={{ minWidth: 0 }}>
                   <div className="doc-name">{humanize(d.doc_type ?? "unknown")}</div>
                   {d.created_at && (
@@ -374,18 +375,18 @@ export function Deal({ id, onBack }: { id: string; onBack: () => void }) {
           {
             id: "comms",
             label: "Communication",
-            icon: "💬",
+            icon: <Icon name="mail" size={14} />,
             content: (
               <>
       <div className="card">
-        <h2>✉️ New message</h2>
+        <h2><Icon name="mail" size={17} /> New message</h2>
         <p className="muted" style={{ margin: "-0.4rem 0 0.85rem" }}>
           Claude drafts it personalized to this deal · you review the WHY, edit, and approve.
           Nothing sends without your tap (Rule 3).
         </p>
         {recipients.length === 0 ? (
           <div className="empty">
-            <span className="emoji">📭</span>
+            <span className="empty-ic"><Icon name="mail" size={26} /></span>
             No recipients with an email yet — add emails on the Parties (Overview) tab.
           </div>
         ) : (
@@ -431,7 +432,7 @@ export function Deal({ id, onBack }: { id: string; onBack: () => void }) {
                     Drafting…
                   </>
                 ) : (
-                  "✨ Draft with Claude"
+                  <><Icon name="sparkle" size={14} /> Draft with Claude</>
                 )}
               </button>
             </div>
@@ -440,10 +441,10 @@ export function Deal({ id, onBack }: { id: string; onBack: () => void }) {
       </div>
 
       <div className="card">
-        <h2>📨 Drafts &amp; sent</h2>
+        <h2><Icon name="inbox" size={17} /> Drafts &amp; sent</h2>
         {drafts.length === 0 && sent.length === 0 && approved.length === 0 && (
           <div className="empty">
-            <span className="emoji">✉️</span>
+            <span className="empty-ic"><Icon name="mail" size={26} /></span>
             No messages yet — draft one above.
           </div>
         )}
@@ -543,14 +544,14 @@ export function Deal({ id, onBack }: { id: string; onBack: () => void }) {
           {
             id: "activity",
             label: "Activity",
-            icon: "🧾",
+            icon: <Icon name="receipt" size={14} />,
             content: (
       <div className="card">
-        <h2>🧾 Activity</h2>
+        <h2><Icon name="receipt" size={17} /> Activity</h2>
         <ul className="feed">
           {[...state.audit_log].reverse().map((a, i) => (
             <li key={i}>
-              <div className="fd-ic">{actionIcon(a.action)}</div>
+              <div className="fd-ic"><Icon name={actionIcon(a.action)} size={13} /></div>
               <div>
                 <div className="fd-title">{humanize(a.action)}</div>
                 <div className="fd-actor">

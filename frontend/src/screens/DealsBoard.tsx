@@ -8,6 +8,7 @@ import {
 } from "../lib/api";
 import { fmtDate } from "../lib/format";
 import { toast } from "../lib/ui";
+import { Icon } from "../lib/icons";
 
 type ViewT = "board" | "cal" | "tbl";
 
@@ -123,7 +124,7 @@ export function DealsBoard({ onOpenDeal }: { onOpenDeal: (id: string) => void })
         <div className="db-foot">
           <div className="db-prog"><i style={{ width: `${pct}%` }} /></div>
           <span className="db-ptxt">{d.done_tasks}/{d.total_tasks}</span>
-          {d.risk_count > 0 && <span className="db-risk">⚠ {d.risk_count}</span>}
+          {d.risk_count > 0 && <span className="db-risk"><Icon name="warning" size={12} /> {d.risk_count}</span>}
         </div>
       </div>
     );
@@ -132,7 +133,7 @@ export function DealsBoard({ onOpenDeal }: { onOpenDeal: (id: string) => void })
   return (
     <div className="db">
       <div className="db-head">
-        <h2 style={{ margin: 0 }}>🗂️ Deals <span className="muted" style={{ fontWeight: 400, fontSize: "0.9rem" }}>· {deals.length} active</span></h2>
+        <h2 style={{ margin: 0 }}><Icon name="board" size={17} /> Deals <span className="muted" style={{ fontWeight: 400, fontSize: "0.9rem" }}>· {deals.length} active</span></h2>
         <div className="db-tabs" role="tablist">
           <button className={`db-tab ${view === "board" ? "on" : ""}`} onClick={() => pick("board")}>▦ Board</button>
           <button className={`db-tab ${view === "cal" ? "on" : ""}`} onClick={() => pick("cal")}>▤ Calendar</button>
@@ -141,7 +142,7 @@ export function DealsBoard({ onOpenDeal }: { onOpenDeal: (id: string) => void })
       </div>
 
       {deals.length === 0 && (
-        <div className="card"><div className="empty"><span className="emoji">🗂️</span>No active deals — confirm an inbound document to create one.</div></div>
+        <div className="card"><div className="empty"><span className="empty-ic"><Icon name="board" size={26} /></span>No active deals — confirm an inbound document to create one.</div></div>
       )}
 
       {/* BOARD */}
@@ -196,7 +197,7 @@ export function DealsBoard({ onOpenDeal }: { onOpenDeal: (id: string) => void })
                       </td>
                       <td>{st}</td>
                       <td className="tnum">{d.done_tasks}/{d.total_tasks}</td>
-                      <td>{d.risk_count > 0 ? <span className="db-badge red">⚠ {d.risk_count}</span> : <span className="muted">—</span>}</td>
+                      <td>{d.risk_count > 0 ? <span className="db-badge red"><Icon name="warning" size={12} /> {d.risk_count}</span> : <span className="muted">—</span>}</td>
                       <td className="tnum">{shortPrice(d.purchase_price) ?? "—"}</td>
                     </tr>
                   );

@@ -7,48 +7,80 @@ field the deal doesn't have is simply skipped.
 
 from __future__ import annotations
 
+import re
 from datetime import date
 
 from app.compliance.ca_rules import RuleSet
 from app.compliance.date_engine import days_after, days_before
 from app.contracts.compliance import ComputedDeadline, ComputedTask, DealState
 
-# Each deadline-driving contingency field -> (deadline key, human name, task
-# title). The period comes from the field's value if numeric, else the RuleSet
-# default. Dates (acceptance/COE/possession) are handled separately below.
-_CONTINGENCY_FIELDS: dict[str, tuple[str, str, str]] = {
-    "emd_due_days": ("emd", "Earnest money deposit due", "Confirm earnest money deposited"),
-    "inspection_contingency_days": (
-        "inspection_contingency",
-        "Inspection contingency ends",
-        "Complete inspections and decide on inspection contingency",
-    ),
-    "loan_contingency_days": (
-        "loan_contingency",
-        "Loan contingency ends",
-        "Confirm loan approval and decide on loan contingency",
-    ),
-    "appraisal_contingency_days": (
-        "appraisal_contingency",
-        "Appraisal contingency ends",
-        "Confirm appraisal and decide on appraisal contingency",
-    ),
-    "insurance_contingency_days": (
-        "insurance_contingency",
-        "Insurance contingency ends",
-        "Confirm insurability and decide on insurance contingency",
-    ),
-    "disclosure_delivery_days": (
-        "disclosure_delivery",
-        "Seller disclosure delivery due",
-        "Confirm seller disclosures delivered",
-    ),
-    "verification_of_funds_days": (
-        "verification_of_funds",
-        "Verification of funds due",
-        "Confirm buyer's verification of funds",
-    ),
+# Each deadline-driving contingency field -> (deadline key, human name). The
+# period comes from the field's value if numeric, else the RuleSet default.
+# Dates (acceptance/COE/possession) are handled separately below. The *task*
+# title is generated per-deal from the confirmed facts (names, amounts, address,
+# the computed date) so it reads specifically — see _task_title.
+_CONTINGENCY_FIELDS: dict[str, tuple[str, str]] = {
+    "emd_due_days": ("emd", "Earnest money deposit due"),
+    "inspection_contingency_days": ("inspection_contingency", "Inspection contingency ends"),
+    "loan_contingency_days": ("loan_contingency", "Loan contingency ends"),
+    "appraisal_contingency_days": ("appraisal_contingency", "Appraisal contingency ends"),
+    "insurance_contingency_days": ("insurance_contingency", "Insurance contingency ends"),
+    "disclosure_delivery_days": ("disclosure_delivery", "Seller disclosure delivery due"),
+    "verification_of_funds_days": ("verification_of_funds", "Verification of funds due"),
 }
+
+_MONTHS = ["", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+
+
+def _fmt_date(d: date) -> str:
+    """Short, scannable date for a task title, e.g. 'Aug 11'."""
+    return f"{_MONTHS[d.month]} {d.day}"
+
+
+def _short_address(raw: str | None) -> str:
+    return raw.split(",")[0].strip() if raw else ""
+
+
+def _first_names(raw: str | None, max_n: int = 2) -> str:
+    """A concise personal label from a names field ('Marcus Chen; Priya Patel'
+    -> 'Marcus & Priya'), so titles name the actual people on the deal."""
+    if not raw:
+        return ""
+    parts = re.split(r"[;,&/]| and ", raw)
+    firsts = [p.strip().split()[0] for p in parts if p.strip()][:max_n]
+    return " & ".join(firsts)
+
+
+def _task_title(key: str, st: DealState, due: date | None) -> str:
+    """A specific, personalized task title built from the deal's confirmed facts."""
+    buyer = _first_names(st.confirmed_value("buyer_names")) or "the buyer"
+    seller = _first_names(st.confirmed_value("seller_names")) or "the seller"
+    addr = _short_address(st.confirmed_value("property_address"))
+    ends = f" — ends {_fmt_date(due)}" if due else ""
+    duw = f" — due {_fmt_date(due)}" if due else ""
+
+    if key == "emd":
+        amt = st.confirmed_value("initial_deposit_amount")
+        head = f"Confirm {amt} earnest money" if amt else "Confirm earnest money"
+        return f"{head} wired to escrow{duw}"
+    if key == "inspection_contingency":
+        at = f" at {addr}" if addr else ""
+        return f"Complete inspections{at} and release inspection contingency{ends}"
+    if key == "loan_contingency":
+        amt = st.confirmed_value("loan_amount")
+        loan = f" ({amt} loan)" if amt else ""
+        return f"Confirm {buyer}'s loan approval{loan} and release loan contingency{ends}"
+    if key == "appraisal_contingency":
+        price = st.confirmed_value("purchase_price")
+        at = f" at {price}" if price else ""
+        return f"Confirm appraisal{at} and release appraisal contingency{ends}"
+    if key == "insurance_contingency":
+        return f"Bind homeowner's insurance and release insurance contingency{ends}"
+    if key == "disclosure_delivery":
+        return f"Confirm {seller} delivered disclosures to {buyer}{duw}"
+    if key == "verification_of_funds":
+        return f"Confirm {buyer}'s proof of funds received{duw}"
+    return f"Confirm {key}{ends}"
 
 
 # Values that mean "this contingency does not apply" — no deadline is created.
@@ -86,7 +118,7 @@ def compute_timeline(
 
     # Contingency/action periods (need an acceptance date to anchor to).
     if acceptance_date is not None:
-        for field_name, (key, name, task_title) in _CONTINGENCY_FIELDS.items():
+        for field_name, (key, name) in _CONTINGENCY_FIELDS.items():
             raw = state.confirmed_value(field_name)
             if raw is None or _is_waived(raw):
                 continue  # absent or waived -> no deadline
@@ -102,7 +134,9 @@ def compute_timeline(
             deadlines.append(
                 ComputedDeadline(key=key, name=name, due_date=due, source_field=field_name)
             )
-            tasks.append(ComputedTask(key=f"task_{key}", title=task_title, deadline_key=key))
+            tasks.append(
+                ComputedTask(key=f"task_{key}", title=_task_title(key, state, due), deadline_key=key)
+            )
 
     # Close of escrow: either a specific date, or "N days after acceptance".
     coe_raw = state.confirmed_value("close_of_escrow")
@@ -122,10 +156,12 @@ def compute_timeline(
                 source_field="close_of_escrow",
             )
         )
+        _addr = _short_address(state.confirmed_value("property_address"))
+        _at = f" for {_addr}" if _addr else ""
         tasks.append(
             ComputedTask(
                 key="task_coe",
-                title="Confirm closing preparations complete",
+                title=f"Confirm closing preparations complete{_at} — COE {_fmt_date(coe_date)}",
                 deadline_key="coe",
             )
         )
@@ -141,10 +177,11 @@ def compute_timeline(
                 source_field="close_of_escrow",
             )
         )
+        _buyer = _first_names(state.confirmed_value("buyer_names")) or "the buyer"
         tasks.append(
             ComputedTask(
                 key="task_final_walkthrough",
-                title="Schedule and complete the final walk-through",
+                title=f"Final walk-through with {_buyer} — {_fmt_date(walkthrough)}",
                 deadline_key="final_walkthrough",
             )
         )
@@ -165,10 +202,11 @@ def compute_timeline(
                     source_field="possession_date",
                 )
             )
+            _pbuyer = _first_names(state.confirmed_value("buyer_names")) or "the buyer"
             tasks.append(
                 ComputedTask(
                     key="task_possession",
-                    title="Coordinate possession / key handover",
+                    title=f"Coordinate key handover to {_pbuyer} — {_fmt_date(possession_date)}",
                     deadline_key="possession",
                 )
             )

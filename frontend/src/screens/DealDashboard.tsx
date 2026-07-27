@@ -15,6 +15,7 @@ import {
 } from "../lib/api";
 import { Ring, toast } from "../lib/ui";
 import { fmtDate } from "../lib/format";
+import { Icon, IconName } from "../lib/icons";
 import { motion } from "framer-motion";
 
 const listStagger = { visible: { transition: { staggerChildren: 0.055 } } };
@@ -31,16 +32,16 @@ function initials(name: string | null, role: string): string {
   const s = (name || role || "?").trim().split(/\s+/);
   return ((s[0]?.[0] ?? "") + (s[1]?.[0] ?? "")).toUpperCase() || "?";
 }
-function riskIcon(f: DealRiskFlag): string {
+function riskIcon(f: DealRiskFlag): IconName {
   const c = (f.case_key ?? "").toLowerCase();
-  if (c.includes("inspection")) return "🔍";
-  if (c.includes("appraisal")) return "🏷️";
-  if (c.includes("loan")) return "🏦";
-  if (c.includes("escrow")) return "🔑";
-  if (c.includes("earnest") || c.includes("deposit")) return "📌";
-  if (c.includes("disclosure")) return "📄";
-  if (c.includes("closing")) return "⏰";
-  return f.severity === "critical" || f.severity === "high" ? "⚠️" : "❕";
+  if (c.includes("inspection")) return "search";
+  if (c.includes("appraisal")) return "tag";
+  if (c.includes("loan")) return "bank";
+  if (c.includes("escrow")) return "key";
+  if (c.includes("earnest") || c.includes("deposit")) return "pin";
+  if (c.includes("disclosure")) return "clipboard";
+  if (c.includes("closing")) return "clock";
+  return "warning";
 }
 function titleize(s: string | null): string {
   return (s ?? "Attention").replace(/_/g, " ").replace(/\b\w/g, (m) => m.toUpperCase());
@@ -48,21 +49,21 @@ function titleize(s: string | null): string {
 
 // Smart routing: a task's wording implies who should own it. First matching
 // rule wins; `roles` is the party-role preference order for the suggestion.
-const TASK_ROUTES: { match: RegExp; icon: string; roles: string[]; ctx: string }[] = [
-  { match: /walk-?through/i, icon: "🚶", roles: ["buyer_agent"], ctx: "final walk-through" },
-  { match: /inspection/i, icon: "🔍", roles: ["inspector_general", "buyer_agent"], ctx: "inspection contingency" },
-  { match: /appraisal/i, icon: "🏷️", roles: ["appraiser", "lender"], ctx: "appraisal contingency" },
-  { match: /loan/i, icon: "🏦", roles: ["lender", "loan_officer"], ctx: "loan contingency" },
-  { match: /earnest|deposit|\bemd\b/i, icon: "📌", roles: ["escrow"], ctx: "earnest money" },
-  { match: /verification of funds|proof of funds/i, icon: "💵", roles: ["buyer_agent"], ctx: "verification of funds" },
-  { match: /disclosure/i, icon: "📄", roles: ["listing_agent"], ctx: "seller disclosures" },
-  { match: /warranty/i, icon: "🛡️", roles: ["buyer_agent", "listing_agent"], ctx: "home warranty" },
-  { match: /escrow|closing|close of escrow/i, icon: "🔑", roles: ["escrow"], ctx: "closing" },
-  { match: /possession/i, icon: "🔑", roles: ["buyer_agent"], ctx: "possession" },
-  { match: /insurance/i, icon: "🛡️", roles: ["buyer_agent"], ctx: "insurance contingency" },
+const TASK_ROUTES: { match: RegExp; icon: IconName; roles: string[]; ctx: string }[] = [
+  { match: /walk-?through/i, icon: "user", roles: ["buyer_agent"], ctx: "final walk-through" },
+  { match: /inspection/i, icon: "search", roles: ["inspector_general", "buyer_agent"], ctx: "inspection contingency" },
+  { match: /appraisal/i, icon: "tag", roles: ["appraiser", "lender"], ctx: "appraisal contingency" },
+  { match: /loan/i, icon: "bank", roles: ["lender", "loan_officer"], ctx: "loan contingency" },
+  { match: /earnest|deposit|\bemd\b/i, icon: "pin", roles: ["escrow"], ctx: "earnest money" },
+  { match: /verification of funds|proof of funds/i, icon: "money", roles: ["buyer_agent"], ctx: "verification of funds" },
+  { match: /disclosure/i, icon: "clipboard", roles: ["listing_agent"], ctx: "seller disclosures" },
+  { match: /warranty/i, icon: "shield", roles: ["buyer_agent", "listing_agent"], ctx: "home warranty" },
+  { match: /escrow|closing|close of escrow/i, icon: "key", roles: ["escrow"], ctx: "closing" },
+  { match: /possession/i, icon: "key", roles: ["buyer_agent"], ctx: "possession" },
+  { match: /insurance/i, icon: "shield", roles: ["buyer_agent"], ctx: "insurance contingency" },
 ];
-function routeFor(title: string): { icon: string; roles: string[]; ctx: string } {
-  return TASK_ROUTES.find((r) => r.match.test(title)) ?? { icon: "📋", roles: [], ctx: "" };
+function routeFor(title: string): { icon: IconName; roles: string[]; ctx: string } {
+  return TASK_ROUTES.find((r) => r.match.test(title)) ?? { icon: "clipboard", roles: [], ctx: "" };
 }
 const ROLE_SHORT: Record<string, string> = {
   lender: "lender", loan_officer: "loan officer", escrow: "escrow", appraiser: "appraiser",
@@ -193,27 +194,27 @@ export function DealDashboard({
           </div>
         </div>
         <div className="party-contact">
-          {pt.company && <div>🏢 {pt.company}</div>}
+          {pt.company && <div><Icon name="bank" size={13} /> {pt.company}</div>}
           <div
             className={pt.email ? "" : "faint clickable"}
             onClick={pt.email ? undefined : () => startEdit(pt)}
           >
-            ✉️ {pt.email || "add email"}
+            <Icon name="mail" size={13} /> {pt.email || "add email"}
           </div>
           <div
             className={pt.phone ? "" : "faint clickable"}
             onClick={pt.phone ? undefined : () => startEdit(pt)}
           >
-            📞 {pt.phone || "add phone"}
+            <Icon name="phone" size={13} /> {pt.phone || "add phone"}
           </div>
         </div>
         <div className="party-meta">
           <span className="badge navy">{pv.open_tasks.length} open</span>
           <span className="badge ok">{pv.done_tasks.length} done</span>
-          {pv.last_message_status && <span className="badge gold">✉ {pv.last_message_status}</span>}
+          {pv.last_message_status && <span className="badge gold"><Icon name="mail" size={11} /> {pv.last_message_status}</span>}
         </div>
         <div className="party-actions">
-          <button className="secondary sm" disabled={busy} onClick={() => startEdit(pt)}>✎ Edit</button>
+          <button className="secondary sm" disabled={busy} onClick={() => startEdit(pt)}>Edit</button>
           {isInvitable(pt) && (
             <button
               className="secondary sm"
@@ -228,7 +229,7 @@ export function DealDashboard({
                 }, "Invite link ready")
               }
             >
-              🔗 Invite
+              <Icon name="key" size={13} /> Invite
             </button>
           )}
           {isInvitable(pt) && pt.email && (
@@ -250,7 +251,7 @@ export function DealDashboard({
                 })
               }
             >
-              ✉️ Email invite
+              <Icon name="mail" size={13} /> Email invite
             </button>
           )}
         </div>
@@ -337,14 +338,14 @@ export function DealDashboard({
 
       {/* ---- Risk attention feed ---- */}
       <div className="card">
-        <h2>🚨 Attention</h2>
+        <h2><Icon name="warning" size={17} /> Attention</h2>
         {dash.risk_alerts.length === 0 && (
-          <div className="empty"><span className="emoji">✅</span>No open risk alerts — nicely on track.</div>
+          <div className="empty"><span className="empty-ic"><Icon name="checkCircle" size={26} /></span>No open risk alerts — nicely on track.</div>
         )}
         <motion.div className="risk-feed" initial="hidden" animate="visible" variants={listStagger}>
           {dash.risk_alerts.map((f) => (
             <motion.div key={f.id} className={`risk-card ${f.severity}`} variants={itemIn}>
-              <div className="risk-ic">{riskIcon(f)}</div>
+              <div className="risk-ic"><Icon name={riskIcon(f)} size={16} /></div>
               <div className="risk-body">
                 <div className="risk-title">
                   {titleize(f.case_key)}
@@ -360,7 +361,7 @@ export function DealDashboard({
       {/* ---- Party roster (grouped; auto-filled from the contract) ---- */}
       <div className="card">
         <div className="between" style={{ marginBottom: "0.2rem" }}>
-          <h2 style={{ margin: 0 }}>👥 Parties</h2>
+          <h2 style={{ margin: 0 }}><Icon name="users" size={17} /> Parties</h2>
           <span className="muted">Auto-filled from the contract · complete the rest</span>
         </div>
 
@@ -423,7 +424,7 @@ export function DealDashboard({
       {/* ---- Tasks (compliance + the TC's own) ---- */}
       <div className="card">
         <div className="between" style={{ marginBottom: "0.6rem" }}>
-          <h2 style={{ margin: 0 }}>✅ Tasks</h2>
+          <h2 style={{ margin: 0 }}><Icon name="checkCircle" size={17} /> Tasks</h2>
           <span className="muted">
             {state.tasks.filter((t) => !["done", "complete"].includes(t.status)).length} open
           </span>
@@ -442,7 +443,7 @@ export function DealDashboard({
           </button>
         </div>
         {state.tasks.length === 0 && (
-          <div className="empty"><span className="emoji">📋</span>No tasks yet.</div>
+          <div className="empty"><span className="empty-ic"><Icon name="clipboard" size={26} /></span>No tasks yet.</div>
         )}
         <div className="stack">
           {[...state.tasks]
@@ -495,7 +496,7 @@ export function DealDashboard({
                     <div className="task-meta">
                       {due && (
                         <span style={{ color: dueColor, fontWeight: daysLeft != null && daysLeft <= 5 ? 600 : 400 }}>
-                          📅 {fmtDate(due)}
+                          <Icon name="calendar" size={12} /> {fmtDate(due)}
                           {daysLeft != null &&
                             (daysLeft < 0
                               ? ` · ${-daysLeft}d overdue`
@@ -520,7 +521,7 @@ export function DealDashboard({
       {unassigned.length > 0 && (
         <div className="card">
           <div className="between" style={{ marginBottom: "0.7rem" }}>
-            <h2 style={{ margin: 0 }}>🧭 Needs an owner</h2>
+            <h2 style={{ margin: 0 }}><Icon name="pin" size={17} /> Needs an owner</h2>
             <span className="muted">{unassigned.length} unassigned · sorted by urgency</span>
           </div>
           <div className="stack">
@@ -553,13 +554,13 @@ export function DealDashboard({
                   );
                 return (
                   <div key={t.id} className="route-row">
-                    <div className="route-ic">{r.icon}</div>
+                    <div className="route-ic"><Icon name={r.icon} size={15} /></div>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div className="route-title">{t.title}</div>
                       <div className="route-meta">
                         {due && (
                           <span style={{ color: dueColor, fontWeight: daysLeft != null && daysLeft <= 5 ? 600 : 400 }}>
-                            📅 {fmtDate(due)}
+                            <Icon name="calendar" size={12} /> {fmtDate(due)}
                             {daysLeft != null && (daysLeft < 0 ? ` · ${-daysLeft}d overdue` : daysLeft === 0 ? " · today" : ` · ${daysLeft}d`)}
                           </span>
                         )}

@@ -7,6 +7,8 @@ import {
   TransactionSummary,
 } from "../lib/api";
 import { DealsBoard } from "./DealsBoard";
+import { UploadOverlay } from "../lib/UploadOverlay";
+import { Icon } from "../lib/icons";
 
 const DOC_TYPE_LABELS: Record<string, string> = {
   purchase_agreement: "Purchase agreement",
@@ -26,6 +28,7 @@ export function Inbox({ onOpenDeal }: { onOpenDeal: (id: string) => void }) {
   const [docTypes, setDocTypes] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  const [processing, setProcessing] = useState(false);
   const [uploadName, setUploadName] = useState<string | null>(null);
   const [uploadB64, setUploadB64] = useState<string | null>(null);
   // Manual field-entry fallback (open per item after an extraction 422)
@@ -56,6 +59,7 @@ export function Inbox({ onOpenDeal }: { onOpenDeal: (id: string) => void }) {
 
   async function confirm(item: InboxItem, manualFields?: { name: string; value: string }[]) {
     setBusy(item.id);
+    setProcessing(true);
     setError(null);
     try {
       const docType = docTypes[item.id];
@@ -85,6 +89,7 @@ export function Inbox({ onOpenDeal }: { onOpenDeal: (id: string) => void }) {
       }
     } finally {
       setBusy(null);
+      setProcessing(false);
     }
   }
 
@@ -115,6 +120,7 @@ export function Inbox({ onOpenDeal }: { onOpenDeal: (id: string) => void }) {
   async function uploadManual() {
     if (!uploadName || !uploadB64) return;
     setBusy("upload");
+    setProcessing(true);
     setError(null);
     try {
       await api.post("/ingestion/manual-upload", {
@@ -128,6 +134,7 @@ export function Inbox({ onOpenDeal }: { onOpenDeal: (id: string) => void }) {
       setError(err instanceof Error ? err.message : "Upload failed");
     } finally {
       setBusy(null);
+      setProcessing(false);
     }
   }
 
@@ -136,9 +143,10 @@ export function Inbox({ onOpenDeal }: { onOpenDeal: (id: string) => void }) {
 
   return (
     <>
+      <UploadOverlay show={processing} />
       <div className="page-head">
         <div>
-          <h1>Inbox &amp; Deals</h1>
+          <h1>Deals &amp; Inbox</h1>
           <div className="muted">Triage inbound documents, and open any active deal.</div>
         </div>
       </div>
@@ -146,10 +154,10 @@ export function Inbox({ onOpenDeal }: { onOpenDeal: (id: string) => void }) {
       <DealsBoard onOpenDeal={onOpenDeal} />
 
       <div className="card">
-        <h2>📥 Inbound — dedicated deal address</h2>
+        <h2><Icon name="inbox" size={17} /> Inbound — dedicated deal address</h2>
         {pending.length === 0 && (
           <div className="empty">
-            <span className="emoji">📨</span>
+            <span className="empty-ic"><Icon name="mail" size={26} /></span>
             Inbox zero. New documents emailed to the deal address land here for your review.
           </div>
         )}
@@ -337,7 +345,7 @@ export function Inbox({ onOpenDeal }: { onOpenDeal: (id: string) => void }) {
       )}
 
       <div className="card">
-        <h2>📎 Manual upload</h2>
+        <h2><Icon name="attach" size={17} /> Manual upload</h2>
         <div className="dropzone">
           <input type="file" accept="application/pdf" onChange={onFilePicked} />
           <div style={{ marginTop: "0.7rem" }}>

@@ -6,6 +6,7 @@ import { Inbox } from "./screens/Inbox";
 import { Login } from "./screens/Login";
 import { InviteView } from "./screens/InviteView";
 import { Toaster } from "./lib/ui";
+import { Icon } from "./lib/icons";
 import { motion } from "framer-motion";
 
 // An invited party arrives with their scoped token in the URL fragment
@@ -15,10 +16,10 @@ const inviteToken = (() => {
   return m ? decodeURIComponent(m[1]) : null;
 })();
 
-// Apply the saved (or OS) theme before first paint so there's no flash.
-const _initTheme =
-  localStorage.getItem("theme") ||
-  (window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+// A workspace is a daytime tool — default to the bright theme and only honor a
+// deliberate opt-in to dark (never the OS setting, which was forcing dark on TCs
+// who work in dark-mode OSes). Applied before first paint so there's no flash.
+const _initTheme = localStorage.getItem("theme") === "dark" ? "dark" : "light";
 document.documentElement.setAttribute("data-theme", _initTheme);
 
 type View = { name: "home" } | { name: "inbox" } | { name: "deal"; id: string };
@@ -95,7 +96,7 @@ function TcApp() {
         </div>
 
         <div className="nav-search" title="Search (coming soon)">
-          <span>🔎</span> Search…<kbd>⌘K</kbd>
+          <Icon name="search" size={14} /> Search…<kbd>⌘K</kbd>
         </div>
 
         <button
@@ -105,7 +106,7 @@ function TcApp() {
           {view.name === "home" && (
             <motion.span layoutId="side-ind" className="side-ind" transition={{ type: "spring", stiffness: 400, damping: 34 }} />
           )}
-          <span className="ni-label"><span className="ic">◉</span> Home</span>
+          <span className="ni-label"><span className="ic"><Icon name="home" /></span> Home</span>
         </button>
         <button
           className={`nav-item ${view.name === "inbox" ? "active" : ""}`}
@@ -118,7 +119,7 @@ function TcApp() {
               transition={{ type: "spring", stiffness: 400, damping: 34 }}
             />
           )}
-          <span className="ni-label"><span className="ic">▤</span> Deals &amp; Inbox</span>
+          <span className="ni-label"><span className="ic"><Icon name="deals" /></span> Deals &amp; Inbox</span>
         </button>
         {view.name === "deal" && (
           <div className="nav-item active" style={{ cursor: "default" }}>
@@ -127,7 +128,7 @@ function TcApp() {
               className="side-ind"
               transition={{ type: "spring", stiffness: 400, damping: 34 }}
             />
-            <span className="ni-label"><span className="ic">◈</span> Current deal</span>
+            <span className="ni-label"><span className="ic"><Icon name="doc" /></span> Current deal</span>
           </div>
         )}
 

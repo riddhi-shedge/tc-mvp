@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
 import { fmtDate } from "../lib/format";
+import { Icon } from "../lib/icons";
 
 type Deadline = { id: string; name: string; due_date: string };
 type Task = { id: string; title: string; status: string; assigned_party_id: string | null; deadline_id: string | null };
@@ -100,7 +101,7 @@ export function InviteView({ token }: { token: string }) {
         <div className="card inv-hero">
           <div className="inv-eyebrow">Transaction coordinator · shared a read-only view</div>
           <h1 style={{ margin: "0.2rem 0 0" }}>
-            Hi {me?.name ?? "there"} 👋
+            Hi {me?.name ?? "there"}
           </h1>
           <p className="muted" style={{ margin: "0.4rem 0 0" }}>
             Here's the transaction for <b style={{ color: "var(--ink)" }}>{data.address ?? "this property"}</b>.
@@ -110,7 +111,7 @@ export function InviteView({ token }: { token: string }) {
 
         {mine.length > 0 && (
           <div className="card">
-            <h2>✅ Your items</h2>
+            <h2><Icon name="checkCircle" size={17} /> Your items</h2>
             <div className="stack">
               {mine.map((t) => {
                 const due = dateFor(t.deadline_id);
@@ -122,7 +123,7 @@ export function InviteView({ token }: { token: string }) {
                     </button>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div className="task-title">{t.title}</div>
-                      {due && <div className="task-meta muted">📅 {fmtDate(due)}</div>}
+                      {due && <div className="task-meta muted"><Icon name="calendar" size={12} /> {fmtDate(due)}</div>}
                     </div>
                     <span className={`badge ${done ? "ok" : "draft"}`}>{t.status}</span>
                   </div>
@@ -133,9 +134,9 @@ export function InviteView({ token }: { token: string }) {
         )}
 
         <div className="card">
-          <h2>◷ Deal timeline</h2>
+          <h2><Icon name="calendar" size={17} /> Deal timeline</h2>
           {data.deadlines.length === 0 ? (
-            <div className="empty"><span className="emoji">🗓️</span>No dated milestones yet.</div>
+            <div className="empty"><span className="empty-ic"><Icon name="calendar" size={26} /></span>No dated milestones yet.</div>
           ) : (
             <div className="stack">
               {data.deadlines.map((d) => (
@@ -149,7 +150,7 @@ export function InviteView({ token }: { token: string }) {
         </div>
 
         <p className="inv-foot muted">
-          🔒 Read-only, scoped to this deal — enforced by the database. You can't see other parties'
+          <Icon name="lock" size={13} /> Read-only, scoped to this deal — enforced by the database. You can't see other parties'
           private information or any other transaction.
         </p>
       </div>

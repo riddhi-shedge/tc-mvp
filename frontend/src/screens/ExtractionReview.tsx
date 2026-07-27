@@ -1,5 +1,6 @@
 import { FIELD_DEADLINE_KEYWORD, FullState } from "../lib/api";
 import { fmtDate } from "../lib/format";
+import { Icon } from "../lib/icons";
 
 // Friendlier row labels than the raw §5 field names; falls back to humanize().
 const LABELS: Record<string, string> = {
@@ -96,7 +97,7 @@ export function ExtractionReview({
   if (fields.length === 0) {
     return (
       <div className="card">
-        <div className="empty"><span className="emoji">🔎</span>No extracted fields yet.</div>
+        <div className="empty"><span className="empty-ic"><Icon name="search" size={26} /></span>No extracted fields yet.</div>
       </div>
     );
   }
@@ -161,7 +162,7 @@ export function ExtractionReview({
         </span>
         <span className="xr-val">
           {f.value}
-          {date && <span className="xr-datechip">📅 {date}</span>}
+          {date && <span className="xr-datechip"><Icon name="calendar" size={12} /> {date}</span>}
         </span>
       </div>
     );
@@ -178,8 +179,8 @@ export function ExtractionReview({
           </div>
           {(a.email || a.phone) && (
             <div className="xr-chips">
-              {a.email && <span className="xr-chip">✉ {a.email}</span>}
-              {a.phone && <span className="xr-chip">☎ {a.phone}</span>}
+              {a.email && <span className="xr-chip"><Icon name="mail" size={12} /> {a.email}</span>}
+              {a.phone && <span className="xr-chip"><Icon name="phone" size={12} /> {a.phone}</span>}
             </div>
           )}
         </div>
@@ -318,7 +319,7 @@ export function ExtractionReview({
       <div className="xr-legend">
         <span><span className="xr-dot ok" /> High confidence</span>
         <span><span className="xr-dot low" /> Low — please verify</span>
-        <span><span className="xr-datechip">📅</span> resolved deadline</span>
+        <span><span className="xr-datechip"><Icon name="calendar" size={12} /></span> resolved deadline</span>
       </div>
     </div>
   );

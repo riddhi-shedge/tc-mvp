@@ -1,5 +1,6 @@
 import { FormEvent, useState } from "react";
 import { supabase } from "../lib/supabase";
+import { Icon } from "../lib/icons";
 
 /** Sign-in → TOTP MFA (enroll on first use, then challenge) → aal2 session.
  *  The API rejects anything below aal2, so this screen must finish MFA. */
@@ -104,9 +105,9 @@ export function Login({ onSignedIn }: { onSignedIn: () => void }) {
             deadline computed, nothing sent without your tap.
           </p>
           <ul className="auth-props">
-            <li><span className="ic">🗓️</span> Every contingency &amp; deadline, computed to the day</li>
-            <li><span className="ic">✋</span> Human-approved — nothing sends on its own</li>
-            <li><span className="ic">📍</span> California RPA-accurate (rev. 6/26)</li>
+            <li><span className="ic"><Icon name="calendar" /></span> Every contingency &amp; deadline, computed to the day</li>
+            <li><span className="ic"><Icon name="shield" /></span> Human-approved — nothing sends on its own</li>
+            <li><span className="ic"><Icon name="pin" /></span> California RPA-accurate (rev. 6/26)</li>
           </ul>
           <span className="auth-trust">◆ Synthetic demo data — safe to explore</span>
         </div>

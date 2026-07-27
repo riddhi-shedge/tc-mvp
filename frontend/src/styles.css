@@ -8,9 +8,9 @@
   --gold-300: #b9baf8; --gold-100: #ececfe;
   --navy-900: #14151a; --navy-800: #1c1e26; --navy-700: #2b2e39;
   --navy-600: #4a4d59; --navy-500: #6b6e7b;
-  --cream: #fbfbfc; --cream-2: #f2f2f5; --surface: #ffffff; --surface-2: #f7f7f9;
-  --ink: #191b23; --ink-2: #565963; --muted: #8b8f9a; --line: #ececee; --line-2: #f3f3f5;
-  --hover: #f3f3f6; --on-accent: #ffffff;
+  --cream: #f4f6f9; --cream-2: #eceff4; --surface: #ffffff; --surface-2: #f6f8fb;
+  --ink: #14171f; --ink-2: #515765; --muted: #868d9c; --line: #e4e8ef; --line-2: #eef1f6;
+  --hover: #eef1f7; --on-accent: #ffffff;
   --green-700: #268049; --green-600: #2f9e57; --green-100: #e8f5ec;
   --amber-700: #8f5e13; --amber-600: #b0741a; --amber-100: #f8efdc;
   --red-700: #b23528; --red-600: #cf4436; --red-100: #fbe6e3;
@@ -19,20 +19,8 @@
   --shadow-lg: 0 12px 34px rgba(20,22,40,.12);
   --ring: 0 0 0 3px rgba(91,94,240,.28);
 }
-/* Dark (signature). data-theme override wins over the media query in both directions. */
-@media (prefers-color-scheme: dark) { :root { color-scheme: dark;
-  --gold-700:#5b5ef0; --gold-600:#6d70f2; --gold-500:#7c7ff5; --gold-300:#3a3d66; --gold-100:#20213a;
-  --navy-900:#e7e8ee; --navy-800:#cfd2db; --navy-700:#aeb2be; --navy-600:#8b8f9c; --navy-500:#71757f;
-  --cream:#0d0e12; --cream-2:#14151a; --surface:#16171d; --surface-2:#1b1c23;
-  --ink:#e7e8ee; --ink-2:#a3a7b3; --muted:#6f737d; --line:#24252d; --line-2:#1e1f27;
-  --hover:#1c1d25; --on-accent:#ffffff;
-  --green-700:#63c489; --green-600:#48b46c; --green-100:#14301f;
-  --amber-700:#e0b366; --amber-600:#d09a45; --amber-100:#2c2410;
-  --red-700:#eb8079; --red-600:#e5675c; --red-100:#33191a;
-  --shadow-sm:0 1px 2px rgba(0,0,0,.3);
-  --shadow:0 1px 2px rgba(0,0,0,.3), 0 6px 18px rgba(0,0,0,.4);
-  --shadow-lg:0 14px 36px rgba(0,0,0,.5); --ring:0 0 0 3px rgba(124,127,245,.35);
-} }
+/* Dark is opt-in only (the theme toggle) — never driven by the OS, so a TC on a
+   dark-mode laptop still gets the bright daytime workspace by default. */
 :root[data-theme="dark"] { color-scheme: dark;
   --gold-700:#5b5ef0; --gold-600:#6d70f2; --gold-500:#7c7ff5; --gold-300:#3a3d66; --gold-100:#20213a;
   --navy-900:#e7e8ee; --navy-800:#cfd2db; --navy-700:#aeb2be; --navy-600:#8b8f9c; --navy-500:#71757f;
@@ -105,7 +93,7 @@ kbd { font-family: var(--sans); font-size: 10.5px; color: var(--muted); backgrou
 .nav-item.active { color: var(--ink); font-weight: 550; }
 .side-ind { position: absolute; inset: 0; background: var(--gold-100); border-radius: 7px; box-shadow: inset 2px 0 0 var(--gold-500); z-index: 0; }
 .ni-label { position: relative; z-index: 1; display: inline-flex; align-items: center; gap: 9px; }
-.nav-item .ic { font-size: 13px; width: 16px; text-align: center; opacity: 0.85; }
+.nav-item .ic { display: inline-flex; align-items: center; justify-content: center; width: 16px; opacity: 0.8; }
 .sidebar .spacer { flex: 1; }
 .side-synth { padding: 6px 8px; }
 .side-account { display: flex; align-items: center; gap: 9px; padding: 8px; border-top: 1px solid var(--line); margin-top: 4px; }
@@ -130,7 +118,8 @@ kbd { font-family: var(--sans); font-size: 10.5px; color: var(--muted); backgrou
 .kbtn:hover { background: var(--hover); }
 .kbtn.pri { background: var(--gold-500); color: var(--on-accent); border-color: transparent; }
 .kbtn.icon { padding: 5px 8px; }
-.page { max-width: 1120px; margin: 0 auto; width: 100%; padding: 1.4rem 1.6rem 3rem; }
+/* Full-bleed workspace — the canvas fills the viewport, no marketing-site gutters. */
+.page { width: 100%; margin: 0; padding: 1.5rem 2.25rem 3.5rem; }
 .page-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 1rem; margin-bottom: 1.4rem; }
 .page-head .muted { margin-top: 0.3rem; }
 
@@ -255,6 +244,7 @@ pre.mail { white-space: pre-wrap; background: var(--surface-2); border: 1px soli
 /* ---- Empty states + grid ----------------------------------------------- */
 .empty { text-align: center; padding: 2rem 1rem; color: var(--muted); }
 .empty .emoji { font-size: 1.6rem; display: block; margin-bottom: 0.4rem; }
+.empty-ic { display: block; width: fit-content; margin: 0 auto 0.55rem; color: var(--muted); opacity: 0.7; }
 .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1.1rem; align-items: start; }
 .stack { display: flex; flex-direction: column; gap: 0.6rem; }
 .between { display: flex; justify-content: space-between; align-items: center; gap: 0.75rem; }
@@ -919,3 +909,44 @@ button.secondary.sm { padding: 0.28rem 0.55rem; font-size: 0.76rem; }
 .pill-plain { background: var(--hover); color: var(--ink-2); }
 .hm .tnum { font-variant-numeric: tabular-nums; }
 @media (max-width: 900px) { .hm-stats { grid-template-columns: 1fr 1fr; } .hm-cols { grid-template-columns: 1fr; } }
+
+/* ---- Upload / extraction overlay (real-estate themed) ------------------- */
+.uplo-backdrop {
+  position: fixed; inset: 0; z-index: 60; display: grid; place-items: center;
+  background: color-mix(in srgb, var(--cream) 62%, transparent);
+  backdrop-filter: blur(7px); animation: uplo-fade 0.25s ease;
+}
+@keyframes uplo-fade { from { opacity: 0; } to { opacity: 1; } }
+.uplo-card {
+  width: min(380px, 90vw); background: var(--surface); border: 1px solid var(--line);
+  border-radius: var(--r-lg); box-shadow: var(--shadow-lg); padding: 2rem 2rem 1.6rem;
+  text-align: center; animation: uplo-pop 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+}
+@keyframes uplo-pop { from { transform: translateY(10px) scale(0.97); opacity: 0; } to { transform: none; opacity: 1; } }
+.uplo-art { display: grid; place-items: center; color: var(--gold-500); margin-bottom: 1rem; position: relative; }
+.uplo-grid line { stroke: var(--line); stroke-width: 1; }
+.uplo-house path, .uplo-house rect, .uplo-house line {
+  stroke-dasharray: 1; stroke-dashoffset: 1; animation: uplo-draw 2.2s ease forwards;
+}
+.uplo-house path:nth-child(2) { animation-delay: 0.35s; }
+.uplo-house path:nth-child(3) { animation-delay: 0.9s; }
+.uplo-house rect { animation-delay: 1.15s; }
+.uplo-house line { animation-delay: 0.15s; }
+@keyframes uplo-draw { to { stroke-dashoffset: 0; } }
+.uplo-scan {
+  fill: color-mix(in srgb, var(--gold-500) 22%, transparent);
+  stroke: var(--gold-500); stroke-width: 0.6;
+  transform-origin: center; animation: uplo-sweep 2.1s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+}
+@keyframes uplo-sweep { 0% { transform: translateY(0); opacity: 0; } 15% { opacity: 1; } 85% { opacity: 1; } 100% { transform: translateY(78px); opacity: 0; } }
+.uplo-title { font-size: 1rem; font-weight: 650; color: var(--ink); }
+.uplo-step { font-size: 0.86rem; color: var(--ink-2); margin-top: 0.35rem; min-height: 1.2em; animation: uplo-fade 0.4s ease; }
+.uplo-bar { height: 4px; border-radius: 3px; background: var(--hover); overflow: hidden; margin: 1.1rem auto 0.7rem; }
+.uplo-bar span { display: block; height: 100%; width: 40%; border-radius: 3px;
+  background: linear-gradient(90deg, transparent, var(--gold-500), transparent); animation: uplo-slide 1.3s ease-in-out infinite; }
+@keyframes uplo-slide { 0% { transform: translateX(-120%); } 100% { transform: translateX(320%); } }
+.uplo-foot { font-size: 0.74rem; color: var(--muted); }
+@media (prefers-reduced-motion: reduce) {
+  .uplo-house path, .uplo-house rect, .uplo-house line { animation: none; stroke-dashoffset: 0; }
+  .uplo-scan, .uplo-bar span { animation: none; }
+}
