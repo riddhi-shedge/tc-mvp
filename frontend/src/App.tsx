@@ -14,6 +14,12 @@ const inviteToken = (() => {
   return m ? decodeURIComponent(m[1]) : null;
 })();
 
+// Apply the saved (or OS) theme before first paint so there's no flash.
+const _initTheme =
+  localStorage.getItem("theme") ||
+  (window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+document.documentElement.setAttribute("data-theme", _initTheme);
+
 type View = { name: "inbox" } | { name: "deal"; id: string };
 
 export default function App() {
@@ -29,6 +35,18 @@ function TcApp() {
   const [email, setEmail] = useState<string | null>(null);
   const [view, setView] = useState<View>({ name: "inbox" });
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem("sidebar_collapsed") === "1");
+
+  const [dark, setDark] = useState(
+    () => document.documentElement.getAttribute("data-theme") === "dark",
+  );
+  function toggleTheme() {
+    setDark((d) => {
+      const next = !d;
+      document.documentElement.setAttribute("data-theme", next ? "dark" : "light");
+      localStorage.setItem("theme", next ? "dark" : "light");
+      return next;
+    });
+  }
 
   function toggleSidebar() {
     setCollapsed((c) => {
@@ -73,6 +91,10 @@ function TcApp() {
           >
             «
           </button>
+        </div>
+
+        <div className="nav-search" title="Search (coming soon)">
+          <span>🔎</span> Search…<kbd>⌘K</kbd>
         </div>
 
         <button
@@ -120,6 +142,23 @@ function TcApp() {
       </aside>
 
       <main className="main">
+        <div className="topbar">
+          <div className="crumbs">
+            {view.name === "deal" ? (
+              <>
+                <span>Deals</span>
+                <span className="sep">›</span>
+                <b>Current deal</b>
+              </>
+            ) : (
+              <b>Deals</b>
+            )}
+          </div>
+          <div className="top-sp" />
+          <button className="kbtn icon" title="Toggle theme" onClick={toggleTheme}>
+            {dark ? "☀" : "☾"}
+          </button>
+        </div>
         <div className="page">
           {view.name === "inbox" && (
             <Inbox

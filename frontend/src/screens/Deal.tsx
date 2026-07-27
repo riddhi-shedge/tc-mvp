@@ -169,7 +169,7 @@ export function Deal({ id, onBack }: { id: string; onBack: () => void }) {
               Deal {state.transaction.id.slice(0, 8)} · California residential
             </div>
           </div>
-          <span className="badge ok" style={{ background: "rgba(255,255,255,.12)", color: "#eef2f9" }}>
+          <span className="badge ok">
             <span className="dot open" /> {state.transaction.status}
           </span>
         </div>
