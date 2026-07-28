@@ -594,6 +594,25 @@ class InMemoryRepo:
         )
         return message
 
+    def delete_message(self, *, transaction_id, message_id, actor) -> str | None:
+        m = self.messages.get(message_id)
+        if m is None or m["transaction_id"] != transaction_id:
+            return None
+        if m["status"] == "sent":
+            return "sent"
+        del self.messages[message_id]
+        self._audit(
+            transaction_id=transaction_id, actor=actor, action="message.discarded",
+            entity_type="message", entity_id=message_id, details={"status": m["status"]},
+        )
+        return "deleted"
+
+    def document_signed_url(self, *, transaction_id, document_id) -> str | None:
+        d = self.documents.get(document_id)
+        if d is None or d.get("transaction_id") != transaction_id or not d.get("storage_path"):
+            return None
+        return f"https://signed.example/{d['storage_path']}"
+
     def send_invite(
         self, *, transaction_id, party_id, to, subject, body, mailer, actor
     ) -> None:

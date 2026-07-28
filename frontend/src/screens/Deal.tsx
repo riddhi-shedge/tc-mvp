@@ -112,6 +112,25 @@ export function Deal({ id, onBack }: { id: string; onBack: () => void }) {
     }
   }
 
+  // Open a stored document in a new tab via a short-lived signed URL. Opened
+  // synchronously so the browser doesn't block the popup, then navigated once
+  // the URL resolves.
+  function openDoc(docId: string) {
+    const tab = window.open("", "_blank", "noopener");
+    void (async () => {
+      try {
+        const { url } = await api.get<{ url: string }>(
+          `/transactions/${id}/documents/${docId}/signed-url`,
+        );
+        if (tab) tab.location.href = url;
+        else window.open(url, "_blank", "noopener");
+      } catch (e) {
+        tab?.close();
+        toast(e instanceof Error ? e.message : "Couldn't open document", { error: true });
+      }
+    })();
+  }
+
   if (!state) return <p className="muted">Loading deal…</p>;
 
   const fields = state.extracted_fields;
@@ -357,9 +376,15 @@ export function Deal({ id, onBack }: { id: string; onBack: () => void }) {
         {state.documents.length > 0 && (
           <div className="doc-grid">
             {state.documents.map((d) => (
-              <div key={d.id} className="doc-card">
+              <button
+                key={d.id}
+                type="button"
+                className="doc-card"
+                onClick={() => openDoc(d.id)}
+                title="Open document in a new tab"
+              >
                 <div className="doc-ic"><Icon name={docIcon(d.doc_type)} size={17} /></div>
-                <div style={{ minWidth: 0 }}>
+                <div style={{ minWidth: 0, flex: 1 }}>
                   <div className="doc-name">{humanize(d.doc_type ?? "unknown")}</div>
                   {d.created_at && (
                     <div className="muted" style={{ fontSize: "0.76rem", margin: "1px 0 4px" }}>
@@ -370,7 +395,8 @@ export function Deal({ id, onBack }: { id: string; onBack: () => void }) {
                     {d.status}
                   </span>
                 </div>
-              </div>
+                <span className="doc-open"><Icon name="external" size={15} /></span>
+              </button>
             ))}
           </div>
         )}
@@ -521,6 +547,20 @@ export function Deal({ id, onBack }: { id: string; onBack: () => void }) {
                           >
                             <Icon name="check" size={14} /> Approve &amp; Send
                           </button>
+                          <button
+                            className="secondary"
+                            disabled={busy}
+                            onClick={() => {
+                              if (!window.confirm("Discard this draft? This can't be undone.")) return;
+                              void run(async () => {
+                                await api.del(`/transactions/${id}/messages/${m.id}`);
+                                if (draftWhyFor === m.id) { setDraftWhy(null); setDraftWhyFor(null); }
+                                setSelMsg("new");
+                              }, "Draft discarded");
+                            }}
+                          >
+                            <Icon name="x" size={14} /> Discard
+                          </button>
                           <span className="mbx-guard"><Icon name="lock" size={12} /> Nothing sends without your tap</span>
                         </div>
                       </>
@@ -538,6 +578,19 @@ export function Deal({ id, onBack }: { id: string; onBack: () => void }) {
                             onClick={() => void run(() => api.post(`/transactions/${id}/messages/${m.id}/approve-and-send`), "Retried")}
                           >
                             Retry send
+                          </button>
+                          <button
+                            className="secondary"
+                            disabled={busy}
+                            onClick={() => {
+                              if (!window.confirm("Discard this message? This can't be undone.")) return;
+                              void run(async () => {
+                                await api.del(`/transactions/${id}/messages/${m.id}`);
+                                setSelMsg("new");
+                              }, "Message discarded");
+                            }}
+                          >
+                            <Icon name="x" size={14} /> Discard
                           </button>
                         </div>
                       </>

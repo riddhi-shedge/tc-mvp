@@ -242,6 +242,10 @@ class MasterRepo(Protocol):
         details: dict[str, Any] | None = None,
     ) -> dict[str, Any]: ...
 
+    def delete_message(self, *, transaction_id: str, message_id: str, actor: str) -> str | None: ...
+
+    def document_signed_url(self, *, transaction_id: str, document_id: str) -> str | None: ...
+
     def approve_and_send(
         self,
         *,
@@ -263,6 +267,10 @@ class MasterRepo(Protocol):
         self, *, result: ComplianceResult, actor: str
     ) -> dict[str, Any]: ...
 
+
+# Ingestion's private attachment bucket (documents' storage_path lives here).
+# Named locally so the master doesn't import ingestion internals.
+ATTACHMENT_BUCKET = "ingestion-attachments"
 
 _CHILD_TABLES = (
     "parties",
@@ -1163,6 +1171,53 @@ class SupabaseRepo:
             details=details or {},
         )
         return message
+
+    def delete_message(self, *, transaction_id: str, message_id: str, actor: str) -> str | None:
+        """Discard a message. Refuses to delete one that's already sent (audit
+        trail). Returns 'deleted', 'sent' (refused), or None (not found)."""
+        rows = (
+            self._db.table("messages")
+            .select("status")
+            .eq("id", message_id)
+            .eq("transaction_id", transaction_id)
+            .execute()
+            .data
+        )
+        if not rows:
+            return None
+        status = rows[0]["status"]
+        if status == "sent":
+            return "sent"
+        self._db.table("messages").delete().eq("id", message_id).eq(
+            "transaction_id", transaction_id
+        ).execute()
+        self._audit(
+            transaction_id=transaction_id,
+            actor=actor,
+            action="message.discarded",
+            entity_type="message",
+            entity_id=message_id,
+            details={"status": status},
+        )
+        return "deleted"
+
+    def document_signed_url(self, *, transaction_id: str, document_id: str) -> str | None:
+        """A short-lived signed URL to view a stored document (opens in a new
+        tab). None when the document isn't on this deal or has no stored file."""
+        rows = (
+            self._db.table("documents")
+            .select("storage_path")
+            .eq("id", document_id)
+            .eq("transaction_id", transaction_id)
+            .execute()
+            .data
+        )
+        if not rows or not rows[0].get("storage_path"):
+            return None
+        res = self._db.storage.from_(ATTACHMENT_BUCKET).create_signed_url(rows[0]["storage_path"], 300)
+        if isinstance(res, dict):
+            return res.get("signedURL") or res.get("signedUrl") or res.get("signed_url")
+        return None
 
     def approve_and_send(
         self,

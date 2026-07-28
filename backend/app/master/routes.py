@@ -797,6 +797,36 @@ def draft_message(
     return {"message": message, "why": draft.why}
 
 
+@router.delete("/transactions/{transaction_id}/messages/{message_id}")
+def discard_message(
+    transaction_id: str,
+    message_id: str,
+    tc: TCUser = Depends(require_tc),
+    repo: MasterRepo = Depends(get_repo),
+) -> dict[str, Any]:
+    """Discard a draft/approved message. A sent message can't be removed (audit)."""
+    result = repo.delete_message(transaction_id=transaction_id, message_id=message_id, actor=tc.actor)
+    if result is None:
+        raise HTTPException(status_code=404, detail="Message not found")
+    if result == "sent":
+        raise HTTPException(status_code=409, detail="A sent message can't be discarded.")
+    return {"discarded": True}
+
+
+@router.get("/transactions/{transaction_id}/documents/{document_id}/signed-url")
+def document_signed_url(
+    transaction_id: str,
+    document_id: str,
+    tc: TCUser = Depends(require_tc),
+    repo: MasterRepo = Depends(get_repo),
+) -> dict[str, Any]:
+    """A short-lived signed URL to open a stored document in a new tab."""
+    url = repo.document_signed_url(transaction_id=transaction_id, document_id=document_id)
+    if url is None:
+        raise HTTPException(status_code=404, detail="No viewable file for this document")
+    return {"url": url}
+
+
 class ApproveSendRequest(BaseModel):
     # The TC's edits ARE the approved content (optional; defaults to the draft).
     subject: str | None = Field(default=None, min_length=1)

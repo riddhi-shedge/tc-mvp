@@ -78,3 +78,36 @@ def test_draft_money_guard(client, tc_headers, drafter):
 def test_draft_requires_auth(client):
     r = client.post("/transactions/x/messages/draft", json={"party_id": "y", "purpose": "general"})
     assert r.status_code in (401, 403)
+
+
+def test_discard_draft_removes_it(client, tc_headers):
+    txn, pid = _deal_with_agent(client, tc_headers)
+    mid = client.post(
+        f"/transactions/{txn}/messages/draft",
+        json={"party_id": pid, "purpose": "intro"},
+        headers=tc_headers,
+    ).json()["message"]["id"]
+
+    r = client.delete(f"/transactions/{txn}/messages/{mid}", headers=tc_headers)
+    assert r.status_code == 200 and r.json()["discarded"] is True
+
+    # It's gone from the deal's messages.
+    state = client.get(f"/transactions/{txn}", headers=tc_headers).json()
+    assert all(m["id"] != mid for m in state["messages"])
+
+
+def test_discard_unknown_message_404(client, tc_headers):
+    txn, _ = _deal_with_agent(client, tc_headers)
+    r = client.delete(
+        f"/transactions/{txn}/messages/00000000-0000-0000-0000-000000000000",
+        headers=tc_headers,
+    )
+    assert r.status_code == 404
+
+
+def test_discard_requires_auth(client):
+    r = client.delete(
+        "/transactions/00000000-0000-0000-0000-000000000000/messages/"
+        "00000000-0000-0000-0000-000000000001"
+    )
+    assert r.status_code in (401, 403)
