@@ -1241,3 +1241,8 @@ button.secondary.sm { padding: 0.28rem 0.55rem; font-size: 0.76rem; }
 .tlr-lab { width: 124px; }
 .tlr-nm { font-size: 0.8rem; }
 .tlr-dt { font-size: 0.72rem; }
+
+/* Verification panel — all-clear (green) variant */
+.xr-verify.done { border-color: var(--green-100); background: color-mix(in srgb, var(--green-100) 40%, var(--surface));
+  border-left-color: var(--green-600); }
+.xr-verify.done .xr-verify-head { color: var(--green-700); }

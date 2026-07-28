@@ -228,29 +228,37 @@ export function ExtractionReview({
         </div>
       </div>
 
-      {/* review & verify: the low-confidence fields, editable + confirmable */}
-      {needsReview.length > 0 && (
-        <div className="xr-verify">
-          <div className="xr-verify-head">
-            <Icon name="search" size={15} /> Review &amp; verify · {needsReview.length}
-            <span className="xr-muted">Low-confidence values — check each, fix if wrong, then verify.</span>
-          </div>
-          {needsReview.map((f) => (
-            <div key={f.id} className="xr-verify-row">
-              <div className="xr-verify-lbl">{humanize(f.name)}</div>
-              <input
-                className="xr-verify-input"
-                value={edits[f.id] ?? f.value}
-                disabled={busy}
-                onChange={(e) => setEdits({ ...edits, [f.id]: e.target.value })}
-              />
-              <button className="gold sm" disabled={busy} onClick={() => onVerify(f, edits[f.id] ?? f.value)}>
-                <Icon name="check" size={13} /> Verify
-              </button>
-            </div>
-          ))}
+      {/* review & verify: always shown so it's easy to find — actionable amber
+          panel when fields need a look, a green all-clear otherwise. */}
+      <div className={`xr-verify ${needsReview.length ? "" : "done"}`}>
+        <div className="xr-verify-head">
+          {needsReview.length > 0 ? (
+            <>
+              <Icon name="warning" size={15} /> Review &amp; verify · {needsReview.length} to check
+              <span className="xr-muted">Low-confidence values — check each, fix if wrong, then Verify.</span>
+            </>
+          ) : (
+            <>
+              <Icon name="checkCircle" size={15} /> All {total} fields verified
+              <span className="xr-muted">Nothing needs your review right now — low-confidence fields would appear here to fix &amp; confirm.</span>
+            </>
+          )}
         </div>
-      )}
+        {needsReview.map((f) => (
+          <div key={f.id} className="xr-verify-row">
+            <div className="xr-verify-lbl">{humanize(f.name)}</div>
+            <input
+              className="xr-verify-input"
+              value={edits[f.id] ?? f.value}
+              disabled={busy}
+              onChange={(e) => setEdits({ ...edits, [f.id]: e.target.value })}
+            />
+            <button className="gold sm" disabled={busy} onClick={() => onVerify(f, edits[f.id] ?? f.value)}>
+              <Icon name="check" size={13} /> Verify
+            </button>
+          </div>
+        ))}
+      </div>
 
       {/* snapshot */}
       <div className="xr-snap">
