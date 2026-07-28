@@ -164,6 +164,15 @@ export function Deal({ id, onBack }: { id: string; onBack: () => void }) {
   const selMessage = sel === "new" ? null : allMsgs.find((m) => m.id === sel) ?? null;
   const msgPartyOf = (m: Message) => state.parties.find((p) => p.id === m.party_id);
 
+  // Follow-up reminders that have come due with no logged reply (Feature B).
+  const dueReminders = (state.reminders ?? [])
+    .filter((r) => new Date(r.remind_at).getTime() <= Date.now())
+    .map((r) => {
+      const m = r.message_id ? state.messages.find((x) => x.id === r.message_id) ?? null : null;
+      const party = m?.party_id ? state.parties.find((p) => p.id === m.party_id) ?? null : null;
+      return { r, m, party };
+    });
+
   const coe = state.deadlines.find((d) => d.name.toLowerCase().includes("escrow"));
   const coeDays =
     coe != null ? Math.round((new Date(coe.due_date).getTime() - Date.now()) / 86_400_000) : null;
@@ -453,6 +462,48 @@ export function Deal({ id, onBack }: { id: string; onBack: () => void }) {
             icon: <Icon name="mail" size={14} />,
             content: (
               <>
+      {dueReminders.length > 0 && (
+        <div className="card awaiting">
+          <h2><Icon name="clock" size={17} /> Awaiting reply · {dueReminders.length}</h2>
+          <p className="muted" style={{ margin: "-0.4rem 0 0.8rem" }}>
+            You sent these and no reply is logged yet — follow up, or dismiss if it's handled.
+          </p>
+          <div className="stack">
+            {dueReminders.map(({ r, m, party }) => (
+              <div key={r.id} className="await-row">
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div className="await-subj">{m?.subject ?? "(message)"}</div>
+                  <div className="muted" style={{ fontSize: "0.78rem" }}>
+                    to {party?.name ?? "recipient"}
+                    {m?.sent_at ? ` · sent ${fmtDate(m.sent_at)}` : ""}
+                  </div>
+                </div>
+                <button
+                  className="gold sm"
+                  disabled={busy || !party}
+                  onClick={() => {
+                    if (party) {
+                      setRecipientId(party.id);
+                      setPurpose("general");
+                      setSelMsg("new");
+                    }
+                  }}
+                >
+                  <Icon name="sparkle" size={13} /> Follow up
+                </button>
+                <button
+                  className="secondary sm"
+                  disabled={busy}
+                  onClick={() => void run(() => api.del(`/transactions/${id}/reminders/${r.id}`), "Dismissed")}
+                >
+                  Dismiss
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div className="card mailbox">
         <div className="mbx">
           <div className="mbx-list">

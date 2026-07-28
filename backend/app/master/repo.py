@@ -259,6 +259,8 @@ class MasterRepo(Protocol):
 
     def delete_message(self, *, transaction_id: str, message_id: str, actor: str) -> str | None: ...
 
+    def delete_reminder(self, *, transaction_id: str, reminder_id: str, actor: str) -> bool: ...
+
     def document_signed_url(self, *, transaction_id: str, document_id: str) -> str | None: ...
 
     def approve_and_send(
@@ -1298,6 +1300,28 @@ class SupabaseRepo:
         )
         return "deleted"
 
+    def delete_reminder(self, *, transaction_id: str, reminder_id: str, actor: str) -> bool:
+        """Dismiss a follow-up reminder (the TC got a reply or handled it)."""
+        rows = (
+            self._db.table("reminders")
+            .delete()
+            .eq("id", reminder_id)
+            .eq("transaction_id", transaction_id)
+            .execute()
+            .data
+        )
+        if not rows:
+            return False
+        self._audit(
+            transaction_id=transaction_id,
+            actor=actor,
+            action="reminder.dismissed",
+            entity_type="reminder",
+            entity_id=reminder_id,
+            details={},
+        )
+        return True
+
     def document_signed_url(self, *, transaction_id: str, document_id: str) -> str | None:
         """A short-lived signed URL to view a stored document (opens in a new
         tab). None when the document isn't on this deal or has no stored file."""
@@ -1427,7 +1451,7 @@ class SupabaseRepo:
                 "transaction_id": transaction_id,
                 "message_id": message_id,
                 "remind_at": remind_at.isoformat(),
-                "note": "No reply from lender — consider following up.",
+                "note": "No reply yet — consider following up.",
             }
         ).execute()
         return {"message": sent, "approval": approval}

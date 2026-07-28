@@ -1246,3 +1246,11 @@ button.secondary.sm { padding: 0.28rem 0.55rem; font-size: 0.76rem; }
 .xr-verify.done { border-color: var(--green-100); background: color-mix(in srgb, var(--green-100) 40%, var(--surface));
   border-left-color: var(--green-600); }
 .xr-verify.done .xr-verify-head { color: var(--green-700); }
+
+/* ---- Communication: awaiting-reply follow-ups -------------------------- */
+.card.awaiting { border-left: 3px solid var(--amber-600); }
+.card.awaiting > h2 { color: var(--amber-700); }
+.await-row { display: flex; align-items: center; gap: 0.6rem; padding: 0.5rem 0.65rem; border: 1px solid var(--line);
+  border-radius: var(--r-sm); background: var(--surface-2); }
+.await-subj { font-size: 0.86rem; font-weight: 600; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.await-row .sm { flex: 0 0 auto; }

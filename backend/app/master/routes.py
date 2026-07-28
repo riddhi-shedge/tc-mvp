@@ -847,6 +847,19 @@ def discard_message(
     return {"discarded": True}
 
 
+@router.delete("/transactions/{transaction_id}/reminders/{reminder_id}")
+def dismiss_reminder(
+    transaction_id: str,
+    reminder_id: str,
+    tc: TCUser = Depends(require_tc),
+    repo: MasterRepo = Depends(get_repo),
+) -> dict[str, Any]:
+    """Dismiss a follow-up reminder (got a reply / handled it)."""
+    if not repo.delete_reminder(transaction_id=transaction_id, reminder_id=reminder_id, actor=tc.actor):
+        raise HTTPException(status_code=404, detail="Reminder not found")
+    return {"dismissed": True}
+
+
 @router.get("/transactions/{transaction_id}/documents/{document_id}/signed-url")
 def document_signed_url(
     transaction_id: str,

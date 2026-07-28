@@ -634,6 +634,20 @@ class InMemoryRepo:
         )
         return "deleted"
 
+    def delete_reminder(self, *, transaction_id, reminder_id, actor) -> bool:
+        before = len(self.reminders)
+        self.reminders = [
+            r for r in self.reminders
+            if not (r["id"] == reminder_id and r["transaction_id"] == transaction_id)
+        ]
+        if len(self.reminders) == before:
+            return False
+        self._audit(
+            transaction_id=transaction_id, actor=actor, action="reminder.dismissed",
+            entity_type="reminder", entity_id=reminder_id, details={},
+        )
+        return True
+
     def document_signed_url(self, *, transaction_id, document_id) -> str | None:
         d = self.documents.get(document_id)
         if d is None or d.get("transaction_id") != transaction_id or not d.get("storage_path"):

@@ -247,6 +247,15 @@ export interface Message {
   party_id: string | null;
 }
 
+// A follow-up nudge scheduled when a message is sent — surfaces to the TC when
+// remind_at passes with no logged reply. Never sends anything itself.
+export interface Reminder {
+  id: string;
+  message_id: string | null;
+  remind_at: string;
+  note: string | null;
+}
+
 export interface DealParty {
   id: string;
   name: string | null;
@@ -372,6 +381,7 @@ export interface FullState {
   deadlines: Deadline[];
   tasks: Task[];
   messages: Message[];
+  reminders: Reminder[];
   risk_flags: DealRiskFlag[];
   approvals: { id: string; message_id: string; approved_by: string }[];
   audit_log: AuditRow[];
