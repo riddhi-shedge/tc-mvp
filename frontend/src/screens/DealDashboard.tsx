@@ -356,9 +356,11 @@ export function DealDashboard({
         <div className="pv-head" style={{ padding: "1.15rem 1.3rem 0.2rem" }}>
           <h2><Icon name="users" size={17} /> Parties</h2>
           <span className="muted" style={{ marginLeft: "auto", fontSize: "0.8rem" }}>
-            {dragTaskId ? "Drop the task on a person to assign it" : "Hover to pause · click a person · drag a task here · badge = open tasks"}
+            {dragTaskId ? "Drop the task on a person to assign it" : "Hover to pause · click a person · badge = open tasks"}
           </span>
         </div>
+        <div className="po-split">
+        <div className="po-orbit">
         <PartyOrbit
           views={dash.parties}
           onSelect={(pv) => setPeek(pv)}
@@ -373,13 +375,15 @@ export function DealDashboard({
           <span><i style={{ background: "#5b6472" }} /> Escrow · Title · Lender</span>
           <span><i style={{ background: "#8457d6" }} /> Inspection</span>
         </div>
+        </div>
 
+        <aside className="po-dock">
         {/* ---- To assign: deadline tasks that belong to a party ---- */}
         <div className="to-assign">
           <div className="ta-head">
             <h3><Icon name="pin" size={15} /> To assign · {toAssign.length}</h3>
             <span className="muted">
-              {dragTaskId ? "Drop it on a person above" : "Drag a card onto a person above, or use the suggestion"}
+              {dragTaskId ? "Drop it on a person in the orbit" : "Drag a card onto a person, or tap the suggestion"}
             </span>
           </div>
           {toAssign.length === 0 ? (
@@ -410,7 +414,7 @@ export function DealDashboard({
                     onDragStart={() => setDragTaskId(t.id)}
                     onDragEnd={() => setDragTaskId(null)}
                   >
-                    <span className="task-grip" title="Drag onto a person above to assign">⠿</span>
+                    <span className="task-grip" title="Drag onto a person in the orbit to assign">⠿</span>
                     <div className="ta-ic"><Icon name={r.icon} size={15} /></div>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div className="ta-title">{t.title}</div>
@@ -437,6 +441,8 @@ export function DealDashboard({
               })}
             </div>
           )}
+        </div>
+        </aside>
         </div>
 
         {adding !== null && (

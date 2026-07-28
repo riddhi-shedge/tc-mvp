@@ -78,11 +78,15 @@ export function PartyOrbit({
     function layout() {
       const w = stage!.clientWidth;
       const h = stage!.clientHeight;
-      // Cap by the shorter half so the whole system stays centered and on-screen;
-      // spacing (maxR-166, maxR-83, maxR) keeps ≥83px between rings — wider than a
-      // node (~76px tall) so radially-aligned nodes on adjacent rings never touch.
-      const maxR = Math.max(150, Math.min(h / 2 - 44, w / 2 - 30, 300));
-      radii = [Math.max(96, maxR - 166), maxR - 83, maxR];
+      // Fit the whole system to the shorter half, then space the rings PROPORTIONALLY
+      // (0.40 / 0.70 / 1.0) and shrink the nodes with the radius (--oscale). The ring
+      // gap is always 0.30·maxR while a node is ~0.27·maxR tall, so radially-aligned
+      // nodes on adjacent rings never touch — at any container size (e.g. the narrower
+      // orbit column in the split layout).
+      const maxR = Math.max(140, Math.min(h / 2 - 40, w / 2 - 24, 300));
+      radii = [maxR * 0.4, maxR * 0.7, maxR];
+      const scale = Math.max(0.62, Math.min(1, maxR / 276));
+      stage!.style.setProperty("--oscale", String(scale));
       if (lines) {
         lines.innerHTML = radii
           .map((r) => `<circle cx="50%" cy="50%" r="${r}" />`)
