@@ -147,6 +147,23 @@ class InMemoryRepo:
         )
         return txn
 
+    def resolve_risk_flag(
+        self, *, transaction_id: str, flag_id: str, resolved: bool, actor: str
+    ) -> dict[str, Any] | None:
+        f = next(
+            (r for r in self.risk_flags if r["id"] == flag_id and r["transaction_id"] == transaction_id),
+            None,
+        )
+        if f is None:
+            return None
+        f["resolved"] = resolved
+        self._audit(
+            transaction_id=transaction_id, actor=actor,
+            action="risk_flag.resolved" if resolved else "risk_flag.reopened",
+            entity_type="risk_flag", entity_id=flag_id, details={"resolved": resolved},
+        )
+        return f
+
     def list_deal_summaries(self) -> list[dict[str, Any]]:
         from app.master.repo import _deal_summary
 

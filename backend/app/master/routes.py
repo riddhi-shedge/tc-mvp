@@ -234,6 +234,27 @@ def set_stage(
     return txn
 
 
+class ResolveRiskRequest(BaseModel):
+    resolved: bool = True
+
+
+@router.post("/transactions/{transaction_id}/risk-flags/{flag_id}/resolve")
+def resolve_risk_flag(
+    transaction_id: str,
+    flag_id: str,
+    body: ResolveRiskRequest,
+    tc: TCUser = Depends(require_tc),
+    repo: MasterRepo = Depends(get_repo),
+) -> dict[str, Any]:
+    """Mark an attention item handled (or reopen it) — the TC's checkbox."""
+    flag = repo.resolve_risk_flag(
+        transaction_id=transaction_id, flag_id=flag_id, resolved=body.resolved, actor=tc.actor
+    )
+    if flag is None:
+        raise HTTPException(status_code=404, detail="Risk flag not found")
+    return flag
+
+
 class ConfirmFieldsRequest(BaseModel):
     field_ids: list[str] = Field(min_length=1)
 

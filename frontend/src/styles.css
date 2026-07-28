@@ -1200,3 +1200,44 @@ button.secondary.sm { padding: 0.28rem 0.55rem; font-size: 0.76rem; }
 .pri-badge.urgent { background: var(--red-100); color: var(--red-700); }
 .pri-badge.high { background: var(--amber-100); color: var(--amber-700); }
 .pri-badge.low { background: var(--hover); color: var(--muted); }
+
+/* Attention item: a round "mark handled" checkbox */
+.attn-item { align-items: center; }
+.attn-check { flex: 0 0 auto; width: 20px; height: 20px; border-radius: 50%; border: 2px solid var(--red-600);
+  background: var(--surface); cursor: pointer; box-shadow: none; padding: 0; position: relative; }
+.attn-check:hover { background: var(--green-100); border-color: var(--green-600); }
+.attn-check::after { content: "✓"; position: absolute; inset: 0; display: grid; place-items: center;
+  color: var(--green-700); font-size: 12px; font-weight: 800; opacity: 0; }
+.attn-check:hover::after { opacity: 1; }
+
+/* Deal health: bigger, vertical — ring on top, stats underneath */
+.il-facts { flex-direction: column; align-items: stretch; gap: 1rem; padding-top: 1.5rem; padding-bottom: 1.4rem; }
+.il-facts .ring-wrap-sm { transform: scale(1.25); transform-origin: center; align-self: center; margin: 0.4rem auto 1.3rem; }
+.il-facts .facts { width: 100%; }
+.il-facts .fact { font-size: 0.9rem; padding: 0.4rem 0; }
+
+/* ---- Extraction: review & verify panel --------------------------------- */
+.xr-verify { border: 1px solid var(--amber-100); background: color-mix(in srgb, var(--amber-100) 45%, var(--surface));
+  border-left: 3px solid var(--amber-600); border-radius: var(--r-sm); padding: 0.8rem 0.95rem; margin-bottom: 1.1rem; }
+.xr-verify-head { display: flex; align-items: center; gap: 0.5rem; font-size: 0.82rem; font-weight: 700;
+  color: var(--amber-700); margin-bottom: 0.7rem; flex-wrap: wrap; }
+.xr-verify-head .xr-muted { font-weight: 400; color: var(--ink-2); flex-basis: 100%; font-size: 0.78rem; }
+.xr-verify-row { display: flex; align-items: center; gap: 0.6rem; padding: 0.32rem 0; }
+.xr-verify-lbl { flex: 0 0 32%; font-size: 0.82rem; font-weight: 600; color: var(--ink); text-transform: capitalize;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.xr-verify-input { flex: 1; min-width: 0; padding: 0.42rem 0.6rem; font-size: 0.85rem; }
+.xr-verify-row .sm { flex: 0 0 auto; padding: 0.42rem 0.7rem; }
+
+/* ---- Timeline — larger, more prominent --------------------------------- */
+.tlr { height: 270px; }
+.tlr-track, .tlr-fill { top: 132px; height: 6px; }
+.tlr-mk { top: 135px; }
+.tlr-today { top: 106px; height: 58px; }
+.tlr-ic { width: 50px; height: 50px; border-width: 3px; }
+.tlr-mk.above .tlr-conn { bottom: 25px; height: 40px; }
+.tlr-mk.below .tlr-conn { top: 25px; height: 40px; }
+.tlr-mk.above .tlr-lab { bottom: 64px; }
+.tlr-mk.below .tlr-lab { top: 64px; }
+.tlr-lab { width: 124px; }
+.tlr-nm { font-size: 0.8rem; }
+.tlr-dt { font-size: 0.72rem; }

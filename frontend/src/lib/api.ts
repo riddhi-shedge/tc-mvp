@@ -108,9 +108,7 @@ export interface OpenTask {
 // Pipeline stages, left-to-right (mirror of repo.DEAL_STAGES).
 export const DEAL_STAGES: { id: string; name: string }[] = [
   { id: "new", name: "New offer" },
-  { id: "funds", name: "Deposit & funds" },
   { id: "cont", name: "Contingency period" },
-  { id: "removed", name: "Contingencies removed" },
   { id: "closing", name: "Closing" },
   { id: "closed", name: "Closed" },
 ];

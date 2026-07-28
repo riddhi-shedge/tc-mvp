@@ -66,7 +66,14 @@ def _deadline_gate_violations(rows: list[dict[str, Any]]) -> list[str]:
 
 
 # Valid pipeline stages for the Deals board (order = left-to-right flow).
-DEAL_STAGES: tuple[str, ...] = ("new", "funds", "cont", "removed", "closing", "closed")
+DEAL_STAGES: tuple[str, ...] = ("new", "cont", "closing", "closed")
+# Older deals may still carry retired stages; fold them into the current four.
+_LEGACY_STAGE = {"funds": "new", "removed": "closing"}
+
+
+def _normalize_stage(stage: str | None) -> str:
+    stage = stage or "new"
+    return _LEGACY_STAGE.get(stage, stage if stage in DEAL_STAGES else "new")
 
 
 def _deal_summary(
@@ -84,7 +91,7 @@ def _deal_summary(
     return {
         "id": tid,
         "status": txn.get("status", "open"),
-        "stage": txn.get("stage") or "new",
+        "stage": _normalize_stage(txn.get("stage")),
         "property_address": props.get(tid),
         "coe_date": coe.get(tid),
         "purchase_price": fx.get("purchase_price"),
@@ -151,6 +158,10 @@ class MasterRepo(Protocol):
 
     def set_transaction_stage(
         self, *, transaction_id: str, stage: str, actor: str
+    ) -> dict[str, Any] | None: ...
+
+    def resolve_risk_flag(
+        self, *, transaction_id: str, flag_id: str, resolved: bool, actor: str
     ) -> dict[str, Any] | None: ...
 
     def list_deal_summaries(self) -> list[dict[str, Any]]: ...
@@ -449,6 +460,29 @@ class SupabaseRepo:
             entity_type="transaction",
             entity_id=transaction_id,
             details={"stage": stage},
+        )
+        return rows[0]
+
+    def resolve_risk_flag(
+        self, *, transaction_id: str, flag_id: str, resolved: bool, actor: str
+    ) -> dict[str, Any] | None:
+        rows = (
+            self._db.table("risk_flags")
+            .update({"resolved": resolved})
+            .eq("id", flag_id)
+            .eq("transaction_id", transaction_id)
+            .execute()
+            .data
+        )
+        if not rows:
+            return None
+        self._audit(
+            transaction_id=transaction_id,
+            actor=actor,
+            action="risk_flag.resolved" if resolved else "risk_flag.reopened",
+            entity_type="risk_flag",
+            entity_id=flag_id,
+            details={"resolved": resolved},
         )
         return rows[0]
 

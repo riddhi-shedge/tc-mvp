@@ -1,4 +1,5 @@
-import { FIELD_DEADLINE_KEYWORD, FullState } from "../lib/api";
+import { useState } from "react";
+import { ExtractedField, FIELD_DEADLINE_KEYWORD, FullState } from "../lib/api";
 import { fmtDate } from "../lib/format";
 import { Icon } from "../lib/icons";
 
@@ -88,11 +89,14 @@ export function ExtractionReview({
   state,
   busy,
   onConfirmAll,
+  onVerify,
 }: {
   state: FullState;
   busy: boolean;
   onConfirmAll: () => void;
+  onVerify: (field: ExtractedField, value: string) => void;
 }) {
+  const [edits, setEdits] = useState<Record<string, string>>({});
   const fields = state.extracted_fields;
   if (fields.length === 0) {
     return (
@@ -108,6 +112,7 @@ export function ExtractionReview({
   const confident = fields.filter((f) => f.confidence >= CONF_THRESHOLD).length;
   const toVerify = total - confident;
   const unconfirmed = fields.filter((f) => !f.confirmed).length;
+  const needsReview = fields.filter((f) => f.confidence < CONF_THRESHOLD && !f.confirmed);
 
   const resolved = (name: string): string | null => {
     const kw = FIELD_DEADLINE_KEYWORD[name];
@@ -222,6 +227,30 @@ export function ExtractionReview({
           )}
         </div>
       </div>
+
+      {/* review & verify: the low-confidence fields, editable + confirmable */}
+      {needsReview.length > 0 && (
+        <div className="xr-verify">
+          <div className="xr-verify-head">
+            <Icon name="search" size={15} /> Review &amp; verify · {needsReview.length}
+            <span className="xr-muted">Low-confidence values — check each, fix if wrong, then verify.</span>
+          </div>
+          {needsReview.map((f) => (
+            <div key={f.id} className="xr-verify-row">
+              <div className="xr-verify-lbl">{humanize(f.name)}</div>
+              <input
+                className="xr-verify-input"
+                value={edits[f.id] ?? f.value}
+                disabled={busy}
+                onChange={(e) => setEdits({ ...edits, [f.id]: e.target.value })}
+              />
+              <button className="gold sm" disabled={busy} onClick={() => onVerify(f, edits[f.id] ?? f.value)}>
+                <Icon name="check" size={13} /> Verify
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* snapshot */}
       <div className="xr-snap">

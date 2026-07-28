@@ -122,3 +122,16 @@ def test_communication_groups_sent_and_pending():
     assert {m["id"] for m in comms["sent"]} == {"m2"}
     assert {m["id"] for m in comms["pending"]} == {"m1"}
     assert comms["replies"] == []  # inbound threading is a future feature
+
+
+def test_resolve_risk_flag_marks_and_drops_from_alerts():
+    repo, txn_id, _ = _seed()
+    assert any(a["id"] == "r2" for a in build_dashboard(repo.get_full_state(txn_id))["risk_alerts"])
+    out = repo.resolve_risk_flag(transaction_id=txn_id, flag_id="r2", resolved=True, actor="tc")
+    assert out is not None and out["resolved"] is True
+    assert not any(a["id"] == "r2" for a in build_dashboard(repo.get_full_state(txn_id))["risk_alerts"])
+
+
+def test_resolve_unknown_flag_returns_none():
+    repo, txn_id, _ = _seed()
+    assert repo.resolve_risk_flag(transaction_id=txn_id, flag_id="nope", resolved=True, actor="tc") is None

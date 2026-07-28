@@ -431,6 +431,17 @@ export function Deal({ id, onBack }: { id: string; onBack: () => void }) {
             `${unconfirmed.length} field${unconfirmed.length > 1 ? "s" : ""} confirmed`,
           )
         }
+        onVerify={(field, value) =>
+          void run(async () => {
+            const v = value.trim();
+            if (v && v !== field.value) {
+              // Corrected value → overwrite (a known §5 name re-add also confirms it).
+              await api.post(`/transactions/${id}/fields`, { name: field.name, value: v });
+            } else {
+              await api.post(`/transactions/${id}/fields/confirm`, { field_ids: [field.id] });
+            }
+          }, "Field verified")
+        }
       />
 
               </>

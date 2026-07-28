@@ -245,7 +245,7 @@ export function DealTimeline({
             >
               {st === "next" && <span className="tlr-nexttag">NEXT</span>}
               <div className="tlr-conn" />
-              <div className="tlr-ic">{st === "done" ? <Icon name="check" size={15} /> : <Icon name={iconFor(m.names[0])} size={15} />}</div>
+              <div className="tlr-ic">{st === "done" ? <Icon name="check" size={22} /> : <Icon name={iconFor(m.names[0])} size={22} />}</div>
               <div className="tlr-lab">
                 <div className="tlr-nm" title={m.names.join(", ")}>{label}</div>
                 <div className="tlr-dt">{fmtDate(m.dateIso).replace(/,\s*\d{4}$/, "")}</div>

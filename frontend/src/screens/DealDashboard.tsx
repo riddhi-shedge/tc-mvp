@@ -256,8 +256,19 @@ export function DealDashboard({
             <div className="attn-head"><Icon name="warning" size={15} /> Needs attention · {dash.risk_alerts.length}</div>
             {dash.risk_alerts.map((f) => (
               <div key={f.id} className={`attn-item ${f.severity}`}>
+                <button
+                  className="attn-check"
+                  disabled={busy}
+                  title="Mark handled"
+                  onClick={() =>
+                    void run(
+                      () => api.post(`/transactions/${id}/risk-flags/${f.id}/resolve`, { resolved: true }),
+                      "Marked handled",
+                    )
+                  }
+                />
                 <div className="attn-ic"><Icon name={riskIcon(f)} size={14} /></div>
-                <div style={{ minWidth: 0 }}>
+                <div style={{ minWidth: 0, flex: 1 }}>
                   <div className="attn-title">
                     {titleize(f.case_key)}
                     <span className={`badge ${f.severity === "warning" ? "warn" : "danger"}`}>{f.severity}</span>
