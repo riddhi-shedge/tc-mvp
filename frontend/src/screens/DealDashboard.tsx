@@ -136,8 +136,24 @@ export function DealDashboard({
   const totalTasks = state.tasks.length;
   const completion = totalTasks ? doneTasks / totalTasks : 0;
   const p = dash.party_progress;
-  const unassigned: Task[] = state.tasks.filter((t) => t.assigned_party_id === null);
   const parties: DealParty[] = state.parties;
+
+  // Two non-overlapping lists. "My tasks" = unassigned tasks with no natural
+  // external owner (the TC's own coordination work + anything they add). "To
+  // assign" = unassigned tasks that route to a party (inspection→inspector,
+  // loan→lender, …) — shown next to the orbit to drag onto someone. Once a
+  // to-assign task is given an owner it leaves both lists and lives on the party.
+  const byDue = (a: Task, b: Task) => {
+    const da = state.deadlines.find((d) => d.id === a.deadline_id)?.due_date ?? "9999";
+    const db = state.deadlines.find((d) => d.id === b.deadline_id)?.due_date ?? "9999";
+    return da.localeCompare(db);
+  };
+  const myTasks: Task[] = state.tasks
+    .filter((t) => t.assigned_party_id === null && routeFor(t.title).roles.length === 0)
+    .sort(byDue);
+  const toAssign: Task[] = state.tasks
+    .filter((t) => t.assigned_party_id === null && routeFor(t.title).roles.length > 0)
+    .sort(byDue);
 
   function contactPayload(): Record<string, string> {
     const out: Record<string, string> = {};
@@ -244,13 +260,12 @@ export function DealDashboard({
         </motion.div>
       </div>
 
-      {/* ---- Tasks (compliance + the TC's own) ---- */}
+      {/* ---- My tasks — the TC's own coordination work ---- */}
       <div className="card">
         <div className="between" style={{ marginBottom: "0.6rem" }}>
-          <h2 style={{ margin: 0 }}><Icon name="checkCircle" size={17} /> Tasks</h2>
+          <h2 style={{ margin: 0 }}><Icon name="checkCircle" size={17} /> My tasks</h2>
           <span className="assign-hint">
-            {state.tasks.filter((t) => !["done", "complete"].includes(t.status)).length} open
-            {parties.length > 0 && " · drag a task onto a party to assign"}
+            {myTasks.filter((t) => !["done", "complete"].includes(t.status)).length} open · what you handle yourself
           </span>
         </div>
         <div className="row" style={{ gap: "0.5rem", marginBottom: "0.7rem" }}>
@@ -266,21 +281,13 @@ export function DealDashboard({
             ＋ Add task
           </button>
         </div>
-        {state.tasks.length === 0 && (
-          <div className="empty"><span className="empty-ic"><Icon name="clipboard" size={26} /></span>No tasks yet.</div>
+        {myTasks.length === 0 && (
+          <div className="empty"><span className="empty-ic"><Icon name="clipboard" size={26} /></span>Nothing on your own plate — add a task, or assign deadline tasks to parties below.</div>
         )}
         <div className="stack">
-          {[...state.tasks]
-            .sort((a, b) => {
-              const da = state.deadlines.find((d) => d.id === a.deadline_id)?.due_date ?? "9999";
-              const db = state.deadlines.find((d) => d.id === b.deadline_id)?.due_date ?? "9999";
-              return da.localeCompare(db);
-            })
-            .map((t) => {
+          {myTasks.map((t) => {
             const done = ["done", "complete"].includes(t.status);
-            const who = t.assigned_party_id
-              ? parties.find((p) => p.id === t.assigned_party_id)?.name ?? "assigned"
-              : null;
+            const who = null;
             const due = t.deadline_id
               ? state.deadlines.find((d) => d.id === t.deadline_id)?.due_date ?? null
               : null;
@@ -297,14 +304,7 @@ export function DealDashboard({
                     ? "var(--gold-700)"
                     : "var(--muted)";
             return (
-              <div
-                key={t.id}
-                className={`task-row ${done ? "done" : ""} ${dragTaskId === t.id ? "dragging" : ""}`}
-                draggable={!done && parties.length > 0}
-                onDragStart={() => setDragTaskId(t.id)}
-                onDragEnd={() => setDragTaskId(null)}
-              >
-                <span className="task-grip" title="Drag onto a party in the orbit to assign">⠿</span>
+              <div key={t.id} className={`task-row ${done ? "done" : ""}`}>
                 <button
                   className="task-check"
                   disabled={busy}
@@ -348,88 +348,6 @@ export function DealDashboard({
         </div>
       </div>
 
-      {/* ---- Needs an owner (smart routing) ---- */}
-      {unassigned.length > 0 && (
-        <div className="card">
-          <div className="between" style={{ marginBottom: "0.7rem" }}>
-            <h2 style={{ margin: 0 }}><Icon name="pin" size={17} /> Needs an owner</h2>
-            <span className="muted">{unassigned.length} unassigned · sorted by urgency</span>
-          </div>
-          <div className="stack">
-            {[...unassigned]
-              .sort((a, b) => {
-                const da = state.deadlines.find((d) => d.id === a.deadline_id)?.due_date ?? "9999";
-                const db = state.deadlines.find((d) => d.id === b.deadline_id)?.due_date ?? "9999";
-                return da.localeCompare(db);
-              })
-              .map((t) => {
-                const r = routeFor(t.title);
-                const suggested = r.roles
-                  .map((role) => parties.find((p) => p.role === role))
-                  .find((p) => p);
-                const due = t.deadline_id
-                  ? state.deadlines.find((d) => d.id === t.deadline_id)?.due_date ?? null
-                  : null;
-                const daysLeft = due
-                  ? Math.round((new Date(due + "T00:00:00").getTime() - Date.now()) / 86_400_000)
-                  : null;
-                const dueColor =
-                  daysLeft == null ? "var(--muted)"
-                    : daysLeft < 0 ? "var(--red-600)"
-                    : daysLeft <= 5 ? "var(--gold-700)"
-                    : "var(--muted)";
-                const assign = (partyId: string) =>
-                  void run(
-                    () => api.post(`/transactions/${id}/tasks/${t.id}/assign`, { party_id: partyId }),
-                    "Task assigned",
-                  );
-                return (
-                  <div key={t.id} className="route-row">
-                    <div className="route-ic"><Icon name={r.icon} size={15} /></div>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div className="route-title">{t.title}</div>
-                      <div className="route-meta">
-                        {due && (
-                          <span style={{ color: dueColor, fontWeight: daysLeft != null && daysLeft <= 5 ? 600 : 400 }}>
-                            <Icon name="calendar" size={12} /> {fmtDate(due)}
-                            {daysLeft != null && (daysLeft < 0 ? ` · ${-daysLeft}d overdue` : daysLeft === 0 ? " · today" : ` · ${daysLeft}d`)}
-                          </span>
-                        )}
-                        {due && r.ctx && <span className="muted"> · </span>}
-                        {r.ctx && <span className="muted">{r.ctx}</span>}
-                      </div>
-                    </div>
-                    <div className="route-act">
-                      {suggested ? (
-                        <button className="gold sm" disabled={busy} onClick={() => assign(suggested.id)}>
-                          → {suggested.name ?? suggested.role} · Assign
-                        </button>
-                      ) : r.roles.length > 0 ? (
-                        <span className="route-need">no {ROLE_SHORT[r.roles[0]] ?? r.roles[0]} yet</span>
-                      ) : null}
-                      {parties.length > 0 && (
-                        <select
-                          className="route-sel"
-                          value=""
-                          disabled={busy}
-                          onChange={(e) => e.target.value && assign(e.target.value)}
-                          title="Assign to someone else"
-                        >
-                          <option value="">{suggested ? "or…" : "assign to…"}</option>
-                          {parties.map((pp) => (
-                            <option key={pp.id} value={pp.id}>
-                              {pp.name ?? pp.role} · {(pp.role ?? "").replace(/_/g, " ")}
-                            </option>
-                          ))}
-                        </select>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-          </div>
-        </div>
-      )}
       </div>
       </div>
 
@@ -455,6 +373,72 @@ export function DealDashboard({
           <span><i style={{ background: "#5b6472" }} /> Escrow · Title · Lender</span>
           <span><i style={{ background: "#8457d6" }} /> Inspection</span>
         </div>
+
+        {/* ---- To assign: deadline tasks that belong to a party ---- */}
+        <div className="to-assign">
+          <div className="ta-head">
+            <h3><Icon name="pin" size={15} /> To assign · {toAssign.length}</h3>
+            <span className="muted">
+              {dragTaskId ? "Drop it on a person above" : "Drag a card onto a person above, or use the suggestion"}
+            </span>
+          </div>
+          {toAssign.length === 0 ? (
+            <div className="ta-empty"><Icon name="checkCircle" size={15} /> Every deadline task has an owner — nice.</div>
+          ) : (
+            <div className="ta-grid">
+              {toAssign.map((t) => {
+                const r = routeFor(t.title);
+                const suggested = r.roles.map((role) => parties.find((pp) => pp.role === role)).find((pp) => pp);
+                const due = t.deadline_id
+                  ? state.deadlines.find((d) => d.id === t.deadline_id)?.due_date ?? null
+                  : null;
+                const daysLeft = due
+                  ? Math.round((new Date(due + "T00:00:00").getTime() - Date.now()) / 86_400_000)
+                  : null;
+                const dueColor =
+                  daysLeft == null ? "var(--muted)"
+                    : daysLeft < 0 ? "var(--red-600)"
+                    : daysLeft <= 5 ? "var(--gold-700)"
+                    : "var(--muted)";
+                const assign = (partyId: string) =>
+                  void run(() => api.post(`/transactions/${id}/tasks/${t.id}/assign`, { party_id: partyId }), "Task assigned");
+                return (
+                  <div
+                    key={t.id}
+                    className={`ta-card ${dragTaskId === t.id ? "dragging" : ""}`}
+                    draggable
+                    onDragStart={() => setDragTaskId(t.id)}
+                    onDragEnd={() => setDragTaskId(null)}
+                  >
+                    <span className="task-grip" title="Drag onto a person above to assign">⠿</span>
+                    <div className="ta-ic"><Icon name={r.icon} size={15} /></div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div className="ta-title">{t.title}</div>
+                      <div className="route-meta">
+                        {due && (
+                          <span style={{ color: dueColor, fontWeight: daysLeft != null && daysLeft <= 5 ? 600 : 400 }}>
+                            <Icon name="calendar" size={12} /> {fmtDate(due)}
+                            {daysLeft != null && (daysLeft < 0 ? ` · ${-daysLeft}d overdue` : daysLeft === 0 ? " · today" : ` · ${daysLeft}d`)}
+                          </span>
+                        )}
+                        {due && r.ctx && <span className="muted"> · </span>}
+                        {r.ctx && <span className="muted">{r.ctx}</span>}
+                      </div>
+                    </div>
+                    {suggested ? (
+                      <button className="gold sm" disabled={busy} onClick={() => assign(suggested.id)} title={`Assign to ${suggested.name ?? suggested.role}`}>
+                        → {suggested.name?.split(" ")[0] ?? suggested.role}
+                      </button>
+                    ) : r.roles.length > 0 ? (
+                      <span className="route-need">no {ROLE_SHORT[r.roles[0]] ?? r.roles[0]} yet</span>
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
         {adding !== null && (
           <div style={{ padding: "0 1.3rem 1.3rem", maxWidth: 440 }}>
             {contactForm(() => {
@@ -499,7 +483,7 @@ export function DealDashboard({
                 <div className="peek-sec">Assigned tasks · {peek.open_tasks.length} open</div>
                 {peek.open_tasks.length === 0 && peek.done_tasks.length === 0 ? (
                   <div className="muted" style={{ fontSize: "0.85rem" }}>
-                    Nothing assigned yet — drag a task onto this person, or use “Needs an owner”.
+                    Nothing assigned yet — drag a task from “To assign” onto this person.
                   </div>
                 ) : (
                   <>
