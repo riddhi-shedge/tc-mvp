@@ -16,6 +16,7 @@ import {
 import { Ring, toast } from "../lib/ui";
 import { fmtDate } from "../lib/format";
 import { Icon, IconName } from "../lib/icons";
+import { PartyOrbit } from "./PartyOrbit";
 import { motion } from "framer-motion";
 
 const listStagger = { visible: { transition: { staggerChildren: 0.055 } } };
@@ -87,6 +88,9 @@ export function DealDashboard({
   const [dragTaskId, setDragTaskId] = useState<string | null>(null);
   const [dropParty, setDropParty] = useState<string | null>(null);
   const [peek, setPeek] = useState<DashboardPartyView | null>(null);
+  const [pview, setPview] = useState<"orbit" | "list">(
+    () => (typeof window !== "undefined" && window.innerWidth < 720 ? "list" : "orbit"),
+  );
   // Party editing / adding: which party id is open for edit, or which role is
   // being added, plus the in-progress contact fields.
   const [editing, setEditing] = useState<string | null>(null);
@@ -387,69 +391,6 @@ export function DealDashboard({
         </motion.div>
       </div>
 
-      {/* ---- Party roster (grouped; auto-filled from the contract) ---- */}
-      <div className="card">
-        <div className="between" style={{ marginBottom: "0.2rem" }}>
-          <h2 style={{ margin: 0 }}><Icon name="users" size={17} /> Parties</h2>
-          <span className="muted">Auto-filled from the contract · complete the rest</span>
-        </div>
-
-        {PARTY_ROSTER.map((grp) => {
-          const groupRoles = grp.roles.map((r) => r.role);
-          const cards = dash.parties.filter((v) => groupRoles.includes(v.party.role));
-          return (
-            <div key={grp.group} className="pgroup">
-              <div className="pgroup-label">{grp.group}</div>
-              {cards.length > 0 && (
-                <motion.div
-                  className="roster"
-                  initial="hidden"
-                  animate="visible"
-                  variants={listStagger}
-                >
-                  {cards.map((pv) => partyCard(pv))}
-                </motion.div>
-              )}
-              <div className="pslots">
-                {grp.roles.map((r) => {
-                  const has = dash.parties.some((v) => v.party.role === r.role);
-                  return (
-                    <button
-                      key={r.role}
-                      className={`pslot ${has ? "" : "empty"}`}
-                      disabled={busy}
-                      onClick={() => startAdd(r.role)}
-                    >
-                      ＋ {has ? `add ${r.label.toLowerCase()}` : r.label}
-                    </button>
-                  );
-                })}
-              </div>
-              {adding !== null &&
-                groupRoles.includes(adding) &&
-                contactForm(() => {
-                  void run(async () => {
-                    await api.post(`/transactions/${id}/parties`, {
-                      role: adding,
-                      ...contactPayload(),
-                    });
-                    cancelForm();
-                  }, `${PARTY_ROLE_LABEL[adding] ?? adding} added`);
-                }, "Add party")}
-            </div>
-          );
-        })}
-
-        {otherParties.length > 0 && (
-          <div className="pgroup">
-            <div className="pgroup-label">Other</div>
-            <motion.div className="roster" initial="hidden" animate="visible" variants={listStagger}>
-              {otherParties.map((pv) => partyCard(pv))}
-            </motion.div>
-          </div>
-        )}
-      </div>
-
       </aside>
       <div className="dgrid-main">
       {/* ---- Tasks (compliance + the TC's own) ---- */}
@@ -639,6 +580,87 @@ export function DealDashboard({
         </div>
       )}
       </div>
+      </div>
+
+      {/* ---- Parties: orbital deal system (full width) ---- */}
+      <div className="card parties-orbit">
+        <div className="pv-head">
+          <h2><Icon name="users" size={17} /> Parties</h2>
+          <div className="pv-toggle">
+            <button className={pview === "orbit" ? "on" : ""} onClick={() => setPview("orbit")}>Orbit</button>
+            <button className={pview === "list" ? "on" : ""} onClick={() => setPview("list")}>List</button>
+          </div>
+        </div>
+
+        {pview === "orbit" ? (
+          <>
+            <PartyOrbit
+              views={dash.parties}
+              onSelect={(pv) => setPeek(pv)}
+              onAddRole={(role) => { setPview("list"); startAdd(role); }}
+            />
+            <div className="orb-legend">
+              <span><i style={{ background: "#5257ea" }} /> Buyer</span>
+              <span><i style={{ background: "#0e9488" }} /> Seller</span>
+              <span><i style={{ background: "#c07512" }} /> Agent</span>
+              <span><i style={{ background: "#5b6472" }} /> Escrow · Title · Lender</span>
+              <span><i style={{ background: "#8457d6" }} /> Inspection</span>
+              <span style={{ marginLeft: "auto" }}>Hover to pause · click a person · badge = open tasks</span>
+            </div>
+          </>
+        ) : (
+          <div style={{ padding: "0.2rem 1.3rem 1.3rem" }}>
+            {PARTY_ROSTER.map((grp) => {
+              const groupRoles = grp.roles.map((r) => r.role);
+              const cards = dash.parties.filter((v) => groupRoles.includes(v.party.role));
+              return (
+                <div key={grp.group} className="pgroup">
+                  <div className="pgroup-label">{grp.group}</div>
+                  {cards.length > 0 && (
+                    <motion.div className="roster" initial="hidden" animate="visible" variants={listStagger}>
+                      {cards.map((pv) => partyCard(pv))}
+                    </motion.div>
+                  )}
+                  <div className="pslots">
+                    {grp.roles.map((r) => {
+                      const has = dash.parties.some((v) => v.party.role === r.role);
+                      return (
+                        <button
+                          key={r.role}
+                          className={`pslot ${has ? "" : "empty"}`}
+                          disabled={busy}
+                          onClick={() => startAdd(r.role)}
+                        >
+                          ＋ {has ? `add ${r.label.toLowerCase()}` : r.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {adding !== null &&
+                    groupRoles.includes(adding) &&
+                    contactForm(() => {
+                      void run(async () => {
+                        await api.post(`/transactions/${id}/parties`, {
+                          role: adding,
+                          ...contactPayload(),
+                        });
+                        cancelForm();
+                      }, `${PARTY_ROLE_LABEL[adding] ?? adding} added`);
+                    }, "Add party")}
+                </div>
+              );
+            })}
+
+            {otherParties.length > 0 && (
+              <div className="pgroup">
+                <div className="pgroup-label">Other</div>
+                <motion.div className="roster" initial="hidden" animate="visible" variants={listStagger}>
+                  {otherParties.map((pv) => partyCard(pv))}
+                </motion.div>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {peek && (

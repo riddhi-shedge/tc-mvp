@@ -994,3 +994,44 @@ button.secondary.sm { padding: 0.28rem 0.55rem; font-size: 0.76rem; }
 .peek-task { display: flex; align-items: center; gap: 0.5rem; padding: 0.4rem 0; border-bottom: 1px solid var(--line-2); font-size: 0.85rem; color: var(--ink-2); }
 .peek-task:last-child { border-bottom: 0; }
 .peek-contact { font-size: 0.85rem; color: var(--ink-2); display: flex; flex-direction: column; gap: 0.25rem; }
+
+/* ---- Parties orbital (deal system) ------------------------------------- */
+.parties-orbit { padding: 0; overflow: hidden; }
+.pv-head { display: flex; align-items: center; gap: 0.7rem; padding: 1.15rem 1.3rem 0.4rem; }
+.pv-head h2 { margin: 0; }
+.pv-toggle { margin-left: auto; display: inline-flex; background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-pill); padding: 2px; }
+.pv-toggle button { background: transparent; color: var(--ink-2); box-shadow: none; border-radius: var(--r-pill); padding: 4px 12px; font-size: 12.5px; font-weight: 550; }
+.pv-toggle button.on { background: var(--gold-500); color: var(--on-accent); }
+
+.orb-stage { position: relative; height: 640px; width: 100%; overflow: hidden;
+  background: radial-gradient(circle at 50% 46%, var(--gold-100), transparent 58%); }
+.orb-lines { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.orb-lines circle { fill: none; stroke: var(--line); stroke-dasharray: 3 7; opacity: 0.9; }
+
+/* the property — pinned to the exact geometric center of the stage */
+.orb-center { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+  width: 116px; height: 116px; border-radius: 50%; z-index: 4; text-align: center;
+  display: grid; place-items: center; color: var(--gold-600);
+  background: linear-gradient(155deg, var(--surface), var(--surface-2));
+  border: 1px solid var(--line); box-shadow: var(--shadow-lg); }
+.orb-addr { font-size: 11px; font-weight: 700; color: var(--ink); margin-top: 2px; line-height: 1.1; }
+.orb-sub { font-size: 9px; color: var(--muted); letter-spacing: 0.06em; text-transform: uppercase; }
+
+.orb-node { position: absolute; top: 50%; left: 50%; z-index: 3; cursor: pointer; will-change: transform;
+  display: flex; flex-direction: column; align-items: center; gap: 4px; width: 96px; }
+.orb-ava { position: relative; width: 46px; height: 46px; border-radius: 50%; display: grid; place-items: center;
+  color: #fff; font-weight: 700; font-size: 14px; border: 2.5px solid var(--surface); box-shadow: var(--shadow);
+  transition: transform 0.18s, box-shadow 0.18s; }
+.orb-node:hover .orb-ava { transform: scale(1.16); box-shadow: var(--shadow-lg); }
+.orb-node.empty .orb-ava { background: transparent; border: 2px dashed var(--muted); color: var(--muted); box-shadow: none; }
+.orb-node.empty:hover .orb-ava { border-color: var(--gold-500); color: var(--gold-600); }
+.orb-badge { position: absolute; top: -5px; right: -5px; min-width: 17px; height: 17px; padding: 0 3px; border-radius: 999px;
+  background: var(--red-600); color: #fff; font-size: 10px; font-weight: 700; display: grid; place-items: center; border: 2px solid var(--surface); }
+.orb-name { font-size: 11.5px; font-weight: 600; color: var(--ink); white-space: nowrap; }
+.orb-role { font-size: 10px; color: var(--muted); white-space: nowrap; margin-top: -3px; }
+.orb-role.add { color: var(--muted); }
+.orb-legend { display: flex; flex-wrap: wrap; gap: 0.9rem; justify-content: center; padding: 0.4rem 1rem 1.1rem; font-size: 0.74rem; color: var(--muted); }
+.orb-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.orb-legend i { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+@media (prefers-reduced-motion: reduce) { .orb-node { transition: none; } }
+@media (max-width: 720px) { .orb-stage { height: 520px; } }
