@@ -589,10 +589,19 @@ class AssignTaskRequest(BaseModel):
 _TASK_STATUSES = frozenset({"pending", "in_progress", "done", "blocked"})
 
 
+_TASK_PRIORITIES = frozenset({"low", "normal", "high", "urgent"})
+
+
 class CreateTaskRequest(BaseModel):
     title: str = Field(min_length=1)
     deadline_id: str | None = None
     assigned_party_id: str | None = None
+    # Richer TC-authored task metadata. The tasks table has no columns for these
+    # (schema is fixed in this environment), so they ride in the task.created
+    # audit details and the API reads them back from there.
+    description: str | None = None
+    due_date: str | None = None  # ISO yyyy-mm-dd
+    priority: str = "normal"
 
 
 class UpdateTaskRequest(BaseModel):
@@ -613,12 +622,16 @@ def create_task(
         party_id=body.assigned_party_id, transaction_id=transaction_id
     ):
         raise HTTPException(status_code=404, detail="Party not found on this transaction")
+    priority = body.priority if body.priority in _TASK_PRIORITIES else "normal"
     return repo.create_task(
         transaction_id=transaction_id,
         title=body.title.strip(),
         deadline_id=body.deadline_id,
         assigned_party_id=body.assigned_party_id,
         actor=tc.actor,
+        description=(body.description or "").strip() or None,
+        due_date=(body.due_date or "").strip() or None,
+        priority=priority,
     )
 
 
@@ -951,6 +964,26 @@ def list_compliance_active(
     return {"transaction_ids": repo.list_active_transaction_ids()}
 
 
+def _merge_task_meta(state: dict[str, Any]) -> None:
+    """Fold TC task metadata (description/due_date/priority) — which is persisted
+    in the task.created audit details, since the tasks table has no columns for
+    it — back onto each task. Latest audit event wins."""
+    meta: dict[str, dict[str, Any]] = {}
+    rows = sorted(state.get("audit_log", []), key=lambda r: r.get("created_at") or "")
+    for row in rows:
+        if row.get("entity_type") != "task" or row.get("action") not in ("task.created", "task.updated"):
+            continue
+        det = row.get("details") or {}
+        picked = {k: det[k] for k in ("description", "due_date", "priority") if k in det}
+        if picked:
+            meta[row.get("entity_id")] = {**meta.get(row.get("entity_id"), {}), **picked}
+    for t in state.get("tasks", []):
+        m = meta.get(t["id"], {})
+        t["description"] = m.get("description")
+        t["due_date"] = m.get("due_date")
+        t["priority"] = m.get("priority", "normal")
+
+
 @router.get("/transactions/{transaction_id}")
 def read_full_state(
     transaction_id: str,
@@ -960,6 +993,7 @@ def read_full_state(
     state = repo.get_full_state(transaction_id)
     if state is None:
         raise HTTPException(status_code=404, detail="Transaction not found")
+    _merge_task_meta(state)
     return state
 
 

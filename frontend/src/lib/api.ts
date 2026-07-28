@@ -234,6 +234,10 @@ export interface Task {
   status: string;
   deadline_id: string | null;
   assigned_party_id: string | null;
+  // TC-authored metadata (persisted in the task's audit details).
+  description?: string | null;
+  due_date?: string | null;
+  priority?: string; // low | normal | high | urgent
 }
 
 export interface Message {

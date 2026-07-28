@@ -222,6 +222,9 @@ class MasterRepo(Protocol):
         actor: str,
         deadline_id: str | None = None,
         assigned_party_id: str | None = None,
+        description: str | None = None,
+        due_date: str | None = None,
+        priority: str = "normal",
     ) -> dict[str, Any]: ...
 
     def set_task_status(
@@ -271,6 +274,21 @@ class MasterRepo(Protocol):
 # Ingestion's private attachment bucket (documents' storage_path lives here).
 # Named locally so the master doesn't import ingestion internals.
 ATTACHMENT_BUCKET = "ingestion-attachments"
+
+
+def _task_meta(
+    source: str, description: str | None, due_date: str | None, priority: str
+) -> dict[str, Any]:
+    """Audit-details payload carrying a TC task's richer metadata (no columns for
+    it in this environment). Only non-default values are stored."""
+    meta: dict[str, Any] = {"source": source}
+    if description:
+        meta["description"] = description
+    if due_date:
+        meta["due_date"] = due_date
+    if priority and priority != "normal":
+        meta["priority"] = priority
+    return meta
 
 _CHILD_TABLES = (
     "parties",
@@ -1074,9 +1092,14 @@ class SupabaseRepo:
         actor: str,
         deadline_id: str | None = None,
         assigned_party_id: str | None = None,
+        description: str | None = None,
+        due_date: str | None = None,
+        priority: str = "normal",
     ) -> dict[str, Any]:
         """A TC's own ad-hoc task. Tagged generated_by='tc' so a compliance
-        re-run (which only clears its own prior-run rows) never removes it."""
+        re-run (which only clears its own prior-run rows) never removes it.
+        Extra metadata (description/due_date/priority) rides in the audit details
+        — the tasks table has no columns for it here — and the API reads it back."""
         task = (
             self._db.table("tasks")
             .insert(
@@ -1098,9 +1121,9 @@ class SupabaseRepo:
             action="task.created",
             entity_type="task",
             entity_id=task["id"],
-            details={"source": "tc"},
+            details=_task_meta("tc", description, due_date, priority),
         )
-        return task
+        return {**task, "description": description, "due_date": due_date, "priority": priority}
 
     def set_task_status(
         self, *, transaction_id: str, task_id: str, status: str, actor: str

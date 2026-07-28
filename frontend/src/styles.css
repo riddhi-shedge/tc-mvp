@@ -1165,3 +1165,38 @@ button.secondary.sm { padding: 0.28rem 0.55rem; font-size: 0.76rem; }
   .po-orbit { border-right: 0; border-bottom: 1px solid var(--line); }
   .po-dock { max-height: none; }
 }
+
+/* ---- Attention strip (pinned atop My tasks) ---------------------------- */
+.attn { border: 1px solid var(--red-100); background: color-mix(in srgb, var(--red-100) 55%, var(--surface));
+  border-left: 3px solid var(--red-600); border-radius: var(--r-sm); padding: 0.6rem 0.75rem; margin-bottom: 0.9rem; }
+.attn-head { font-size: 0.74rem; font-weight: 700; letter-spacing: 0.03em; text-transform: uppercase; color: var(--red-700);
+  display: flex; align-items: center; gap: 0.4rem; margin-bottom: 0.5rem; }
+.attn-item { display: flex; gap: 0.55rem; padding: 0.4rem 0; border-top: 1px solid color-mix(in srgb, var(--red-600) 14%, transparent); }
+.attn-item:first-of-type { border-top: 0; }
+.attn-ic { width: 24px; height: 24px; border-radius: 7px; display: grid; place-items: center; flex: 0 0 auto;
+  background: var(--surface); color: var(--red-600); border: 1px solid var(--red-100); }
+.attn-title { font-size: 0.85rem; font-weight: 650; color: var(--ink); display: flex; align-items: center; gap: 0.4rem; }
+.attn-desc { font-size: 0.8rem; color: var(--ink-2); line-height: 1.4; }
+
+/* ---- Rich add-task composer -------------------------------------------- */
+.tc-composer { border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface-2); padding: 0.5rem; margin-bottom: 0.9rem; }
+.tc-row { display: flex; gap: 0.4rem; align-items: center; }
+.tc-row input { border: 0; background: transparent; box-shadow: none; }
+.tc-row input:focus { box-shadow: none; }
+.tc-row .sm { padding: 5px 8px; }
+.tc-more { margin-top: 0.5rem; border-top: 1px solid var(--line); padding-top: 0.6rem; display: flex; flex-direction: column; gap: 0.5rem; }
+.tc-more textarea { font-size: 0.85rem; }
+.tc-meta { display: flex; gap: 0.7rem; flex-wrap: wrap; }
+.tc-field { flex: 1; min-width: 150px; margin: 0; }
+.tc-field > span { display: flex; align-items: center; gap: 0.3rem; font-size: 0.72rem; color: var(--muted); margin-bottom: 0.25rem; }
+.tc-field input, .tc-field select { padding: 0.4rem 0.55rem; font-size: 0.85rem; }
+
+/* task description + priority */
+.task-desc { font-size: 0.78rem; color: var(--ink-2); line-height: 1.4; margin: 1px 0 2px; }
+.task-row.pr-high { border-left: 3px solid var(--amber-600); }
+.task-row.pr-urgent { border-left: 3px solid var(--red-600); }
+.pri-badge { flex: 0 0 auto; font-size: 0.66rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em;
+  padding: 0.12rem 0.45rem; border-radius: var(--r-pill); }
+.pri-badge.urgent { background: var(--red-100); color: var(--red-700); }
+.pri-badge.high { background: var(--amber-100); color: var(--amber-700); }
+.pri-badge.low { background: var(--hover); color: var(--muted); }

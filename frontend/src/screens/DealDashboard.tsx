@@ -16,10 +16,6 @@ import { Ring, toast } from "../lib/ui";
 import { fmtDate } from "../lib/format";
 import { Icon, IconName } from "../lib/icons";
 import { PartyOrbit } from "./PartyOrbit";
-import { motion } from "framer-motion";
-
-const listStagger = { visible: { transition: { staggerChildren: 0.055 } } };
-const itemIn = { hidden: { opacity: 0, x: -10 }, visible: { opacity: 1, x: 0 } };
 
 const AVATAR_COLORS = ["#2c4a7c", "#9a6b1e", "#2f7d5b", "#a3352f", "#3a5e97", "#b3842f"];
 function avatarColor(seed: string): string {
@@ -82,6 +78,8 @@ export function DealDashboard({
   const [busy, setBusy] = useState(false);
   const [tokens, setTokens] = useState<Record<string, string>>({});
   const [newTask, setNewTask] = useState("");
+  const [taskForm, setTaskForm] = useState({ desc: "", due: "", priority: "normal" });
+  const [taskFormOpen, setTaskFormOpen] = useState(false);
   // Drag-to-assign (task → an orbiting party) + party peek popover
   const [dragTaskId, setDragTaskId] = useState<string | null>(null);
   const [peek, setPeek] = useState<DashboardPartyView | null>(null);
@@ -202,13 +200,19 @@ export function DealDashboard({
       `Assigned to ${pt.name ?? PARTY_ROLE_LABEL[pt.role] ?? pt.role}`,
     );
   }
-  // Compact party row for the info-rail (avatar · name · role · open-task badge).
   function addTask() {
     const title = newTask.trim();
     if (!title) return;
     void run(async () => {
-      await api.post(`/transactions/${id}/tasks`, { title });
+      await api.post(`/transactions/${id}/tasks`, {
+        title,
+        description: taskForm.desc.trim() || null,
+        due_date: taskForm.due || null,
+        priority: taskForm.priority,
+      });
       setNewTask("");
+      setTaskForm({ desc: "", due: "", priority: "normal" });
+      setTaskFormOpen(false);
     }, "Task added");
   }
 
@@ -238,29 +242,7 @@ export function DealDashboard({
         </aside>
 
         <div className="il-main">
-      {/* ---- Risk attention feed ---- */}
-      <div className="card">
-        <h2><Icon name="warning" size={17} /> Attention</h2>
-        {dash.risk_alerts.length === 0 && (
-          <div className="empty"><span className="empty-ic"><Icon name="checkCircle" size={26} /></span>No open risk alerts — nicely on track.</div>
-        )}
-        <motion.div className="risk-feed" initial="hidden" animate="visible" variants={listStagger}>
-          {dash.risk_alerts.map((f) => (
-            <motion.div key={f.id} className={`risk-card ${f.severity}`} variants={itemIn}>
-              <div className="risk-ic"><Icon name={riskIcon(f)} size={16} /></div>
-              <div className="risk-body">
-                <div className="risk-title">
-                  {titleize(f.case_key)}
-                  <span className={`badge ${f.severity === "warning" ? "warn" : "danger"}`}>{f.severity}</span>
-                </div>
-                <div className="risk-desc">{f.description}</div>
-              </div>
-            </motion.div>
-          ))}
-        </motion.div>
-      </div>
-
-      {/* ---- My tasks — the TC's own coordination work ---- */}
+      {/* ---- My tasks — the TC's own work, with Attention pinned on top ---- */}
       <div className="card">
         <div className="between" style={{ marginBottom: "0.6rem" }}>
           <h2 style={{ margin: 0 }}><Icon name="checkCircle" size={17} /> My tasks</h2>
@@ -268,18 +250,64 @@ export function DealDashboard({
             {myTasks.filter((t) => !["done", "complete"].includes(t.status)).length} open · what you handle yourself
           </span>
         </div>
-        <div className="row" style={{ gap: "0.5rem", marginBottom: "0.7rem" }}>
-          <input
-            placeholder="Add your own task…"
-            value={newTask}
-            onChange={(e) => setNewTask(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && newTask.trim()) addTask();
-            }}
-          />
-          <button className="gold" disabled={busy || !newTask.trim()} onClick={addTask}>
-            ＋ Add task
-          </button>
+
+        {dash.risk_alerts.length > 0 && (
+          <div className="attn">
+            <div className="attn-head"><Icon name="warning" size={15} /> Needs attention · {dash.risk_alerts.length}</div>
+            {dash.risk_alerts.map((f) => (
+              <div key={f.id} className={`attn-item ${f.severity}`}>
+                <div className="attn-ic"><Icon name={riskIcon(f)} size={14} /></div>
+                <div style={{ minWidth: 0 }}>
+                  <div className="attn-title">
+                    {titleize(f.case_key)}
+                    <span className={`badge ${f.severity === "warning" ? "warn" : "danger"}`}>{f.severity}</span>
+                  </div>
+                  <div className="attn-desc">{f.description}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div className="tc-composer">
+          <div className="tc-row">
+            <input
+              placeholder="Add a task for yourself…"
+              value={newTask}
+              onChange={(e) => setNewTask(e.target.value)}
+              onFocus={() => setTaskFormOpen(true)}
+              onKeyDown={(e) => { if (e.key === "Enter" && newTask.trim()) addTask(); }}
+            />
+            <button className="secondary sm" onClick={() => setTaskFormOpen((o) => !o)} title="More options">
+              <Icon name={taskFormOpen ? "chevron" : "plus"} size={14} />
+            </button>
+            <button className="gold" disabled={busy || !newTask.trim()} onClick={addTask}>Add</button>
+          </div>
+          {taskFormOpen && (
+            <div className="tc-more">
+              <textarea
+                placeholder="Description (optional)…"
+                rows={2}
+                value={taskForm.desc}
+                onChange={(e) => setTaskForm({ ...taskForm, desc: e.target.value })}
+              />
+              <div className="tc-meta">
+                <label className="tc-field">
+                  <span><Icon name="calendar" size={12} /> Due date</span>
+                  <input type="date" value={taskForm.due} onChange={(e) => setTaskForm({ ...taskForm, due: e.target.value })} />
+                </label>
+                <label className="tc-field">
+                  <span><Icon name="flag" size={12} /> Priority</span>
+                  <select value={taskForm.priority} onChange={(e) => setTaskForm({ ...taskForm, priority: e.target.value })}>
+                    <option value="low">Low</option>
+                    <option value="normal">Normal</option>
+                    <option value="high">High</option>
+                    <option value="urgent">Urgent</option>
+                  </select>
+                </label>
+              </div>
+            </div>
+          )}
         </div>
         {myTasks.length === 0 && (
           <div className="empty"><span className="empty-ic"><Icon name="clipboard" size={26} /></span>Nothing on your own plate — add a task, or assign deadline tasks to parties below.</div>
@@ -287,10 +315,9 @@ export function DealDashboard({
         <div className="stack">
           {myTasks.map((t) => {
             const done = ["done", "complete"].includes(t.status);
-            const who = null;
-            const due = t.deadline_id
-              ? state.deadlines.find((d) => d.id === t.deadline_id)?.due_date ?? null
-              : null;
+            const due =
+              t.due_date ??
+              (t.deadline_id ? state.deadlines.find((d) => d.id === t.deadline_id)?.due_date ?? null : null);
             const daysLeft =
               due && !done
                 ? Math.round((new Date(due + "T00:00:00").getTime() - Date.now()) / 86_400_000)
@@ -303,8 +330,9 @@ export function DealDashboard({
                   : daysLeft <= 5
                     ? "var(--gold-700)"
                     : "var(--muted)";
+            const pr = t.priority && t.priority !== "normal" ? t.priority : null;
             return (
-              <div key={t.id} className={`task-row ${done ? "done" : ""}`}>
+              <div key={t.id} className={`task-row ${done ? "done" : ""} ${pr ? `pr-${pr}` : ""}`}>
                 <button
                   className="task-check"
                   disabled={busy}
@@ -323,24 +351,22 @@ export function DealDashboard({
                 </button>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div className="task-title">{t.title}</div>
-                  {(due || who) && (
+                  {t.description && <div className="task-desc">{t.description}</div>}
+                  {due && (
                     <div className="task-meta">
-                      {due && (
-                        <span style={{ color: dueColor, fontWeight: daysLeft != null && daysLeft <= 5 ? 600 : 400 }}>
-                          <Icon name="calendar" size={12} /> {fmtDate(due)}
-                          {daysLeft != null &&
-                            (daysLeft < 0
-                              ? ` · ${-daysLeft}d overdue`
-                              : daysLeft === 0
-                                ? " · today"
-                                : ` · ${daysLeft}d`)}
-                        </span>
-                      )}
-                      {due && who && <span className="muted"> · </span>}
-                      {who && <span className="muted">→ {who}</span>}
+                      <span style={{ color: dueColor, fontWeight: daysLeft != null && daysLeft <= 5 ? 600 : 400 }}>
+                        <Icon name="calendar" size={12} /> {fmtDate(due)}
+                        {daysLeft != null &&
+                          (daysLeft < 0
+                            ? ` · ${-daysLeft}d overdue`
+                            : daysLeft === 0
+                              ? " · today"
+                              : ` · ${daysLeft}d`)}
+                      </span>
                     </div>
                   )}
                 </div>
+                {pr && <span className={`pri-badge ${pr}`}>{pr}</span>}
                 <span className={`badge ${done ? "ok" : "draft"}`}>{t.status.replace(/_/g, " ")}</span>
               </div>
             );

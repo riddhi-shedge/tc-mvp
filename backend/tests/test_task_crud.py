@@ -88,3 +88,50 @@ def test_update_unknown_task_404(client, tc_headers):
 def test_create_task_requires_auth(client):
     r = client.post("/transactions/x/tasks", json={"title": "t"})
     assert r.status_code in (401, 403)
+
+
+def test_create_task_with_metadata_roundtrips(client, tc_headers):
+    txn = _bare_deal(client, tc_headers)
+    r = client.post(
+        f"/transactions/{txn}/tasks",
+        json={
+            "title": "Order NHD report",
+            "description": "Natural Hazard Disclosure from JCP-LGS before contingency removal.",
+            "due_date": "2026-08-05",
+            "priority": "high",
+        },
+        headers=tc_headers,
+    )
+    assert r.status_code == 201
+
+    tasks = client.get(f"/transactions/{txn}", headers=tc_headers).json()["tasks"]
+    t = next(t for t in tasks if t["title"] == "Order NHD report")
+    assert t["description"].startswith("Natural Hazard")
+    assert t["due_date"] == "2026-08-05"
+    assert t["priority"] == "high"
+
+
+def test_create_task_defaults_priority_normal(client, tc_headers):
+    txn = _bare_deal(client, tc_headers)
+    client.post(f"/transactions/{txn}/tasks", json={"title": "Plain task"}, headers=tc_headers)
+    t = next(
+        t for t in client.get(f"/transactions/{txn}", headers=tc_headers).json()["tasks"]
+        if t["title"] == "Plain task"
+    )
+    assert t["priority"] == "normal"
+    assert t["description"] is None and t["due_date"] is None
+
+
+def test_create_task_bogus_priority_coerced(client, tc_headers):
+    txn = _bare_deal(client, tc_headers)
+    r = client.post(
+        f"/transactions/{txn}/tasks",
+        json={"title": "Weird", "priority": "SUPER-DUPER"},
+        headers=tc_headers,
+    )
+    assert r.status_code == 201
+    t = next(
+        t for t in client.get(f"/transactions/{txn}", headers=tc_headers).json()["tasks"]
+        if t["title"] == "Weird"
+    )
+    assert t["priority"] == "normal"

@@ -510,6 +510,9 @@ class InMemoryRepo:
         actor: str,
         deadline_id: str | None = None,
         assigned_party_id: str | None = None,
+        description: str | None = None,
+        due_date: str | None = None,
+        priority: str = "normal",
     ) -> dict[str, Any]:
         task = {
             "id": str(uuid.uuid4()),
@@ -521,15 +524,22 @@ class InMemoryRepo:
             "generated_by": "tc",
         }
         self.tasks.append(task)
+        details: dict[str, Any] = {"source": "tc"}
+        if description:
+            details["description"] = description
+        if due_date:
+            details["due_date"] = due_date
+        if priority and priority != "normal":
+            details["priority"] = priority
         self._audit(
             transaction_id=transaction_id,
             actor=actor,
             action="task.created",
             entity_type="task",
             entity_id=task["id"],
-            details={"source": "tc"},
+            details=details,
         )
-        return task
+        return {**task, "description": description, "due_date": due_date, "priority": priority}
 
     def set_task_status(
         self, *, transaction_id: str, task_id: str, status: str, actor: str
