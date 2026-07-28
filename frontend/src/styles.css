@@ -1087,3 +1087,46 @@ button.secondary.sm { padding: 0.28rem 0.55rem; font-size: 0.76rem; }
 /* Orbit nodes as drop targets while dragging a task */
 .orb-node.droppable .orb-ava { border-style: dashed; border-color: var(--gold-500); cursor: copy; }
 .orb-node.dropon .orb-ava { transform: scale(1.22); border-style: solid; box-shadow: 0 0 0 4px var(--gold-100), var(--shadow-lg); }
+
+/* ---- Communication: split inbox ---------------------------------------- */
+.mailbox { padding: 0; overflow: hidden; }
+.mbx { display: grid; grid-template-columns: 290px 1fr; min-height: 520px; }
+.mbx-list { border-right: 1px solid var(--line); background: var(--surface); display: flex; flex-direction: column; }
+.mbx-lhead { display: flex; align-items: center; gap: 0.5rem; padding: 0.75rem 0.85rem; border-bottom: 1px solid var(--line);
+  position: sticky; top: 0; background: var(--surface); z-index: 1; }
+.mbx-lhead b { color: var(--ink); font-size: 0.92rem; }
+.mbx-new { margin-left: auto; display: inline-flex; align-items: center; gap: 5px; background: var(--gold-500); color: var(--on-accent);
+  border: 0; border-radius: 7px; font-size: 12px; font-weight: 600; padding: 5px 11px; cursor: pointer; box-shadow: none; }
+.mbx-new:hover { background: var(--gold-600); }
+.mbx-new.on { box-shadow: var(--ring); }
+.mbx-listempty { padding: 1.4rem 1rem; color: var(--muted); font-size: 0.84rem; text-align: center; }
+.mbx-item { display: flex; gap: 0.6rem; padding: 0.7rem 0.85rem; border-bottom: 1px solid var(--line-2); cursor: pointer;
+  border-left: 2px solid transparent; transition: background 0.12s; }
+.mbx-item:hover { background: var(--hover); }
+.mbx-item.on { background: var(--gold-100); border-left-color: var(--gold-500); }
+.mbx-ava { width: 34px; height: 34px; border-radius: 50%; flex: 0 0 auto; display: grid; place-items: center;
+  color: #fff; font-weight: 700; font-size: 12px; }
+.mbx-ava.lg { width: 40px; height: 40px; font-size: 13px; }
+.mbx-meta { min-width: 0; flex: 1; }
+.mbx-row1 { display: flex; align-items: center; gap: 6px; }
+.mbx-to { font-size: 0.83rem; font-weight: 650; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mbx-time { margin-left: auto; font-size: 10.5px; color: var(--muted); flex: 0 0 auto; }
+.mbx-subj { font-size: 0.79rem; color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 1px; }
+.mbx-snip { font-size: 0.73rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mbx-dot { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto; margin-top: 4px; }
+.mbx-dot.draft { background: var(--amber-600); } .mbx-dot.approved { background: var(--gold-500); } .mbx-dot.sent { background: var(--green-600); }
+
+.mbx-pane { background: var(--surface-2); padding: 1.2rem 1.4rem; min-width: 0; }
+.mbx-compose { max-width: 520px; }
+.mbx-ctitle { display: flex; align-items: center; gap: 0.5rem; font-size: 1.05rem; font-weight: 650; color: var(--ink); }
+.mbx-phead { display: flex; align-items: center; gap: 0.7rem; margin-bottom: 0.9rem; }
+.mbx-pto { font-size: 0.98rem; font-weight: 700; color: var(--ink); }
+.mbx-prole { font-size: 0.78rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mbx-subject { font-size: 1.15rem; font-weight: 700; color: var(--ink); letter-spacing: -0.01em; margin: 0.2rem 0 0.7rem; }
+.mbx-bodyview { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-sm); padding: 0.9rem 1.05rem;
+  font-size: 0.9rem; line-height: 1.62; color: var(--ink-2); white-space: pre-wrap; }
+.mbx-read label { margin-top: 0.9rem; }
+.mbx-actions { display: flex; align-items: center; gap: 0.8rem; margin-top: 1rem; flex-wrap: wrap; }
+.mbx-guard { font-size: 0.74rem; color: var(--muted); display: inline-flex; align-items: center; gap: 5px; }
+.mbx-sentnote { margin-top: 0.8rem; font-size: 0.8rem; color: var(--green-700); display: inline-flex; align-items: center; gap: 6px; }
+@media (max-width: 820px) { .mbx { grid-template-columns: 1fr; } .mbx-list { max-height: 240px; } }

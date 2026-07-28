@@ -55,6 +55,18 @@ const MESSAGE_PURPOSES: { value: string; label: string }[] = [
   { value: "general", label: "General check-in" },
 ];
 
+// Recipient avatar tint by role (mirrors the parties palette).
+const MSG_TINT: Record<string, string> = {
+  buyer: "#5257ea", seller: "#0e9488", buyer_agent: "#c07512", listing_agent: "#c07512",
+  escrow: "#5b6472", title: "#5b6472", lender: "#5b6472",
+};
+const msgTint = (role: string | undefined) => (role && MSG_TINT[role]) || "#5b6472";
+function msgInitials(name: string | null, role: string): string {
+  const s = (name || role || "?").trim().split(/\s+/);
+  return ((s[0]?.[0] ?? "") + (s[1]?.[0] ?? "")).toUpperCase() || "?";
+}
+const snippet = (body: string | null) => (body ?? "").replace(/\s+/g, " ").trim().slice(0, 72);
+
 /** The deal screen: extraction review → confirm → timeline → risk flags →
  *  lender contact → real lender draft (editable) → Approve & Send (guarded). */
 export function Deal({ id, onBack }: { id: string; onBack: () => void }) {
@@ -66,6 +78,9 @@ export function Deal({ id, onBack }: { id: string; onBack: () => void }) {
   const [purpose, setPurpose] = useState("lender_status");
   // TC edits to a draft before approval: messageId -> {subject, body}
   const [edits, setEdits] = useState<Record<string, { subject: string; body: string }>>({});
+  // Split-inbox selection ("new" = composer) + which message the last WHY belongs to
+  const [selMsg, setSelMsg] = useState<string | null>(null);
+  const [draftWhyFor, setDraftWhyFor] = useState<string | null>(null);
   // TC entries for deadline-driving fields the extraction missed: name -> value
   const [fieldVals, setFieldVals] = useState<Record<string, string>>({});
 
@@ -108,6 +123,12 @@ export function Deal({ id, onBack }: { id: string; onBack: () => void }) {
   const approved: Message[] = state.messages.filter((m) => m.status === "approved");
   const sent = state.messages.filter((m) => m.status === "sent");
   const recipients = state.parties.filter((p) => p.email);
+
+  // Split-inbox ordering: action-needed first (drafts, then approved-not-sent), then sent.
+  const allMsgs: Message[] = [...drafts, ...approved, ...sent];
+  const sel = selMsg ?? (allMsgs[0]?.id ?? "new");
+  const selMessage = sel === "new" ? null : allMsgs.find((m) => m.id === sel) ?? null;
+  const msgPartyOf = (m: Message) => state.parties.find((p) => p.id === m.party_id);
 
   const coe = state.deadlines.find((d) => d.name.toLowerCase().includes("escrow"));
   const coeDays =
@@ -378,164 +399,161 @@ export function Deal({ id, onBack }: { id: string; onBack: () => void }) {
             icon: <Icon name="mail" size={14} />,
             content: (
               <>
-      <div className="card">
-        <h2><Icon name="mail" size={17} /> New message</h2>
-        <p className="muted" style={{ margin: "-0.4rem 0 0.85rem" }}>
-          Claude drafts it personalized to this deal · you review the WHY, edit, and approve.
-          Nothing sends without your tap (Rule 3).
-        </p>
-        {recipients.length === 0 ? (
-          <div className="empty">
-            <span className="empty-ic"><Icon name="mail" size={26} /></span>
-            No recipients with an email yet — add emails on the Parties (Overview) tab.
-          </div>
-        ) : (
-          <div className="row" style={{ gap: "0.6rem", alignItems: "flex-end" }}>
-            <div style={{ flex: 1, minWidth: 190 }}>
-              <label>To</label>
-              <select value={recipientId} onChange={(e) => setRecipientId(e.target.value)}>
-                <option value="">— choose recipient —</option>
-                {recipients.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name} · {humanize(p.role)} ({p.email})
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div style={{ flex: 1, minWidth: 190 }}>
-              <label>Purpose</label>
-              <select value={purpose} onChange={(e) => setPurpose(e.target.value)}>
-                {MESSAGE_PURPOSES.map((o) => (
-                  <option key={o.value} value={o.value}>
-                    {o.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div style={{ flex: "0 0 auto" }}>
-              <button
-                className="gold"
-                disabled={busy || !recipientId}
-                onClick={() =>
-                  void run(async () => {
-                    const r = await api.post<{ why: string }>(
-                      `/transactions/${id}/messages/draft`,
-                      { party_id: recipientId, purpose },
-                    );
-                    setDraftWhy(r.why);
-                  }, "Draft ready for review")
-                }
-              >
-                {busy ? (
-                  <>
-                    <span className="spinner" />
-                    Drafting…
-                  </>
-                ) : (
-                  <><Icon name="sparkle" size={14} /> Draft with Claude</>
-                )}
+      <div className="card mailbox">
+        <div className="mbx">
+          <div className="mbx-list">
+            <div className="mbx-lhead">
+              <b>Messages</b>
+              <button className={`mbx-new ${sel === "new" ? "on" : ""}`} onClick={() => setSelMsg("new")}>
+                <Icon name="sparkle" size={13} /> New
               </button>
             </div>
-          </div>
-        )}
-      </div>
-
-      <div className="card">
-        <h2><Icon name="inbox" size={17} /> Drafts &amp; sent</h2>
-        {drafts.length === 0 && sent.length === 0 && approved.length === 0 && (
-          <div className="empty">
-            <span className="empty-ic"><Icon name="mail" size={26} /></span>
-            No messages yet — draft one above.
-          </div>
-        )}
-        {drafts.map((draft) => {
-          const edit = edits[draft.id] ?? { subject: draft.subject ?? "", body: draft.body ?? "" };
-          const toParty = state.parties.find((p) => p.id === draft.party_id);
-          return (
-            <div key={draft.id} className="mailcard">
-              <div className="mailcard-head">
-                <span className="mailcard-to">
-                  To: {toParty?.name ?? "recipient"} &lt;{toParty?.email ?? "—"}&gt;
-                </span>
-                <span className="badge draft">draft</span>
-              </div>
-              <div className="mailcard-body">
-                {draftWhy && (
-                  <div className="why">
-                    <strong>Why this draft:</strong> {draftWhy}
+            {allMsgs.length === 0 && <div className="mbx-listempty">No messages yet — start one with “New”.</div>}
+            {allMsgs.map((m) => {
+              const party = msgPartyOf(m);
+              return (
+                <div key={m.id} className={`mbx-item ${sel === m.id ? "on" : ""}`} onClick={() => setSelMsg(m.id)}>
+                  <div className="mbx-ava" style={{ background: msgTint(party?.role) }}>
+                    {msgInitials(party?.name ?? null, party?.role ?? "")}
                   </div>
-                )}
-                <label>Subject</label>
-                <input
-                  value={edit.subject}
-                  onChange={(e) =>
-                    setEdits({ ...edits, [draft.id]: { ...edit, subject: e.target.value } })
-                  }
-                />
-                <label>Body — edit before sending</label>
-                <textarea
-                  rows={6}
-                  value={edit.body}
-                  onChange={(e) =>
-                    setEdits({ ...edits, [draft.id]: { ...edit, body: e.target.value } })
-                  }
-                />
-                <div style={{ marginTop: "0.7rem" }}>
-                  <button
-                    className="danger-ish"
-                    disabled={busy}
-                    onClick={() =>
-                      void run(
-                        () =>
-                          api.post(`/transactions/${id}/messages/${draft.id}/approve-and-send`, {
-                            subject: edit.subject,
-                            body: edit.body,
-                          }),
-                        "Approved & sent",
-                      )
-                    }
-                  >
-                    ✓ Approve &amp; Send
-                  </button>
+                  <div className="mbx-meta">
+                    <div className="mbx-row1">
+                      <span className="mbx-to">{party?.name ?? "Recipient"}</span>
+                      <span className="mbx-time">
+                        {m.status === "sent" && m.sent_at ? fmtDate(m.sent_at) : m.status === "draft" ? "draft" : "queued"}
+                      </span>
+                    </div>
+                    <div className="mbx-subj">{m.subject ?? "(no subject)"}</div>
+                    <div className="mbx-snip">{snippet(m.body)}</div>
+                  </div>
+                  <span className={`mbx-dot ${m.status}`} />
                 </div>
+              );
+            })}
+          </div>
+
+          <div className="mbx-pane">
+            {sel === "new" || !selMessage ? (
+              <div className="mbx-compose">
+                <div className="mbx-ctitle"><Icon name="sparkle" size={16} /> New message</div>
+                <p className="muted" style={{ margin: "0 0 1.1rem" }}>
+                  Claude drafts it personalized to this deal · you review the WHY, edit, and approve.
+                  Nothing sends without your tap (Rule 3).
+                </p>
+                {recipients.length === 0 ? (
+                  <div className="empty">
+                    <span className="empty-ic"><Icon name="mail" size={26} /></span>
+                    No recipients with an email yet — add emails on the Parties (Overview) tab.
+                  </div>
+                ) : (
+                  <>
+                    <label>To</label>
+                    <select value={recipientId} onChange={(e) => setRecipientId(e.target.value)}>
+                      <option value="">— choose recipient —</option>
+                      {recipients.map((p) => (
+                        <option key={p.id} value={p.id}>{p.name} · {humanize(p.role)} ({p.email})</option>
+                      ))}
+                    </select>
+                    <label>Purpose</label>
+                    <select value={purpose} onChange={(e) => setPurpose(e.target.value)}>
+                      {MESSAGE_PURPOSES.map((o) => (<option key={o.value} value={o.value}>{o.label}</option>))}
+                    </select>
+                    <button
+                      className="gold"
+                      style={{ marginTop: "1.1rem" }}
+                      disabled={busy || !recipientId}
+                      onClick={() =>
+                        void run(async () => {
+                          const r = await api.post<{ message: Message; why: string }>(
+                            `/transactions/${id}/messages/draft`,
+                            { party_id: recipientId, purpose },
+                          );
+                          setDraftWhy(r.why);
+                          setDraftWhyFor(r.message.id);
+                          setSelMsg(r.message.id);
+                        }, "Draft ready for review")
+                      }
+                    >
+                      {busy ? (<><span className="spinner" /> Drafting…</>) : (<><Icon name="sparkle" size={14} /> Draft with Claude</>)}
+                    </button>
+                  </>
+                )}
               </div>
-            </div>
-          );
-        })}
-        {approved.map((m) => (
-          <div key={m.id} className="mailcard">
-            <div className="mailcard-head">
-              <span className="mailcard-to">{m.subject}</span>
-              <span className="badge draft">approved · not sent</span>
-            </div>
-            <div className="mailcard-body">
-              <p className="muted" style={{ marginTop: 0 }}>
-                Approved, but the send didn't go through (sending disabled, recipient not
-                allow-listed, or a provider error). Retry when ready.
-              </p>
-              <button
-                className="danger-ish"
-                disabled={busy}
-                onClick={() =>
-                  void run(
-                    () => api.post(`/transactions/${id}/messages/${m.id}/approve-and-send`),
-                    "Retried",
-                  )
-                }
-              >
-                Retry send
-              </button>
-            </div>
+            ) : (
+              (() => {
+                const m = selMessage;
+                const party = msgPartyOf(m);
+                const edit = edits[m.id] ?? { subject: m.subject ?? "", body: m.body ?? "" };
+                return (
+                  <div className="mbx-read">
+                    <div className="mbx-phead">
+                      <div className="mbx-ava lg" style={{ background: msgTint(party?.role) }}>
+                        {msgInitials(party?.name ?? null, party?.role ?? "")}
+                      </div>
+                      <div style={{ minWidth: 0 }}>
+                        <div className="mbx-pto">{party?.name ?? "Recipient"}</div>
+                        <div className="mbx-prole">{humanize(party?.role ?? "")}{party?.email ? ` · ${party.email}` : ""}</div>
+                      </div>
+                      <span className={`badge ${m.status === "sent" ? "sent" : "draft"}`} style={{ marginLeft: "auto" }}>
+                        {m.status === "sent" ? "sent" : m.status === "approved" ? "approved · not sent" : "draft"}
+                      </span>
+                    </div>
+
+                    {m.status === "draft" ? (
+                      <>
+                        {draftWhy && draftWhyFor === m.id && (
+                          <div className="why"><strong>Why this draft:</strong> {draftWhy}</div>
+                        )}
+                        <label>Subject</label>
+                        <input value={edit.subject} onChange={(e) => setEdits({ ...edits, [m.id]: { ...edit, subject: e.target.value } })} />
+                        <label>Body — edit before sending</label>
+                        <textarea rows={11} value={edit.body} onChange={(e) => setEdits({ ...edits, [m.id]: { ...edit, body: e.target.value } })} />
+                        <div className="mbx-actions">
+                          <button
+                            className="gold"
+                            disabled={busy}
+                            onClick={() =>
+                              void run(
+                                () => api.post(`/transactions/${id}/messages/${m.id}/approve-and-send`, { subject: edit.subject, body: edit.body }),
+                                "Approved & sent",
+                              )
+                            }
+                          >
+                            <Icon name="check" size={14} /> Approve &amp; Send
+                          </button>
+                          <span className="mbx-guard"><Icon name="lock" size={12} /> Nothing sends without your tap</span>
+                        </div>
+                      </>
+                    ) : m.status === "approved" ? (
+                      <>
+                        <div className="mbx-subject">{m.subject}</div>
+                        <div className="mbx-bodyview">{m.body}</div>
+                        <p className="muted" style={{ fontSize: "0.82rem" }}>
+                          Approved, but the send didn’t go through (sending disabled, recipient not allow-listed, or a provider error).
+                        </p>
+                        <div className="mbx-actions">
+                          <button
+                            className="gold"
+                            disabled={busy}
+                            onClick={() => void run(() => api.post(`/transactions/${id}/messages/${m.id}/approve-and-send`), "Retried")}
+                          >
+                            Retry send
+                          </button>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div className="mbx-subject">{m.subject}</div>
+                        <div className="mbx-bodyview">{m.body}</div>
+                        <div className="mbx-sentnote"><Icon name="check" size={13} /> Sent {m.sent_at ? fmtDateTime(m.sent_at) : ""}</div>
+                      </>
+                    )}
+                  </div>
+                );
+              })()
+            )}
           </div>
-        ))}
-        {sent.map((m) => (
-          <div key={m.id} className="mailcard">
-            <div className="mailcard-head">
-              <span className="mailcard-to">{m.subject}</span>
-              <span className="badge sent">✓ sent · {fmtDateTime(m.sent_at)}</span>
-            </div>
-          </div>
-        ))}
+        </div>
       </div>
 
               </>
