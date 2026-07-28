@@ -786,6 +786,42 @@ class InMemoryRepo:
                 ),
             },
         )
+        # Cross-document inconsistency: flag material conflicts vs confirmed fields.
+        if payload.document_type == "purchase_agreement" and payload.extracted_fields:
+            from app.master.inconsistency import (
+                CRITICAL_FIELDS,
+                MATERIAL_FIELDS,
+                find_field_conflicts,
+            )
+
+            existing_confirmed = {
+                f["name"]: f["value"]
+                for f in self.extracted_fields
+                if f["transaction_id"] == transaction_id
+                and f.get("confirmed")
+                and f["name"] in MATERIAL_FIELDS
+            }
+            incoming = {f.name: f.value for f in payload.extracted_fields}
+            for name, old, new in find_field_conflicts(existing_confirmed, incoming):
+                self.risk_flags.append(
+                    {
+                        "id": str(uuid.uuid4()),
+                        "transaction_id": transaction_id,
+                        "severity": "critical" if name in CRITICAL_FIELDS else "warning",
+                        "description": (
+                            f'The new contract shows {name.replace("_", " ")} = "{new}", but '
+                            f'the confirmed value is "{old}". Reconcile before the timeline relies on it.'
+                        ),
+                        "generated_by": "master",
+                        "case_key": "document_inconsistency",
+                        "resolved": False,
+                    }
+                )
+                self._audit(
+                    transaction_id=transaction_id, actor=actor, action="risk_flag.inconsistency",
+                    entity_type="risk_flag", entity_id=None, details={"field": name, "old": old, "new": new},
+                )
+
         # A re-uploaded PA supersedes the prior one (cascade its payload+fields).
         if payload.document_type == "purchase_agreement":
             old_docs = [

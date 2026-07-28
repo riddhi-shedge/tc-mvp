@@ -17,6 +17,7 @@ from app.contracts.compliance import ComplianceResult
 from app.contracts.fields import DEADLINE_DRIVING
 from app.contracts.payload import Payload
 from app.master.deal_tasks import derive_tasks
+from app.master.inconsistency import CRITICAL_FIELDS, MATERIAL_FIELDS, find_field_conflicts
 from app.master.parties import derive_parties, party_key, tier_for
 
 
@@ -718,6 +719,45 @@ class SupabaseRepo:
                     ),
                 },
             )
+            # Cross-document inconsistency (§2.8): before a re-uploaded PA
+            # supersedes the prior one, compare its values against what the TC
+            # already confirmed and raise a flag for each material conflict so a
+            # changed date/price can't slip in silently.
+            if payload.document_type == "purchase_agreement" and payload.extracted_fields:
+                existing_confirmed = {
+                    r["name"]: r["value"]
+                    for r in self._db.table("extracted_fields")
+                    .select("name, value")
+                    .eq("transaction_id", transaction_id)
+                    .eq("confirmed", True)
+                    .execute()
+                    .data
+                    if r["name"] in MATERIAL_FIELDS
+                }
+                incoming = {f.name: f.value for f in payload.extracted_fields}
+                for name, old, new in find_field_conflicts(existing_confirmed, incoming):
+                    self._db.table("risk_flags").insert(
+                        {
+                            "transaction_id": transaction_id,
+                            "severity": "critical" if name in CRITICAL_FIELDS else "warning",
+                            "description": (
+                                f'The new contract shows {name.replace("_", " ")} = "{new}", but '
+                                f'the confirmed value is "{old}". Reconcile before the timeline relies on it.'
+                            ),
+                            "generated_by": "master",
+                            "case_key": "document_inconsistency",
+                            "resolved": False,
+                        }
+                    ).execute()
+                    self._audit(
+                        transaction_id=transaction_id,
+                        actor=actor,
+                        action="risk_flag.inconsistency",
+                        entity_type="risk_flag",
+                        entity_id=None,
+                        details={"field": name, "old": old, "new": new},
+                    )
+
             # A re-uploaded purchase agreement SUPERSEDES the prior one — there is
             # exactly one PA per deal, so older PA documents (and their cascaded
             # payloads + fields) are removed rather than piling up as duplicates.
