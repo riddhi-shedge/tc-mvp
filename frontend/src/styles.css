@@ -1035,3 +1035,51 @@ button.secondary.sm { padding: 0.28rem 0.55rem; font-size: 0.76rem; }
 .orb-legend i { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
 @media (prefers-reduced-motion: reduce) { .orb-node { transition: none; } }
 @media (max-width: 720px) { .orb-stage { height: 520px; } }
+
+/* ---- Info-rail + focus layout ------------------------------------------ */
+.il { display: grid; grid-template-columns: minmax(300px, 340px) minmax(0, 1fr); gap: 1.1rem; align-items: start; }
+.il-rail { display: flex; flex-direction: column; gap: 1.1rem; position: sticky; top: 58px; }
+.il-rail > .card { margin-bottom: 0; }
+.il-main { display: flex; flex-direction: column; gap: 1.1rem; min-width: 0; }
+.il-main > .card { margin-bottom: 0; }
+@media (max-width: 960px) { .il { grid-template-columns: 1fr; } .il-rail { position: static; } }
+
+/* Deal facts (rail) */
+.il-facts { display: flex; align-items: center; gap: 1rem; }
+.ring-wrap-sm { flex: 0 0 auto; transform: scale(0.82); transform-origin: left center; }
+.facts { flex: 1; display: flex; flex-direction: column; gap: 0.35rem; min-width: 0; }
+.fact { display: flex; align-items: baseline; justify-content: space-between; gap: 0.5rem; font-size: 0.84rem;
+  color: var(--muted); padding: 0.18rem 0; border-bottom: 1px solid var(--line-2); }
+.fact:last-child { border-bottom: 0; }
+.fact b { color: var(--ink); font-weight: 650; font-variant-numeric: tabular-nums; }
+.fact b.hot { color: var(--red-600); }
+
+/* Parties compact list (rail) */
+.il-parties .pv-head { padding: 0 0 0.5rem; }
+.il-parties .pv-head h2 { font-size: 0.95rem; }
+.il-parties .pv-head .sm { margin-left: auto; padding: 3px 10px; font-size: 12px; }
+.pgroup-c { margin-bottom: 0.5rem; }
+.pgroup-c .pgroup-label { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted);
+  font-weight: 600; margin: 0.5rem 0 0.3rem; }
+.prow { display: flex; align-items: center; gap: 0.6rem; padding: 0.4rem 0.5rem; border-radius: var(--r-sm);
+  cursor: pointer; border: 1px solid transparent; transition: background 0.12s, border-color 0.12s, box-shadow 0.12s; }
+.prow:hover { background: var(--hover); }
+.prow.droppable { border-style: dashed; border-color: var(--gold-300); }
+.prow.drop-on { border-style: solid; border-color: var(--gold-500); background: var(--gold-100); box-shadow: 0 0 0 2px var(--gold-100); }
+.prow-ava { width: 30px; height: 30px; border-radius: 50%; flex: 0 0 auto; display: grid; place-items: center;
+  color: #fff; font-weight: 700; font-size: 11px; }
+.prow-name { font-size: 0.86rem; font-weight: 600; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.prow-role { font-size: 0.72rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.prow-badge { flex: 0 0 auto; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 999px; background: var(--red-100);
+  color: var(--red-700); font-size: 11px; font-weight: 700; display: grid; place-items: center; }
+.prow-add { display: flex; align-items: center; gap: 0.4rem; width: 100%; text-align: left; background: transparent;
+  color: var(--muted); border: 1px dashed var(--line); border-radius: var(--r-sm); padding: 0.38rem 0.55rem;
+  font-size: 0.8rem; font-weight: 500; box-shadow: none; margin-top: 0.2rem; }
+.prow-add:hover { border-color: var(--gold-300); color: var(--gold-700); background: var(--gold-100); }
+
+/* Orbit modal (popped from the rail) */
+.orbit-modal-back { position: fixed; inset: 0; z-index: 58; display: grid; place-items: center;
+  background: color-mix(in srgb, var(--ink) 30%, transparent); backdrop-filter: blur(4px); animation: uplo-fade 0.2s ease; }
+.orbit-modal { width: min(880px, 94vw); background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg);
+  box-shadow: var(--shadow-lg); overflow: hidden; animation: uplo-pop 0.28s cubic-bezier(0.16, 1, 0.3, 1); }
+.orbit-modal .pv-head { padding: 1.1rem 1.3rem 0.2rem; }

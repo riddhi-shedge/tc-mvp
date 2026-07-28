@@ -20,7 +20,6 @@ import { PartyOrbit } from "./PartyOrbit";
 import { motion } from "framer-motion";
 
 const listStagger = { visible: { transition: { staggerChildren: 0.055 } } };
-const itemUp = { hidden: { opacity: 0, y: 14 }, visible: { opacity: 1, y: 0 } };
 const itemIn = { hidden: { opacity: 0, x: -10 }, visible: { opacity: 1, x: 0 } };
 
 const AVATAR_COLORS = ["#2c4a7c", "#9a6b1e", "#2f7d5b", "#a3352f", "#3a5e97", "#b3842f"];
@@ -88,9 +87,7 @@ export function DealDashboard({
   const [dragTaskId, setDragTaskId] = useState<string | null>(null);
   const [dropParty, setDropParty] = useState<string | null>(null);
   const [peek, setPeek] = useState<DashboardPartyView | null>(null);
-  const [pview, setPview] = useState<"orbit" | "list">(
-    () => (typeof window !== "undefined" && window.innerWidth < 720 ? "list" : "orbit"),
-  );
+  const [orbitOpen, setOrbitOpen] = useState(false);
   // Party editing / adding: which party id is open for edit, or which role is
   // being added, plus the in-progress contact fields.
   const [editing, setEditing] = useState<string | null>(null);
@@ -142,7 +139,6 @@ export function DealDashboard({
   const totalTasks = state.tasks.length;
   const completion = totalTasks ? doneTasks / totalTasks : 0;
   const p = dash.party_progress;
-  const buyers = Math.max(p.buyers_total, 1);
   const unassigned: Task[] = state.tasks.filter((t) => t.assigned_party_id === null);
   const parties: DealParty[] = state.parties;
 
@@ -196,125 +192,32 @@ export function DealDashboard({
       `Assigned to ${pt.name ?? PARTY_ROLE_LABEL[pt.role] ?? pt.role}`,
     );
   }
-  function partyCard(pv: DashboardPartyView) {
+  // Compact party row for the info-rail (avatar · name · role · open-task badge).
+  // Doubles as a drop target for drag-to-assign; click opens the peek popover.
+  function partyRowCompact(pv: DashboardPartyView) {
     const pt = pv.party;
     const dropping = dragTaskId !== null;
     return (
-      <motion.div
+      <div
         key={pt.id}
-        className={`party-card ${dropping ? "droppable" : ""} ${dropParty === pt.id ? "drop-on" : ""}`}
-        variants={itemUp}
+        className={`prow ${dropping ? "droppable" : ""} ${dropParty === pt.id ? "drop-on" : ""}`}
+        onClick={() => setPeek(pv)}
+        title="View details"
         onDragOver={dropping ? (e) => { e.preventDefault(); setDropParty(pt.id); } : undefined}
         onDragLeave={() => setDropParty((d) => (d === pt.id ? null : d))}
         onDrop={
           dropping
-            ? (e) => {
-                e.preventDefault();
-                if (dragTaskId) assignTo(dragTaskId, pt);
-                setDragTaskId(null);
-                setDropParty(null);
-              }
+            ? (e) => { e.preventDefault(); if (dragTaskId) assignTo(dragTaskId, pt); setDragTaskId(null); setDropParty(null); }
             : undefined
         }
       >
-        <div className="party-top" onClick={() => setPeek(pv)} title="View details">
-          <div className="avatar" style={{ background: avatarColor(pt.role) }}>{initials(pt.name, pt.role)}</div>
-          <div style={{ minWidth: 0 }}>
-            <div className="party-name">{pt.name ?? "(unnamed)"}</div>
-            <div className="party-role">{PARTY_ROLE_LABEL[pt.role] ?? pt.role.replace(/_/g, " ")}</div>
-          </div>
+        <div className="prow-ava" style={{ background: avatarColor(pt.role) }}>{initials(pt.name, pt.role)}</div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div className="prow-name">{pt.name ?? "(unnamed)"}</div>
+          <div className="prow-role">{PARTY_ROLE_LABEL[pt.role] ?? pt.role.replace(/_/g, " ")}</div>
         </div>
-        <div className="party-contact">
-          {pt.company && <div><Icon name="bank" size={13} /> {pt.company}</div>}
-          <div
-            className={pt.email ? "" : "faint clickable"}
-            onClick={pt.email ? undefined : () => startEdit(pt)}
-          >
-            <Icon name="mail" size={13} /> {pt.email || "add email"}
-          </div>
-          <div
-            className={pt.phone ? "" : "faint clickable"}
-            onClick={pt.phone ? undefined : () => startEdit(pt)}
-          >
-            <Icon name="phone" size={13} /> {pt.phone || "add phone"}
-          </div>
-        </div>
-        <div className="party-meta">
-          <span className="badge navy">{pv.open_tasks.length} open</span>
-          <span className="badge ok">{pv.done_tasks.length} done</span>
-          {pv.last_message_status && <span className="badge gold"><Icon name="mail" size={11} /> {pv.last_message_status}</span>}
-        </div>
-        <div className="party-actions">
-          <button className="secondary sm" disabled={busy} onClick={() => startEdit(pt)}>Edit</button>
-          {isInvitable(pt) && (
-            <button
-              className="secondary sm"
-              disabled={busy}
-              onClick={() =>
-                void run(async () => {
-                  const r = await api.post<PartyAccessToken>(
-                    `/transactions/${id}/parties/${pt.id}/access-token`,
-                  );
-                  const link = `${window.location.origin}${window.location.pathname}#invite=${encodeURIComponent(r.access_token)}`;
-                  setTokens((t) => ({ ...t, [pt.id]: link }));
-                }, "Invite link ready")
-              }
-            >
-              <Icon name="key" size={13} /> Invite
-            </button>
-          )}
-          {isInvitable(pt) && pt.email && (
-            <button
-              className="secondary sm"
-              disabled={busy}
-              onClick={() =>
-                void run(async () => {
-                  const r = await api.post<{ sent: boolean; to?: string; link?: string; detail?: string }>(
-                    `/transactions/${id}/parties/${pt.id}/invite-email`,
-                    { base_url: `${window.location.origin}${window.location.pathname}` },
-                  );
-                  if (r.sent) {
-                    toast(`Invite emailed to ${r.to}`);
-                  } else {
-                    if (r.link) await navigator.clipboard?.writeText(r.link);
-                    toast(`${r.detail ?? "Email sending isn't enabled yet"} — link copied instead`);
-                  }
-                })
-              }
-            >
-              <Icon name="mail" size={13} /> Email invite
-            </button>
-          )}
-        </div>
-        {editing === pt.id &&
-          contactForm(() => {
-            void run(async () => {
-              await api.patch(`/transactions/${id}/parties/${pt.id}`, contactPayload());
-              cancelForm();
-            }, "Party updated");
-          }, "Save")}
-        {tokens[pt.id] && (
-          <div className="token-box">
-            <div className="between" style={{ marginBottom: "0.4rem" }}>
-              <span className="muted" style={{ fontSize: "0.76rem" }}>
-                {isCollaborator(pt)
-                  ? "Read-only view of this deal — no other party's private info."
-                  : "Scoped to their own task only — enforced by the database."}
-              </span>
-              <button
-                className="secondary sm"
-                onClick={() => {
-                  void navigator.clipboard?.writeText(tokens[pt.id]);
-                  toast("Link copied");
-                }}
-              >
-                Copy
-              </button>
-            </div>
-            <textarea readOnly rows={2} value={tokens[pt.id]} onFocus={(e) => e.target.select()} />
-          </div>
-        )}
-      </motion.div>
+        {pv.open_tasks.length > 0 && <span className="prow-badge">{pv.open_tasks.length}</span>}
+      </div>
     );
   }
 
@@ -329,46 +232,66 @@ export function DealDashboard({
 
   return (
     <>
-      {/* ---- Bento overview ---- */}
-      <div className="bento">
-        <div className="card lift b-2">
-          <h3>Deal health</h3>
-          <div className="ring-wrap">
-            <Ring value={completion}>
-              <div>
-                <div className="rc-num">{Math.round(completion * 100)}%</div>
-                <div className="rc-sub">tasks done</div>
-              </div>
-            </Ring>
-            <div className="stack" style={{ gap: "0.35rem" }}>
-              <div><strong>{doneTasks}</strong> <span className="muted">of {totalTasks} tasks complete</span></div>
-              <div><strong>{state.deadlines.length}</strong> <span className="muted">deadlines tracked</span></div>
-              <div><strong>{dash.risk_alerts.length}</strong> <span className="muted">open risk alerts</span></div>
+      <div className="il">
+        <aside className="il-rail">
+          {/* ---- Deal facts (always-visible reference) ---- */}
+          <div className="card il-facts">
+            <div className="ring-wrap-sm">
+              <Ring value={completion}>
+                <div>
+                  <div className="rc-num">{Math.round(completion * 100)}%</div>
+                  <div className="rc-sub">done</div>
+                </div>
+              </Ring>
+            </div>
+            <div className="facts">
+              <div className="fact"><span>Tasks</span><b>{doneTasks}/{totalTasks}</b></div>
+              <div className="fact"><span>Deadlines</span><b>{state.deadlines.length}</b></div>
+              <div className="fact"><span>Open risks</span><b className={dash.risk_alerts.length ? "hot" : ""}>{dash.risk_alerts.length}</b></div>
+              <div className="fact"><span>Proof of funds</span><b>{p.proof_of_funds_confirmed}/{p.buyers_total}</b></div>
+              <div className="fact"><span>Disclosures</span><b>{p.disclosures_confirmed}</b></div>
             </div>
           </div>
-        </div>
 
-        <div className="card lift stat-tile">
-          <div className="st-label">Proof of funds</div>
-          <div className="st-value">
-            {p.proof_of_funds_confirmed}<span className="st-of"> / {p.buyers_total}</span>
+          {/* ---- Parties (compact roster; pop out to the orbit) ---- */}
+          <div className="card il-parties">
+            <div className="pv-head">
+              <h2><Icon name="users" size={16} /> Parties</h2>
+              <button className="secondary sm" onClick={() => setOrbitOpen(true)} title="Open the orbital view">◎ Orbit</button>
+            </div>
+            {PARTY_ROSTER.map((grp) => {
+              const groupRoles = grp.roles.map((r) => r.role);
+              const cards = dash.parties.filter((v) => groupRoles.includes(v.party.role));
+              const missing = grp.roles.filter((r) => !dash.parties.some((v) => v.party.role === r.role));
+              return (
+                <div key={grp.group} className="pgroup-c">
+                  <div className="pgroup-label">{grp.group}</div>
+                  {cards.map((pv) => partyRowCompact(pv))}
+                  {missing.map((r) => (
+                    <button key={r.role} className="prow-add" disabled={busy} onClick={() => startAdd(r.role)}>
+                      ＋ {r.label}
+                    </button>
+                  ))}
+                  {adding !== null && groupRoles.includes(adding) &&
+                    contactForm(() => {
+                      void run(async () => {
+                        await api.post(`/transactions/${id}/parties`, { role: adding, ...contactPayload() });
+                        cancelForm();
+                      }, `${PARTY_ROLE_LABEL[adding] ?? adding} added`);
+                    }, "Add party")}
+                </div>
+              );
+            })}
+            {otherParties.length > 0 && (
+              <div className="pgroup-c">
+                <div className="pgroup-label">Other</div>
+                {otherParties.map((pv) => partyRowCompact(pv))}
+              </div>
+            )}
           </div>
-          <div className="prog-seg">
-            {Array.from({ length: buyers }).map((_, i) => (
-              <span key={i} className={i < p.proof_of_funds_confirmed ? "on" : ""} />
-            ))}
-          </div>
-        </div>
+        </aside>
 
-        <div className="card lift stat-tile">
-          <div className="st-label">Disclosures</div>
-          <div className="st-value">{p.disclosures_confirmed}</div>
-          <div className="muted">confirmed on file</div>
-        </div>
-      </div>
-
-      <div className="dgrid">
-      <aside className="dgrid-rail">
+        <div className="il-main">
       {/* ---- Risk attention feed ---- */}
       <div className="card">
         <h2><Icon name="warning" size={17} /> Attention</h2>
@@ -391,8 +314,6 @@ export function DealDashboard({
         </motion.div>
       </div>
 
-      </aside>
-      <div className="dgrid-main">
       {/* ---- Tasks (compliance + the TC's own) ---- */}
       <div className="card">
         <div className="between" style={{ marginBottom: "0.6rem" }}>
@@ -582,22 +503,17 @@ export function DealDashboard({
       </div>
       </div>
 
-      {/* ---- Parties: orbital deal system (full width) ---- */}
-      <div className="card parties-orbit">
-        <div className="pv-head">
-          <h2><Icon name="users" size={17} /> Parties</h2>
-          <div className="pv-toggle">
-            <button className={pview === "orbit" ? "on" : ""} onClick={() => setPview("orbit")}>Orbit</button>
-            <button className={pview === "list" ? "on" : ""} onClick={() => setPview("list")}>List</button>
-          </div>
-        </div>
-
-        {pview === "orbit" ? (
-          <>
+      {orbitOpen && (
+        <div className="orbit-modal-back" onClick={() => setOrbitOpen(false)}>
+          <div className="orbit-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="pv-head">
+              <h2><Icon name="users" size={17} /> Parties · orbit</h2>
+              <button className="peek-x" onClick={() => setOrbitOpen(false)} title="Close"><Icon name="x" size={15} /></button>
+            </div>
             <PartyOrbit
               views={dash.parties}
-              onSelect={(pv) => setPeek(pv)}
-              onAddRole={(role) => { setPview("list"); startAdd(role); }}
+              onSelect={(pv) => { setOrbitOpen(false); setPeek(pv); }}
+              onAddRole={(role) => { setOrbitOpen(false); startAdd(role); }}
             />
             <div className="orb-legend">
               <span><i style={{ background: "#5257ea" }} /> Buyer</span>
@@ -607,61 +523,9 @@ export function DealDashboard({
               <span><i style={{ background: "#8457d6" }} /> Inspection</span>
               <span style={{ marginLeft: "auto" }}>Hover to pause · click a person · badge = open tasks</span>
             </div>
-          </>
-        ) : (
-          <div style={{ padding: "0.2rem 1.3rem 1.3rem" }}>
-            {PARTY_ROSTER.map((grp) => {
-              const groupRoles = grp.roles.map((r) => r.role);
-              const cards = dash.parties.filter((v) => groupRoles.includes(v.party.role));
-              return (
-                <div key={grp.group} className="pgroup">
-                  <div className="pgroup-label">{grp.group}</div>
-                  {cards.length > 0 && (
-                    <motion.div className="roster" initial="hidden" animate="visible" variants={listStagger}>
-                      {cards.map((pv) => partyCard(pv))}
-                    </motion.div>
-                  )}
-                  <div className="pslots">
-                    {grp.roles.map((r) => {
-                      const has = dash.parties.some((v) => v.party.role === r.role);
-                      return (
-                        <button
-                          key={r.role}
-                          className={`pslot ${has ? "" : "empty"}`}
-                          disabled={busy}
-                          onClick={() => startAdd(r.role)}
-                        >
-                          ＋ {has ? `add ${r.label.toLowerCase()}` : r.label}
-                        </button>
-                      );
-                    })}
-                  </div>
-                  {adding !== null &&
-                    groupRoles.includes(adding) &&
-                    contactForm(() => {
-                      void run(async () => {
-                        await api.post(`/transactions/${id}/parties`, {
-                          role: adding,
-                          ...contactPayload(),
-                        });
-                        cancelForm();
-                      }, `${PARTY_ROLE_LABEL[adding] ?? adding} added`);
-                    }, "Add party")}
-                </div>
-              );
-            })}
-
-            {otherParties.length > 0 && (
-              <div className="pgroup">
-                <div className="pgroup-label">Other</div>
-                <motion.div className="roster" initial="hidden" animate="visible" variants={listStagger}>
-                  {otherParties.map((pv) => partyCard(pv))}
-                </motion.div>
-              </div>
-            )}
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
       {peek && (
         <div className="peek-backdrop" onClick={() => setPeek(null)}>
@@ -683,28 +547,94 @@ export function DealDashboard({
               <span><Icon name="phone" size={13} /> {peek.party.phone || "no phone on file"}</span>
             </div>
 
-            <div className="peek-sec">Assigned tasks · {peek.open_tasks.length} open</div>
-            {peek.open_tasks.length === 0 && peek.done_tasks.length === 0 ? (
-              <div className="muted" style={{ fontSize: "0.85rem" }}>
-                Nothing assigned yet — drag a task onto this person's card to assign it.
-              </div>
+            {editing === peek.party.id ? (
+              contactForm(() => {
+                void run(async () => {
+                  await api.patch(`/transactions/${id}/parties/${peek.party.id}`, contactPayload());
+                  cancelForm();
+                }, "Party updated");
+              }, "Save")
             ) : (
               <>
-                {peek.open_tasks.map((t) => (
-                  <div key={t.id} className="peek-task"><Icon name="clipboard" size={13} /> {t.title}</div>
-                ))}
-                {peek.done_tasks.map((t) => (
-                  <div key={t.id} className="peek-task done" style={{ opacity: 0.6 }}>
-                    <Icon name="checkCircle" size={13} /> {t.title}
+                <div className="peek-sec">Assigned tasks · {peek.open_tasks.length} open</div>
+                {peek.open_tasks.length === 0 && peek.done_tasks.length === 0 ? (
+                  <div className="muted" style={{ fontSize: "0.85rem" }}>
+                    Nothing assigned yet — drag a task onto this person, or use “Needs an owner”.
                   </div>
-                ))}
+                ) : (
+                  <>
+                    {peek.open_tasks.map((t) => (
+                      <div key={t.id} className="peek-task"><Icon name="clipboard" size={13} /> {t.title}</div>
+                    ))}
+                    {peek.done_tasks.map((t) => (
+                      <div key={t.id} className="peek-task done" style={{ opacity: 0.6 }}>
+                        <Icon name="checkCircle" size={13} /> {t.title}
+                      </div>
+                    ))}
+                  </>
+                )}
+
+                <div className="pform-actions" style={{ marginTop: "1.1rem", flexWrap: "wrap" }}>
+                  <button className="secondary" disabled={busy} onClick={() => startEdit(peek.party)}>Edit contact</button>
+                  {isInvitable(peek.party) && (
+                    <button
+                      className="secondary"
+                      disabled={busy}
+                      onClick={() =>
+                        void run(async () => {
+                          const r = await api.post<PartyAccessToken>(`/transactions/${id}/parties/${peek.party.id}/access-token`);
+                          const link = `${window.location.origin}${window.location.pathname}#invite=${encodeURIComponent(r.access_token)}`;
+                          setTokens((t) => ({ ...t, [peek.party.id]: link }));
+                        }, "Invite link ready")
+                      }
+                    >
+                      <Icon name="key" size={13} /> Invite link
+                    </button>
+                  )}
+                  {isInvitable(peek.party) && peek.party.email && (
+                    <button
+                      className="secondary"
+                      disabled={busy}
+                      onClick={() =>
+                        void run(async () => {
+                          const r = await api.post<{ sent: boolean; to?: string; link?: string; detail?: string }>(
+                            `/transactions/${id}/parties/${peek.party.id}/invite-email`,
+                            { base_url: `${window.location.origin}${window.location.pathname}` },
+                          );
+                          if (r.sent) toast(`Invite emailed to ${r.to}`);
+                          else {
+                            if (r.link) await navigator.clipboard?.writeText(r.link);
+                            toast(`${r.detail ?? "Email sending isn't enabled yet"} — link copied instead`);
+                          }
+                        })
+                      }
+                    >
+                      <Icon name="mail" size={13} /> Email invite
+                    </button>
+                  )}
+                  <button className="secondary" onClick={() => setPeek(null)}>Close</button>
+                </div>
+
+                {tokens[peek.party.id] && (
+                  <div className="token-box">
+                    <div className="between" style={{ marginBottom: "0.4rem" }}>
+                      <span className="muted" style={{ fontSize: "0.76rem" }}>
+                        {isCollaborator(peek.party)
+                          ? "Read-only view of this deal — no other party's private info."
+                          : "Scoped to their own task only — enforced by the database."}
+                      </span>
+                      <button
+                        className="secondary sm"
+                        onClick={() => { void navigator.clipboard?.writeText(tokens[peek.party.id]); toast("Link copied"); }}
+                      >
+                        Copy
+                      </button>
+                    </div>
+                    <textarea readOnly rows={2} value={tokens[peek.party.id]} onFocus={(e) => e.target.select()} />
+                  </div>
+                )}
               </>
             )}
-
-            <div className="pform-actions" style={{ marginTop: "1.1rem" }}>
-              <button className="secondary" onClick={() => { startEdit(peek.party); setPeek(null); }}>Edit contact</button>
-              <button className="secondary" onClick={() => setPeek(null)}>Close</button>
-            </div>
           </div>
         </div>
       )}
