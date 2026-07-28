@@ -124,6 +124,8 @@ VERIFIED_RULESET: RuleSet | None = RuleSet(
         "closing_near_open_tasks": 5,
         "inspection_not_scheduled": 3,
         "appraisal_not_ordered": 3,
+        "insurance_info_pending": 5,
+        "seller_forms_incomplete": 5,
     },
     # Backward windows + statutory clocks + loan/insurance mechanic take their
     # verified defaults (A7: DCE 3/3; walk-through 5; F1/F3: 3 personal / 5 mail).
@@ -176,5 +178,7 @@ def synthetic_ruleset() -> RuleSet:
             "closing_near_open_tasks": 7,
             "inspection_not_scheduled": 3,
             "appraisal_not_ordered": 3,
+            "insurance_info_pending": 7,
+            "seller_forms_incomplete": 5,
         },
     )

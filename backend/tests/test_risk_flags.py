@@ -130,3 +130,36 @@ def test_descriptions_are_specific_with_dates():
     assert "Aug 11, 2026" in loan.description
     assert "5 days" in loan.description
     assert "is approaching." not in loan.description  # no longer generic
+
+
+def test_insurance_info_pending_within_lead():
+    # Insurance contingency 3 days out (lead 5), no insurance task done -> flags.
+    state = DealState(transaction_id="t", parties=[DealPartyState(role="escrow")])
+    dls = [_dl("insurance_contingency", date(2026, 7, 13))]
+    assert "insurance_info_pending" in _cases(state, dls, date(2026, 7, 10))
+
+
+def test_insurance_info_cleared_by_done_task():
+    state = DealState(
+        transaction_id="t",
+        parties=[DealPartyState(role="escrow")],
+        tasks=[DealTaskState(title="Bind homeowner's insurance", status="done")],
+    )
+    dls = [_dl("insurance_contingency", date(2026, 7, 13))]
+    assert "insurance_info_pending" not in _cases(state, dls, date(2026, 7, 10))
+
+
+def test_seller_forms_incomplete_when_disclosures_approaching_and_unconfirmed():
+    state = DealState(transaction_id="t", parties=[DealPartyState(role="escrow")])
+    dls = [_dl("disclosure_delivery", date(2026, 7, 13))]  # 3 days out, lead 5
+    assert "seller_forms_incomplete" in _cases(state, dls, date(2026, 7, 10))
+
+
+def test_seller_forms_cleared_by_confirmed_disclosure():
+    state = DealState(
+        transaction_id="t",
+        parties=[DealPartyState(role="escrow")],
+        documents=[DealDocState(doc_type="disclosure", status="confirmed")],
+    )
+    dls = [_dl("disclosure_delivery", date(2026, 7, 13))]
+    assert "seller_forms_incomplete" not in _cases(state, dls, date(2026, 7, 10))

@@ -104,6 +104,26 @@ def detect_risk_flags(
             )
         )
 
+    # 3b. Buyer hasn't provided insurance info — insurance contingency approaching
+    #     and no insurance task done (a lender typically requires the binder).
+    ins = _deadline(deadlines, "insurance_contingency")
+    if (
+        ins is not None
+        and 0 <= (ins.due_date - as_of).days <= _lead(rules, "insurance_info_pending")
+        and not _task_done(state, "insurance")
+    ):
+        flags.append(
+            RiskFlag(
+                case="insurance_info_pending",
+                description=(
+                    f"The buyer's homeowner's insurance isn't confirmed and the insurance "
+                    f"contingency ends {_fmt(ins.due_date)} ({_days_phrase(ins.due_date, as_of)}). "
+                    "Ask the buyer for their insurance binder."
+                ),
+                deadline_key="insurance_contingency",
+            )
+        )
+
     # 4. Earnest money not confirmed — deadline passed, no confirming task done.
     emd = _deadline(deadlines, "emd")
     if emd is not None and emd.due_date <= as_of and not _task_done(state, "earnest"):
@@ -127,6 +147,25 @@ def detect_risk_flags(
                 description=(
                     f"Seller disclosures were due {_fmt(disc.due_date)} and none are "
                     "confirmed delivered."
+                ),
+                deadline_key="disclosure_delivery",
+            )
+        )
+
+    # 5b. Seller forms incomplete — disclosure delivery APPROACHING (before the
+    #     deadline, so distinct from case 5 which fires after) and none confirmed.
+    if (
+        disc is not None
+        and 0 <= (disc.due_date - as_of).days <= _lead(rules, "seller_forms_incomplete")
+        and not _has_confirmed_doc(state, "disclosure")
+    ):
+        flags.append(
+            RiskFlag(
+                case="seller_forms_incomplete",
+                description=(
+                    f"Seller disclosures are due {_fmt(disc.due_date)} "
+                    f"({_days_phrase(disc.due_date, as_of)}) and none are confirmed delivered. "
+                    "Remind the listing agent to complete and deliver them."
                 ),
                 deadline_key="disclosure_delivery",
             )

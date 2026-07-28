@@ -41,6 +41,20 @@ _TEMPLATES: dict[str, tuple[str | None, str, str]] = {
         "Seller disclosures are not yet confirmed as reviewed. Please review and "
         "acknowledge the disclosure package.",
     ),
+    "insurance_info_pending": (
+        "buyer",
+        "Homeowner's insurance binder needed",
+        "Your homeowner's insurance isn't on file yet and the insurance contingency "
+        "is approaching. Please send your insurance binder so we can confirm coverage "
+        "before the deadline.",
+    ),
+    "seller_forms_incomplete": (
+        "listing_agent",
+        "Seller disclosures due soon",
+        "The seller disclosure package is due soon and isn't confirmed delivered yet. "
+        "Please complete and deliver the seller disclosures so the buyer's review "
+        "period can begin on time.",
+    ),
     "missing_escrow_contact": (
         None,
         "Escrow contact needed",
