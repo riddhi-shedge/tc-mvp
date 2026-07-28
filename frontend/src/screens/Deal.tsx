@@ -9,11 +9,20 @@ import { Icon, IconName } from "../lib/icons";
 
 function docIcon(t: string | null): IconName {
   const s = (t ?? "").toLowerCase();
-  if (s.includes("purchase")) return "home";
+  if (s.includes("purchase")) return "contract";
   if (s.includes("proof")) return "money";
   if (s.includes("disclosure")) return "clipboard";
   if (s.includes("inspection")) return "search";
   return "doc";
+}
+// A distinct tint per document type so the icon reads at a glance.
+function docTint(t: string | null): string {
+  const s = (t ?? "").toLowerCase();
+  if (s.includes("purchase")) return "#5257ea";
+  if (s.includes("proof")) return "#0e9488";
+  if (s.includes("disclosure")) return "#c07512";
+  if (s.includes("inspection")) return "#8457d6";
+  return "#5b6472";
 }
 function actionIcon(a: string): IconName {
   if (a.includes("created")) return "sparkle";
@@ -112,18 +121,24 @@ export function Deal({ id, onBack }: { id: string; onBack: () => void }) {
     }
   }
 
-  // Open a stored document in a new tab via a short-lived signed URL. Opened
-  // synchronously so the browser doesn't block the popup, then navigated once
-  // the URL resolves.
+  // Open a stored document in a new tab via a short-lived signed URL. Open one
+  // blank tab synchronously (so the popup isn't blocked) and keep the handle —
+  // NOT with `noopener`, which makes window.open return null and caused a second
+  // tab to open. Then navigate that same tab once the URL resolves.
   function openDoc(docId: string) {
-    const tab = window.open("", "_blank", "noopener");
+    const tab = window.open("about:blank", "_blank");
     void (async () => {
       try {
         const { url } = await api.get<{ url: string }>(
           `/transactions/${id}/documents/${docId}/signed-url`,
         );
-        if (tab) tab.location.href = url;
-        else window.open(url, "_blank", "noopener");
+        if (tab) {
+          tab.opener = null; // sever the opener for security, without a 2nd tab
+          tab.location.replace(url);
+        } else {
+          // Only reached if the synchronous open was popup-blocked.
+          window.open(url, "_blank", "noopener");
+        }
       } catch (e) {
         tab?.close();
         toast(e instanceof Error ? e.message : "Couldn't open document", { error: true });
@@ -383,7 +398,9 @@ export function Deal({ id, onBack }: { id: string; onBack: () => void }) {
                 onClick={() => openDoc(d.id)}
                 title="Open document in a new tab"
               >
-                <div className="doc-ic"><Icon name={docIcon(d.doc_type)} size={17} /></div>
+                <div className="doc-ic" style={{ background: `${docTint(d.doc_type)}1f`, color: docTint(d.doc_type) }}>
+                  <Icon name={docIcon(d.doc_type)} size={24} />
+                </div>
                 <div style={{ minWidth: 0, flex: 1 }}>
                   <div className="doc-name">{humanize(d.doc_type ?? "unknown")}</div>
                   {d.created_at && (

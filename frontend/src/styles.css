@@ -415,7 +415,7 @@ pre.mail { white-space: pre-wrap; background: var(--surface-2); border: 1px soli
 .doc-card:focus-visible { outline: none; box-shadow: var(--ring); }
 .doc-open { flex: 0 0 auto; color: var(--muted); opacity: 0; transition: opacity 0.14s, color 0.14s; }
 .doc-card:hover .doc-open { opacity: 1; color: var(--gold-600); }
-.doc-ic { width: 40px; height: 40px; border-radius: 11px; display: grid; place-items: center; font-size: 1.2rem; background: var(--cream-2); flex: 0 0 auto; }
+.doc-ic { width: 50px; height: 50px; border-radius: 13px; display: grid; place-items: center; background: var(--cream-2); flex: 0 0 auto; }
 .doc-name { font-weight: 600; color: var(--ink); font-size: 0.87rem; text-transform: capitalize; line-height: 1.2; }
 
 /* ---- Extraction field cards -------------------------------------------- */
