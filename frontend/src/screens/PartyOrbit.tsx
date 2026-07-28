@@ -1,5 +1,5 @@
-import { useEffect, useRef } from "react";
-import { DashboardPartyView, PARTY_ROLE_LABEL } from "../lib/api";
+import { useEffect, useRef, useState } from "react";
+import { DashboardPartyView, DealParty, PARTY_ROLE_LABEL } from "../lib/api";
 import { Icon } from "../lib/icons";
 
 // Role → tint (by tier), so the orbit reads at a glance.
@@ -47,13 +47,20 @@ export function PartyOrbit({
   views,
   onSelect,
   onAddRole,
+  dragging = false,
+  onDropTask,
 }: {
   views: DashboardPartyView[];
   onSelect: (pv: DashboardPartyView) => void;
   onAddRole: (role: string) => void;
+  dragging?: boolean;
+  onDropTask?: (party: DealParty) => void;
 }) {
   const stageRef = useRef<HTMLDivElement>(null);
   const paused = useRef(false);
+  const draggingRef = useRef(false);
+  draggingRef.current = dragging; // freeze the orbit while a task is being dragged
+  const [dropId, setDropId] = useState<string | null>(null);
 
   const tiers = TIERS.map((t) => seatsForTier(t, views));
 
@@ -91,7 +98,7 @@ export function PartyOrbit({
     function tick(t: number) {
       const dt = Math.min((t - last) / 1000, 0.05);
       last = t;
-      if (!paused.current) speeds.forEach((s, i) => (angles[i] += s * dt));
+      if (!paused.current && !draggingRef.current) speeds.forEach((s, i) => (angles[i] += s * dt));
       for (const el of nodeEls) {
         const ring = Number(el.dataset.ring);
         const base = Number(el.dataset.base);
@@ -126,14 +133,22 @@ export function PartyOrbit({
         seats.map((seat, i) => {
           const base = (360 / seats.length) * i;
           const open = seat.pv?.open_tasks.length ?? 0;
+          const canDrop = dragging && !!seat.pv;
           return (
             <div
               key={seat.key}
-              className={`orb-node ${seat.pv ? "" : "empty"}`}
+              className={`orb-node ${seat.pv ? "" : "empty"} ${canDrop ? "droppable" : ""} ${dropId === seat.key ? "dropon" : ""}`}
               data-ring={ring}
               data-base={base}
               onClick={() => (seat.pv ? onSelect(seat.pv) : onAddRole(seat.role))}
               title={seat.pv ? `${seat.pv.party.name ?? seat.label}` : `Add ${seat.label.toLowerCase()}`}
+              onDragOver={canDrop ? (e) => { e.preventDefault(); setDropId(seat.key); } : undefined}
+              onDragLeave={canDrop ? () => setDropId((d) => (d === seat.key ? null : d)) : undefined}
+              onDrop={
+                canDrop
+                  ? (e) => { e.preventDefault(); onDropTask?.(seat.pv!.party); setDropId(null); }
+                  : undefined
+              }
             >
               <div className="orb-ava" style={seat.pv ? { background: tint(seat.role) } : undefined}>
                 {seat.pv ? initials(seat.pv.party.name, seat.role) : <Icon name="plus" size={16} />}

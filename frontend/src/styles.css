@@ -1083,3 +1083,7 @@ button.secondary.sm { padding: 0.28rem 0.55rem; font-size: 0.76rem; }
 .orbit-modal { width: min(880px, 94vw); background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg);
   box-shadow: var(--shadow-lg); overflow: hidden; animation: uplo-pop 0.28s cubic-bezier(0.16, 1, 0.3, 1); }
 .orbit-modal .pv-head { padding: 1.1rem 1.3rem 0.2rem; }
+
+/* Orbit nodes as drop targets while dragging a task */
+.orb-node.droppable .orb-ava { border-style: dashed; border-color: var(--gold-500); cursor: copy; }
+.orb-node.dropon .orb-ava { transform: scale(1.22); border-style: solid; box-shadow: 0 0 0 4px var(--gold-100), var(--shadow-lg); }

@@ -10,7 +10,6 @@ import {
   isInvitable,
   PartyAccessToken,
   PARTY_ROLE_LABEL,
-  PARTY_ROSTER,
   Task,
 } from "../lib/api";
 import { Ring, toast } from "../lib/ui";
@@ -83,11 +82,9 @@ export function DealDashboard({
   const [busy, setBusy] = useState(false);
   const [tokens, setTokens] = useState<Record<string, string>>({});
   const [newTask, setNewTask] = useState("");
-  // Drag-to-assign + party peek popover (Pass 2 interactivity)
+  // Drag-to-assign (task → an orbiting party) + party peek popover
   const [dragTaskId, setDragTaskId] = useState<string | null>(null);
-  const [dropParty, setDropParty] = useState<string | null>(null);
   const [peek, setPeek] = useState<DashboardPartyView | null>(null);
-  const [orbitOpen, setOrbitOpen] = useState(false);
   // Party editing / adding: which party id is open for edit, or which role is
   // being added, plus the in-progress contact fields.
   const [editing, setEditing] = useState<string | null>(null);
@@ -142,9 +139,6 @@ export function DealDashboard({
   const unassigned: Task[] = state.tasks.filter((t) => t.assigned_party_id === null);
   const parties: DealParty[] = state.parties;
 
-  const rosterRoles = new Set(PARTY_ROSTER.flatMap((g) => g.roles.map((r) => r.role)));
-  const otherParties = dash.parties.filter((v) => !rosterRoles.has(v.party.role));
-
   function contactPayload(): Record<string, string> {
     const out: Record<string, string> = {};
     if (pForm.name.trim()) out.name = pForm.name.trim();
@@ -193,34 +187,6 @@ export function DealDashboard({
     );
   }
   // Compact party row for the info-rail (avatar · name · role · open-task badge).
-  // Doubles as a drop target for drag-to-assign; click opens the peek popover.
-  function partyRowCompact(pv: DashboardPartyView) {
-    const pt = pv.party;
-    const dropping = dragTaskId !== null;
-    return (
-      <div
-        key={pt.id}
-        className={`prow ${dropping ? "droppable" : ""} ${dropParty === pt.id ? "drop-on" : ""}`}
-        onClick={() => setPeek(pv)}
-        title="View details"
-        onDragOver={dropping ? (e) => { e.preventDefault(); setDropParty(pt.id); } : undefined}
-        onDragLeave={() => setDropParty((d) => (d === pt.id ? null : d))}
-        onDrop={
-          dropping
-            ? (e) => { e.preventDefault(); if (dragTaskId) assignTo(dragTaskId, pt); setDragTaskId(null); setDropParty(null); }
-            : undefined
-        }
-      >
-        <div className="prow-ava" style={{ background: avatarColor(pt.role) }}>{initials(pt.name, pt.role)}</div>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div className="prow-name">{pt.name ?? "(unnamed)"}</div>
-          <div className="prow-role">{PARTY_ROLE_LABEL[pt.role] ?? pt.role.replace(/_/g, " ")}</div>
-        </div>
-        {pv.open_tasks.length > 0 && <span className="prow-badge">{pv.open_tasks.length}</span>}
-      </div>
-    );
-  }
-
   function addTask() {
     const title = newTask.trim();
     if (!title) return;
@@ -253,42 +219,6 @@ export function DealDashboard({
             </div>
           </div>
 
-          {/* ---- Parties (compact roster; pop out to the orbit) ---- */}
-          <div className="card il-parties">
-            <div className="pv-head">
-              <h2><Icon name="users" size={16} /> Parties</h2>
-              <button className="secondary sm" onClick={() => setOrbitOpen(true)} title="Open the orbital view">◎ Orbit</button>
-            </div>
-            {PARTY_ROSTER.map((grp) => {
-              const groupRoles = grp.roles.map((r) => r.role);
-              const cards = dash.parties.filter((v) => groupRoles.includes(v.party.role));
-              const missing = grp.roles.filter((r) => !dash.parties.some((v) => v.party.role === r.role));
-              return (
-                <div key={grp.group} className="pgroup-c">
-                  <div className="pgroup-label">{grp.group}</div>
-                  {cards.map((pv) => partyRowCompact(pv))}
-                  {missing.map((r) => (
-                    <button key={r.role} className="prow-add" disabled={busy} onClick={() => startAdd(r.role)}>
-                      ＋ {r.label}
-                    </button>
-                  ))}
-                  {adding !== null && groupRoles.includes(adding) &&
-                    contactForm(() => {
-                      void run(async () => {
-                        await api.post(`/transactions/${id}/parties`, { role: adding, ...contactPayload() });
-                        cancelForm();
-                      }, `${PARTY_ROLE_LABEL[adding] ?? adding} added`);
-                    }, "Add party")}
-                </div>
-              );
-            })}
-            {otherParties.length > 0 && (
-              <div className="pgroup-c">
-                <div className="pgroup-label">Other</div>
-                {otherParties.map((pv) => partyRowCompact(pv))}
-              </div>
-            )}
-          </div>
         </aside>
 
         <div className="il-main">
@@ -372,9 +302,9 @@ export function DealDashboard({
                 className={`task-row ${done ? "done" : ""} ${dragTaskId === t.id ? "dragging" : ""}`}
                 draggable={!done && parties.length > 0}
                 onDragStart={() => setDragTaskId(t.id)}
-                onDragEnd={() => { setDragTaskId(null); setDropParty(null); }}
+                onDragEnd={() => setDragTaskId(null)}
               >
-                <span className="task-grip" title="Drag onto a party to assign">⠿</span>
+                <span className="task-grip" title="Drag onto a party in the orbit to assign">⠿</span>
                 <button
                   className="task-check"
                   disabled={busy}
@@ -503,29 +433,39 @@ export function DealDashboard({
       </div>
       </div>
 
-      {orbitOpen && (
-        <div className="orbit-modal-back" onClick={() => setOrbitOpen(false)}>
-          <div className="orbit-modal" onClick={(e) => e.stopPropagation()}>
-            <div className="pv-head">
-              <h2><Icon name="users" size={17} /> Parties · orbit</h2>
-              <button className="peek-x" onClick={() => setOrbitOpen(false)} title="Close"><Icon name="x" size={15} /></button>
-            </div>
-            <PartyOrbit
-              views={dash.parties}
-              onSelect={(pv) => { setOrbitOpen(false); setPeek(pv); }}
-              onAddRole={(role) => { setOrbitOpen(false); startAdd(role); }}
-            />
-            <div className="orb-legend">
-              <span><i style={{ background: "#5257ea" }} /> Buyer</span>
-              <span><i style={{ background: "#0e9488" }} /> Seller</span>
-              <span><i style={{ background: "#c07512" }} /> Agent</span>
-              <span><i style={{ background: "#5b6472" }} /> Escrow · Title · Lender</span>
-              <span><i style={{ background: "#8457d6" }} /> Inspection</span>
-              <span style={{ marginLeft: "auto" }}>Hover to pause · click a person · badge = open tasks</span>
-            </div>
-          </div>
+      {/* ---- Parties · orbital deal system (always on, full width) ---- */}
+      <div className="card parties-orbit">
+        <div className="pv-head" style={{ padding: "1.15rem 1.3rem 0.2rem" }}>
+          <h2><Icon name="users" size={17} /> Parties</h2>
+          <span className="muted" style={{ marginLeft: "auto", fontSize: "0.8rem" }}>
+            {dragTaskId ? "Drop the task on a person to assign it" : "Hover to pause · click a person · drag a task here · badge = open tasks"}
+          </span>
         </div>
-      )}
+        <PartyOrbit
+          views={dash.parties}
+          onSelect={(pv) => setPeek(pv)}
+          onAddRole={(role) => startAdd(role)}
+          dragging={dragTaskId !== null}
+          onDropTask={(party) => { if (dragTaskId) assignTo(dragTaskId, party); setDragTaskId(null); }}
+        />
+        <div className="orb-legend">
+          <span><i style={{ background: "#5257ea" }} /> Buyer</span>
+          <span><i style={{ background: "#0e9488" }} /> Seller</span>
+          <span><i style={{ background: "#c07512" }} /> Agent</span>
+          <span><i style={{ background: "#5b6472" }} /> Escrow · Title · Lender</span>
+          <span><i style={{ background: "#8457d6" }} /> Inspection</span>
+        </div>
+        {adding !== null && (
+          <div style={{ padding: "0 1.3rem 1.3rem", maxWidth: 440 }}>
+            {contactForm(() => {
+              void run(async () => {
+                await api.post(`/transactions/${id}/parties`, { role: adding, ...contactPayload() });
+                cancelForm();
+              }, `${PARTY_ROLE_LABEL[adding] ?? adding} added`);
+            }, `Add ${PARTY_ROLE_LABEL[adding] ?? adding}`)}
+          </div>
+        )}
+      </div>
 
       {peek && (
         <div className="peek-backdrop" onClick={() => setPeek(null)}>
