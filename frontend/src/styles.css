@@ -1347,3 +1347,20 @@ button.secondary.sm { padding: 0.28rem 0.55rem; font-size: 0.76rem; }
   border-radius: var(--r-pill); padding: 2px 8px; font-variant-numeric: tabular-nums; }
 .day-item .sm { flex: 0 0 auto; }
 .log-on { color: var(--ink-2); font-weight: 500; min-width: 140px; }
+
+/* ---- Deal Q&A chatbot -------------------------------------------------- */
+.askbot { border-left: 3px solid var(--gold-500); }
+.ask-log { display: flex; flex-direction: column; gap: 0.6rem; min-height: 40px; max-height: 380px; overflow-y: auto; margin-bottom: 0.8rem; }
+.ask-suggest { display: flex; flex-wrap: wrap; gap: 0.45rem; }
+.ask-chip { background: var(--surface); border: 1px solid var(--line); color: var(--ink-2); border-radius: var(--r-pill);
+  padding: 0.4rem 0.8rem; font-size: 0.8rem; font-weight: 500; box-shadow: none; cursor: pointer; }
+.ask-chip:hover { border-color: var(--gold-300); color: var(--gold-700); background: var(--gold-100); }
+.ask-msg { display: flex; gap: 0.5rem; align-items: flex-start; }
+.ask-msg.you { justify-content: flex-end; }
+.ask-ava { flex: 0 0 auto; width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center;
+  background: var(--gold-100); color: var(--gold-700); margin-top: 2px; }
+.ask-bubble { max-width: 82%; padding: 0.6rem 0.85rem; border-radius: 14px; font-size: 0.88rem; line-height: 1.55; white-space: pre-wrap; }
+.ask-msg.you .ask-bubble { background: var(--gold-500); color: var(--on-accent); border-bottom-right-radius: 4px; }
+.ask-msg.ai .ask-bubble { background: var(--surface-2); border: 1px solid var(--line); color: var(--ink-2); border-bottom-left-radius: 4px; }
+.ask-input { display: flex; gap: 0.5rem; }
+.ask-input input { flex: 1; }

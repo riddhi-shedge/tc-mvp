@@ -88,3 +88,20 @@ PURPOSES_HINT = {
     "intro": "I'll be your point of contact for paperwork and deadlines.",
     "general": "Just checking in on status.",
 }
+
+
+class FakeAssistant:
+    """Deterministic grounded Q&A over the built context — no model call. Returns
+    a line that matches a keyword from the question, else the not-found reply."""
+
+    def __init__(self) -> None:
+        self.calls: list[dict[str, str]] = []
+
+    def answer(self, *, context: str, question: str) -> str:
+        self.calls.append({"context": context, "question": question})
+        words = [w for w in question.lower().replace("?", "").split() if len(w) > 3]
+        for line in context.splitlines():
+            low = line.strip().lower()
+            if low and any(w in low for w in words):
+                return f"From this deal: {line.strip('- ').strip()}"
+        return "I couldn't find that in this deal's documents."

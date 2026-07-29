@@ -26,6 +26,7 @@ from app.contracts.compliance import ComplianceResult
 from app.contracts.fields import EXTRACTABLE_FIELD_NAMES
 from app.contracts.payload import Payload
 from app.master.dashboard import build_dashboard
+from app.master.assistant import AssistantError, ClaudeAssistant, DealAssistant, build_context
 from app.master.drafting import (
     ClaudeDrafter,
     DraftContext,
@@ -83,6 +84,15 @@ def _default_drafter() -> ClaudeDrafter:
 
 def get_drafter() -> Drafter:
     return _default_drafter()
+
+
+@lru_cache(maxsize=1)
+def _default_assistant() -> ClaudeAssistant:
+    return ClaudeAssistant()
+
+
+def get_assistant() -> DealAssistant:
+    return _default_assistant()
 
 
 @lru_cache(maxsize=1)
@@ -1062,6 +1072,33 @@ def read_full_state(
         raise HTTPException(status_code=404, detail="Transaction not found")
     _merge_task_meta(state)
     return state
+
+
+class AskRequest(BaseModel):
+    question: str = Field(min_length=1, max_length=1000)
+
+
+@router.post("/transactions/{transaction_id}/ask")
+def ask_deal(
+    transaction_id: str,
+    body: AskRequest,
+    tc: TCUser = Depends(require_tc),
+    repo: MasterRepo = Depends(get_repo),
+    assistant: DealAssistant = Depends(get_assistant),
+) -> dict[str, Any]:
+    """Grounded Q&A over one deal's own records — the TC asks, the assistant answers
+    only from this deal's confirmed fields, deadlines, parties, documents, and tasks."""
+    state = repo.get_full_state(transaction_id)
+    if state is None:
+        raise HTTPException(status_code=404, detail="Transaction not found")
+    context = build_context(state)
+    try:
+        answer = assistant.answer(context=context, question=body.question.strip())
+    except ZdrNotConfirmed as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from None
+    except AssistantError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from None
+    return {"answer": answer}
 
 
 @router.post("/transactions/{transaction_id}/payloads", status_code=201)

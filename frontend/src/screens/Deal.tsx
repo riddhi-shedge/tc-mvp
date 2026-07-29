@@ -92,6 +92,10 @@ export function Deal({ id, onBack }: { id: string; onBack: () => void }) {
   const [draftWhyFor, setDraftWhyFor] = useState<string | null>(null);
   // TC entries for deadline-driving fields the extraction missed: name -> value
   const [fieldVals, setFieldVals] = useState<Record<string, string>>({});
+  // Deal Q&A chat (grounded on this deal's records).
+  const [chat, setChat] = useState<{ role: "you" | "ai"; text: string }[]>([]);
+  const [chatQ, setChatQ] = useState("");
+  const [chatBusy, setChatBusy] = useState(false);
 
   const refresh = useCallback(async () => {
     try {
@@ -142,6 +146,25 @@ export function Deal({ id, onBack }: { id: string; onBack: () => void }) {
       } catch (e) {
         tab?.close();
         toast(e instanceof Error ? e.message : "Couldn't open document", { error: true });
+      }
+    })();
+  }
+
+  // Grounded Q&A: ask the assistant a question about this deal.
+  function ask(q: string) {
+    const question = q.trim();
+    if (!question || chatBusy) return;
+    setChat((c) => [...c, { role: "you", text: question }]);
+    setChatQ("");
+    setChatBusy(true);
+    void (async () => {
+      try {
+        const r = await api.post<{ answer: string }>(`/transactions/${id}/ask`, { question });
+        setChat((c) => [...c, { role: "ai", text: r.answer }]);
+      } catch (e) {
+        setChat((c) => [...c, { role: "ai", text: e instanceof Error ? e.message : "Couldn't answer right now." }]);
+      } finally {
+        setChatBusy(false);
       }
     })();
   }
@@ -467,6 +490,50 @@ export function Deal({ id, onBack }: { id: string; onBack: () => void }) {
             icon: <Icon name="doc" size={14} />,
             content: (
               <>
+      <div className="card askbot">
+        <h2><Icon name="sparkle" size={17} /> Ask about this deal</h2>
+        <p className="muted" style={{ margin: "-0.4rem 0 0.85rem" }}>
+          Ask anything about the contract, dates, parties, or documents — answered only from this deal's records,
+          or it'll tell you it couldn't find it.
+        </p>
+        <div className="ask-log">
+          {chat.length === 0 && (
+            <div className="ask-suggest">
+              {[
+                "When is close of escrow?",
+                "What's the earnest money deposit?",
+                "Who is the buyer's agent and their email?",
+                "Which contingencies are in play?",
+              ].map((s) => (
+                <button key={s} className="ask-chip" onClick={() => ask(s)}>{s}</button>
+              ))}
+            </div>
+          )}
+          {chat.map((m, i) => (
+            <div key={i} className={`ask-msg ${m.role}`}>
+              {m.role === "ai" && <div className="ask-ava"><Icon name="sparkle" size={13} /></div>}
+              <div className="ask-bubble">{m.text}</div>
+            </div>
+          ))}
+          {chatBusy && (
+            <div className="ask-msg ai">
+              <div className="ask-ava"><Icon name="sparkle" size={13} /></div>
+              <div className="ask-bubble"><span className="spinner" /> Thinking…</div>
+            </div>
+          )}
+        </div>
+        <div className="ask-input">
+          <input
+            placeholder="Ask a question about this deal…"
+            value={chatQ}
+            disabled={chatBusy}
+            onChange={(e) => setChatQ(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter" && chatQ.trim()) ask(chatQ); }}
+          />
+          <button className="gold" disabled={chatBusy || !chatQ.trim()} onClick={() => ask(chatQ)}>Ask</button>
+        </div>
+      </div>
+
       <div className="card">
         <h2><Icon name="doc" size={17} /> Documents</h2>
         {state.documents.length === 0 && (
