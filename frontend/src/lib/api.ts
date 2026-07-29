@@ -302,6 +302,7 @@ export interface AuditRow {
   actor: string;
   action: string;
   entity_type: string;
+  entity_id?: string | null;
   details: Record<string, unknown>;
   created_at: string;
 }

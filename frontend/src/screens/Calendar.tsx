@@ -31,6 +31,7 @@ export function Calendar({ onOpenDeal }: { onOpenDeal: (id: string) => void }) {
   const [cursor, setCursor] = useState(() => { const d = startOfToday(); d.setDate(1); return d; });
   const [drag, setDrag] = useState<string | null>(null);
   const [dropDay, setDropDay] = useState<string | null>(null);
+  const [dayModal, setDayModal] = useState<string | null>(null);
   // taskId -> yyyy-mm-dd, persisted locally (no deadline-driving DB columns here)
   const [schedule, setSchedule] = useState<Record<string, string>>(() => {
     try { return JSON.parse(localStorage.getItem(SCHEDULE_KEY) ?? "{}"); } catch { return {}; }
@@ -131,9 +132,19 @@ export function Calendar({ onOpenDeal }: { onOpenDeal: (id: string) => void }) {
         </div>
         <div className="row" style={{ gap: "0.5rem", flex: "0 0 auto" }}>
           <button className="secondary" onClick={() => { const d = startOfToday(); d.setDate(1); setCursor(d); }}>Today</button>
-          <button className="gold" onClick={autoSchedule} title="Place every open task onto the calendar by urgency, due date, and estimated time">
-            <Icon name="sparkle" size={14} /> Auto-schedule
-          </button>
+          {Object.keys(schedule).length === 0 ? (
+            <button className="gold" onClick={autoSchedule} title="Place every open task onto the calendar by urgency, due date, and estimated time">
+              <Icon name="sparkle" size={14} /> Auto-schedule
+            </button>
+          ) : (
+            <button
+              className="secondary"
+              onClick={() => { setSchedule({}); toast("Schedule cleared — plan it your way by dragging tasks."); }}
+              title="Remove the auto-generated plan and schedule tasks yourself"
+            >
+              <Icon name="x" size={14} /> Clear schedule
+            </button>
+          )}
         </div>
       </div>
 
@@ -160,14 +171,15 @@ export function Calendar({ onOpenDeal }: { onOpenDeal: (id: string) => void }) {
                     <div
                       key={k}
                       className={`cal-day ${inMonth ? "" : "off"} ${k === todayKey ? "today" : ""} ${dropDay === k ? "drop" : ""}`}
+                      onClick={() => setDayModal(k)}
+                      title="Open this day"
                       onDragOver={drag ? (e) => { e.preventDefault(); setDropDay(k); } : undefined}
                       onDragLeave={() => setDropDay((d) => (d === k ? null : d))}
                       onDrop={drag ? (e) => { e.preventDefault(); scheduleOn(drag, k); setDrag(null); setDropDay(null); } : undefined}
                     >
                       <div className="cal-dnum">{day.getDate()}</div>
                       {dls.map((d, i) => (
-                        <div key={`d${i}`} className="cal-dl" title={`${d.name} · ${short(d.property_address)}`}
-                          onClick={() => onOpenDeal(d.transaction_id)}>
+                        <div key={`d${i}`} className="cal-dl" title={`${d.name} · ${short(d.property_address)}`}>
                           <span className="cal-dot" /> {d.name.replace(/ (ends|due|delivery|delivered).*$/i, "")}
                         </div>
                       ))}
@@ -176,9 +188,8 @@ export function Calendar({ onOpenDeal }: { onOpenDeal: (id: string) => void }) {
                           key={t.id}
                           className="cal-task"
                           draggable
-                          onDragStart={() => setDrag(t.id)}
+                          onDragStart={(e) => { e.stopPropagation(); setDrag(t.id); }}
                           onDragEnd={() => { setDrag(null); setDropDay(null); }}
-                          onClick={() => onOpenDeal(t.transaction_id)}
                           title={`${t.title} · ${short(t.property_address)} · ~${fmtMin(estMinutes(t))}`}
                         >
                           <span className="cal-task-t">{t.title}</span>
@@ -228,6 +239,66 @@ export function Calendar({ onOpenDeal }: { onOpenDeal: (id: string) => void }) {
           )}
         </aside>
       </div>
+
+      {dayModal && (() => {
+        const d = new Date(dayModal + "T00:00:00");
+        const dls = deadlinesByDay[dayModal] ?? [];
+        const planned = scheduledByDay[dayModal] ?? [];
+        const totalMin = planned.reduce((s, t) => s + estMinutes(t), 0);
+        return (
+          <div className="day-back" onClick={() => setDayModal(null)}>
+            <div className="day-card" onClick={(e) => e.stopPropagation()}>
+              <div className="day-head">
+                <div>
+                  <div className="day-dow">{d.toLocaleDateString("en-US", { weekday: "long" })}</div>
+                  <h2 style={{ margin: 0 }}>{d.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}</h2>
+                </div>
+                <button className="peek-x" onClick={() => setDayModal(null)} title="Close"><Icon name="x" size={16} /></button>
+              </div>
+
+              {dls.length > 0 && (
+                <>
+                  <div className="day-sec"><Icon name="calendar" size={13} /> Deadlines · {dls.length}</div>
+                  {dls.map((dl, i) => (
+                    <div key={`dl${i}`} className="day-item deadline" onClick={() => { setDayModal(null); onOpenDeal(dl.transaction_id); }}>
+                      <span className="cal-dot" />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div className="day-t">{dl.name}</div>
+                        <div className="muted" style={{ fontSize: "0.78rem" }}>{short(dl.property_address)}</div>
+                      </div>
+                      <Icon name="chevron" size={14} />
+                    </div>
+                  ))}
+                </>
+              )}
+
+              <div className="day-sec">
+                <Icon name="clipboard" size={13} /> Planned tasks · {planned.length}
+                {planned.length > 0 && <span className="muted"> · ~{fmtMin(totalMin)} total</span>}
+              </div>
+              {planned.length === 0 ? (
+                <div className="muted" style={{ fontSize: "0.85rem", padding: "0.3rem 0" }}>
+                  Nothing planned for this day yet — drag tasks from the work queue, or use Auto-schedule.
+                </div>
+              ) : (
+                planned
+                  .sort((a, b) => estMinutes(b) - estMinutes(a))
+                  .map((t) => (
+                    <div key={t.id} className="day-item task">
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div className="day-t">{t.title}</div>
+                        <div className="muted" style={{ fontSize: "0.78rem" }}>{short(t.property_address)}</div>
+                      </div>
+                      <span className="day-est">{fmtMin(estMinutes(t))}</span>
+                      <button className="secondary sm" onClick={() => unschedule(t.id)} title="Unschedule">Remove</button>
+                      <button className="secondary sm" onClick={() => { setDayModal(null); onOpenDeal(t.transaction_id); }}>Open deal</button>
+                    </div>
+                  ))
+              )}
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

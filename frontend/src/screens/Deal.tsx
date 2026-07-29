@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { api, FullState, Message } from "../lib/api";
+import { api, AuditRow, FullState, Message } from "../lib/api";
 import { fmtDate, fmtDateTime } from "../lib/format";
 import { ExtractionReview } from "./ExtractionReview";
 import { DealDashboard } from "./DealDashboard";
@@ -37,14 +37,6 @@ function actionIcon(a: string): IconName {
 }
 function humanize(s: string): string {
   return s.replace(/[._]/g, " ").replace(/\b\w/g, (m) => m.toUpperCase());
-}
-/** Compact "key: value · key: value" rendering of an audit row's details. */
-function fmtDetails(d: Record<string, unknown> | null | undefined): string {
-  if (!d) return "";
-  return Object.entries(d)
-    .filter(([, v]) => v !== null && v !== undefined && v !== "")
-    .map(([k, v]) => `${k.replace(/_/g, " ")}: ${typeof v === "object" ? JSON.stringify(v) : String(v)}`)
-    .join(" · ");
 }
 /** A short hint for hand-entering a missing deadline-driving field. */
 function fieldHint(name: string): string {
@@ -180,6 +172,50 @@ export function Deal({ id, onBack }: { id: string; onBack: () => void }) {
       const party = m?.party_id ? state.parties.find((p) => p.id === m.party_id) ?? null : null;
       return { r, m, party };
     });
+
+  // --- Log: resolve entity ids to human names for a readable audit table ---
+  const taskTitleById = (tid?: string | null) => state.tasks.find((t) => t.id === tid)?.title;
+  const partyById = (pid?: string | null) => state.parties.find((p) => p.id === pid);
+  const msgSubjectById = (mid?: string | null) => state.messages.find((m) => m.id === mid)?.subject;
+  const deadlineNameById = (did?: string | null) => state.deadlines.find((d) => d.id === did)?.name;
+
+  function auditTarget(a: AuditRow): string {
+    const id = a.entity_id;
+    switch (a.entity_type) {
+      case "task": { const t = taskTitleById(id); return t ? `Task · ${t}` : "Task"; }
+      case "party": { const p = partyById(id); return p ? `${p.name ?? humanize(p.role)} · ${humanize(p.role)}` : "Party"; }
+      case "message": { const s = msgSubjectById(id); return s ? `Message · ${s}` : "Message"; }
+      case "deadline": return deadlineNameById(id) ?? "Deadline";
+      case "transaction": return "Deal";
+      case "extracted_field":
+      case "field": return "Field";
+      case "risk_flag": return "Risk flag";
+      case "reminder": return "Reminder";
+      case "payload": return "Document";
+      default: return a.entity_type ? humanize(a.entity_type) : "—";
+    }
+  }
+
+  function auditDetails(a: AuditRow): string {
+    if (!a.details) return "";
+    const out: string[] = [];
+    const partyName = (v: unknown) => partyById(String(v))?.name ?? "someone";
+    for (const [k, v] of Object.entries(a.details)) {
+      if (v == null || v === "" || k === "provider_message_id") continue;
+      if (k === "party_id" || k === "assigned_party_id") out.push(`→ ${partyName(v)}`);
+      else if (k === "task_id") out.push(`task “${taskTitleById(String(v)) ?? "…"}”`);
+      else if (k === "message_id") out.push(`re “${msgSubjectById(String(v)) ?? "…"}”`);
+      else if (k === "field") out.push(`field: ${humanize(String(v))}`);
+      else if (k === "kind") out.push(`purpose: ${humanize(String(v))}`);
+      else if (k === "source") out.push(v === "tc" ? "added by the TC" : `source: ${v}`);
+      else if (k === "status") out.push(`status: ${humanize(String(v))}`);
+      else if (k === "stage") out.push(`stage: ${humanize(String(v))}`);
+      else if (k === "reason" && v) out.push(`reason: ${v}`);
+      else if (k === "old" || k === "new") out.push(`${k}: ${v}`);
+      else out.push(`${humanize(k)}: ${typeof v === "object" ? JSON.stringify(v) : String(v)}`);
+    }
+    return out.join(" · ");
+  }
 
   const coe = state.deadlines.find((d) => d.name.toLowerCase().includes("escrow"));
   const coeDays =
@@ -754,8 +790,8 @@ export function Deal({ id, onBack }: { id: string; onBack: () => void }) {
                   <td>
                     <span className="log-act"><Icon name={actionIcon(a.action)} size={12} /> {humanize(a.action)}</span>
                   </td>
-                  <td className="muted">{a.entity_type ?? "—"}</td>
-                  <td className="log-det">{fmtDetails(a.details) || "—"}</td>
+                  <td className="log-on">{auditTarget(a)}</td>
+                  <td className="log-det">{auditDetails(a) || "—"}</td>
                 </tr>
               ))}
             </tbody>

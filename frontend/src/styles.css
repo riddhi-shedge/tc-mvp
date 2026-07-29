@@ -1325,3 +1325,25 @@ button.secondary.sm { padding: 0.28rem 0.55rem; font-size: 0.76rem; }
 .cal-qt { font-size: 0.82rem; font-weight: 600; color: var(--ink); line-height: 1.2; }
 .cal-qsub { font-size: 0.72rem; }
 @media (max-width: 900px) { .cal-grid { grid-template-columns: 1fr; } .cal-queue { position: static; max-height: none; } }
+
+/* ---- Calendar: day-detail popup ---------------------------------------- */
+.cal-day { cursor: pointer; }
+.day-back { position: fixed; inset: 0; z-index: 58; display: grid; place-items: center;
+  background: color-mix(in srgb, var(--ink) 28%, transparent); backdrop-filter: blur(4px); animation: uplo-fade 0.18s ease; }
+.day-card { width: min(480px, 94vw); max-height: 82vh; overflow: auto; background: var(--surface);
+  border: 1px solid var(--line); border-radius: var(--r-lg); box-shadow: var(--shadow-lg); padding: 1.3rem 1.4rem;
+  animation: uplo-pop 0.26s cubic-bezier(0.16, 1, 0.3, 1); }
+.day-head { display: flex; align-items: flex-start; gap: 0.7rem; margin-bottom: 0.4rem; }
+.day-dow { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--gold-600); font-weight: 700; }
+.day-head .peek-x { margin-left: auto; }
+.day-sec { display: flex; align-items: center; gap: 0.4rem; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em;
+  color: var(--muted); font-weight: 700; margin: 1.1rem 0 0.5rem; }
+.day-item { display: flex; align-items: center; gap: 0.6rem; padding: 0.55rem 0.65rem; border: 1px solid var(--line);
+  border-radius: var(--r-sm); margin-bottom: 0.45rem; background: var(--surface-2); }
+.day-item.deadline { cursor: pointer; }
+.day-item.deadline:hover { border-color: var(--red-600); }
+.day-item .day-t { font-size: 0.88rem; font-weight: 600; color: var(--ink); }
+.day-est { flex: 0 0 auto; font-size: 0.74rem; font-weight: 700; color: var(--gold-700); background: var(--gold-100);
+  border-radius: var(--r-pill); padding: 2px 8px; font-variant-numeric: tabular-nums; }
+.day-item .sm { flex: 0 0 auto; }
+.log-on { color: var(--ink-2); font-weight: 500; min-width: 140px; }
