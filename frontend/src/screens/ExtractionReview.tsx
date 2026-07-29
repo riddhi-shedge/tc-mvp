@@ -109,9 +109,8 @@ export function ExtractionReview({
   const byName = (n: string) => fields.find((f) => f.name === n);
   const fv = (n: string) => byName(n)?.value ?? null;
   const total = fields.length;
-  const confident = fields.filter((f) => f.confidence >= CONF_THRESHOLD).length;
-  const toVerify = total - confident;
   const unconfirmed = fields.filter((f) => !f.confirmed).length;
+  const verifiedCount = total - unconfirmed;
   const needsReview = fields.filter((f) => f.confidence < CONF_THRESHOLD && !f.confirmed);
 
   const resolved = (name: string): string | null => {
@@ -123,7 +122,7 @@ export function ExtractionReview({
 
   // confidence ring geometry (r = 15.5)
   const C = 2 * Math.PI * 15.5;
-  const offset = total ? C * (1 - confident / total) : C;
+  const offset = total ? C * (1 - verifiedCount / total) : C;
 
   // snapshot
   const coeDl = state.deadlines.find((d) => d.name.toLowerCase().includes("escrow"));
@@ -215,9 +214,11 @@ export function ExtractionReview({
               />
             </svg>
             <div className="xr-ringtxt">
-              <b>{confident} of {total}</b> confident
+              <b>{verifiedCount} of {total}</b> verified
               <br />
-              <span className="xr-muted">{toVerify} to verify</span>
+              <span className="xr-muted">
+                {needsReview.length > 0 ? `${needsReview.length} low-confidence to check` : "all confirmed"}
+              </span>
             </div>
           </div>
           {unconfirmed > 0 && (

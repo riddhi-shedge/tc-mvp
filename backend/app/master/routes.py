@@ -171,6 +171,39 @@ def unarchive_transaction(
     return txn
 
 
+class CancelRequest(BaseModel):
+    reason: str = ""
+
+
+@router.post("/transactions/{transaction_id}/cancel")
+def cancel_transaction(
+    transaction_id: str,
+    body: CancelRequest,
+    tc: TCUser = Depends(require_tc),
+    repo: MasterRepo = Depends(get_repo),
+) -> dict[str, Any]:
+    """The deal fell through / was canceled — a terminal state distinct from
+    archive (reactivatable), e.g. the buyer backed out during contingencies."""
+    txn = repo.cancel_transaction(
+        transaction_id=transaction_id, reason=(body.reason or "").strip(), actor=tc.actor
+    )
+    if txn is None:
+        raise HTTPException(status_code=404, detail="Transaction not found")
+    return txn
+
+
+@router.post("/transactions/{transaction_id}/reactivate")
+def reactivate_transaction(
+    transaction_id: str,
+    tc: TCUser = Depends(require_tc),
+    repo: MasterRepo = Depends(get_repo),
+) -> dict[str, Any]:
+    txn = repo.reactivate_transaction(transaction_id=transaction_id, actor=tc.actor)
+    if txn is None:
+        raise HTTPException(status_code=404, detail="Transaction not found")
+    return txn
+
+
 @router.delete("/transactions/{transaction_id}", status_code=204)
 def delete_transaction(
     transaction_id: str,

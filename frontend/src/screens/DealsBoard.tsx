@@ -107,7 +107,7 @@ export function DealsBoard({ onOpenDeal }: { onOpenDeal: (id: string) => void })
     return (
       <div
         key={d.id}
-        className="db-deal"
+        className={`db-deal ${d.status === "canceled" ? "db-canceled" : ""}`}
         data-u={u}
         draggable
         onDragStart={() => setDragId(d.id)}
@@ -116,6 +116,7 @@ export function DealsBoard({ onOpenDeal }: { onOpenDeal: (id: string) => void })
       >
         <span className="db-stripe" />
         <div className="db-addr">{shortAddr(d.property_address)}</div>
+        {d.status === "canceled" && <span className="db-fell">Fell through</span>}
         <div className="db-chips">
           <span className="db-chip coe" data-u={u === "done" ? "" : u}>◷ {coeChipLabel(d)}</span>
           {shortPrice(d.purchase_price) && <span className="db-chip">{shortPrice(d.purchase_price)}</span>}

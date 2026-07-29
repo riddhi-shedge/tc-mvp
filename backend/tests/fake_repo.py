@@ -119,7 +119,7 @@ class InMemoryRepo:
     def transaction_exists(self, transaction_id: str) -> bool:
         return transaction_id in self.transactions
 
-    def _set_transaction_status(self, transaction_id, status, actor, action):
+    def _set_transaction_status(self, transaction_id, status, actor, action, details=None):
         txn = self.transactions.get(transaction_id)
         if txn is None:
             return None
@@ -130,9 +130,19 @@ class InMemoryRepo:
             action=action,
             entity_type="transaction",
             entity_id=transaction_id,
-            details={"status": status},
+            details={"status": status, **(details or {})},
         )
         return txn
+
+    def cancel_transaction(self, *, transaction_id, reason, actor):
+        return self._set_transaction_status(
+            transaction_id, "canceled", actor, "transaction.canceled", {"reason": reason}
+        )
+
+    def reactivate_transaction(self, *, transaction_id, actor):
+        return self._set_transaction_status(
+            transaction_id, "open", actor, "transaction.reactivated"
+        )
 
     def set_transaction_stage(
         self, *, transaction_id: str, stage: str, actor: str

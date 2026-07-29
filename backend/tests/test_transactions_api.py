@@ -73,3 +73,15 @@ def test_create_writes_audit_row(client, tc_headers, repo):
     assert row["transaction_id"] == created["id"]
     assert row["actor"] == "tc@example.test"
     assert row["created_at"]
+
+
+def test_cancel_and_reactivate_deal(client, tc_headers):
+    txn = client.post("/transactions", json={"property_address": "9 Fell St"}, headers=tc_headers).json()["id"]
+    r = client.post(f"/transactions/{txn}/cancel", json={"reason": "buyer backed out"}, headers=tc_headers)
+    assert r.status_code == 200 and r.json()["status"] == "canceled"
+    # still visible on the board (not hidden like archive), tagged canceled
+    board = client.get("/transactions/board", headers=tc_headers).json()
+    assert any(d["id"] == txn and d["status"] == "canceled" for d in board)
+    # reactivate
+    r2 = client.post(f"/transactions/{txn}/reactivate", headers=tc_headers)
+    assert r2.status_code == 200 and r2.json()["status"] == "open"

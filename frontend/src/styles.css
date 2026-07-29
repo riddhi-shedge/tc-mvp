@@ -1254,3 +1254,39 @@ button.secondary.sm { padding: 0.28rem 0.55rem; font-size: 0.76rem; }
   border-radius: var(--r-sm); background: var(--surface-2); }
 .await-subj { font-size: 0.86rem; font-weight: 600; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .await-row .sm { flex: 0 0 auto; }
+
+/* ---- Deal Overview: parties + tasks first, spaced ---------------------- */
+.deal-ov { display: flex; flex-direction: column; gap: 1.15rem; }
+.deal-ov > .il { margin-bottom: 0; }
+.deal-ov > .parties-orbit { order: -1; margin-bottom: 0; } /* parties first, under the timeline */
+
+/* ---- Task lifecycle: not started / in progress / done ------------------ */
+.task-check.doing { border-color: var(--gold-600); color: var(--gold-700); font-size: 12px; }
+.task-row.doing { background: color-mix(in srgb, var(--gold-100) 30%, transparent); }
+.st-pill { flex: 0 0 auto; font-size: 0.66rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em;
+  padding: 0.16rem 0.5rem; border-radius: var(--r-pill); white-space: nowrap; }
+.st-pill.st-todo { background: var(--hover); color: var(--muted); }
+.st-pill.st-doing { background: var(--gold-100); color: var(--gold-700); }
+.st-pill.st-done { background: var(--green-100); color: var(--green-700); }
+.st-pill.st-blocked { background: var(--red-100); color: var(--red-700); }
+
+/* ---- Deal lifecycle: fell-through / canceled --------------------------- */
+.deal-canceled { display: flex; align-items: center; gap: 0.5rem; background: var(--red-100); color: var(--red-700);
+  border-left: 3px solid var(--red-600); border-radius: var(--r-sm); padding: 0.6rem 0.85rem;
+  font-size: 0.86rem; font-weight: 500; margin-bottom: 1rem; }
+.db-deal.db-canceled { opacity: 0.62; }
+.db-deal.db-canceled .db-stripe { background: var(--red-600) !important; }
+.db-fell { display: inline-block; font-size: 0.64rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em;
+  color: var(--red-700); background: var(--red-100); border-radius: var(--r-pill); padding: 1px 7px; margin: 2px 0 4px; }
+
+/* ---- Log tab (detailed audit table) ------------------------------------ */
+.log-wrap { overflow-x: auto; }
+.log-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+.log-table th { text-align: left; padding: 0.4rem 0.7rem; font-size: 0.67rem; text-transform: uppercase;
+  letter-spacing: 0.05em; color: var(--muted); border-bottom: 1px solid var(--line); white-space: nowrap; font-weight: 700; }
+.log-table td { padding: 0.45rem 0.7rem; border-bottom: 1px solid var(--line-2); vertical-align: top; }
+.log-table tr:hover td { background: var(--surface-2); }
+.log-when { white-space: nowrap; color: var(--muted); }
+.log-who { white-space: nowrap; color: var(--ink-2); }
+.log-act { display: inline-flex; align-items: center; gap: 5px; font-weight: 600; color: var(--ink); white-space: nowrap; }
+.log-det { color: var(--ink-2); word-break: break-word; min-width: 180px; }

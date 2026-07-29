@@ -155,6 +155,14 @@ class MasterRepo(Protocol):
         self, *, transaction_id: str, actor: str
     ) -> dict[str, Any] | None: ...
 
+    def cancel_transaction(
+        self, *, transaction_id: str, reason: str, actor: str
+    ) -> dict[str, Any] | None: ...
+
+    def reactivate_transaction(
+        self, *, transaction_id: str, actor: str
+    ) -> dict[str, Any] | None: ...
+
     def delete_transaction(self, *, transaction_id: str, actor: str) -> bool: ...
 
     def set_transaction_stage(
@@ -398,7 +406,8 @@ class SupabaseRepo:
         return [{**t, "property_address": (props.get(t["id"]) or {}).get("address")} for t in txns]
 
     def _set_transaction_status(
-        self, *, transaction_id: str, status: str, actor: str, action: str
+        self, *, transaction_id: str, status: str, actor: str, action: str,
+        details: dict[str, Any] | None = None,
     ) -> dict[str, Any] | None:
         rows = (
             self._db.table("transactions")
@@ -415,9 +424,25 @@ class SupabaseRepo:
             action=action,
             entity_type="transaction",
             entity_id=transaction_id,
-            details={"status": status},
+            details={"status": status, **(details or {})},
         )
         return rows[0]
+
+    def cancel_transaction(
+        self, *, transaction_id: str, reason: str, actor: str
+    ) -> dict[str, Any] | None:
+        """The deal fell through / was canceled (e.g. the buyer backed out during
+        contingencies). A terminal state, distinct from archive; reactivatable."""
+        return self._set_transaction_status(
+            transaction_id=transaction_id, status="canceled", actor=actor,
+            action="transaction.canceled", details={"reason": reason},
+        )
+
+    def reactivate_transaction(self, *, transaction_id: str, actor: str) -> dict[str, Any] | None:
+        return self._set_transaction_status(
+            transaction_id=transaction_id, status="open", actor=actor,
+            action="transaction.reactivated",
+        )
 
     def archive_transaction(self, *, transaction_id: str, actor: str) -> dict[str, Any] | None:
         return self._set_transaction_status(

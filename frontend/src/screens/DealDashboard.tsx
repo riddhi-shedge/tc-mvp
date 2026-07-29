@@ -65,6 +65,23 @@ const ROLE_SHORT: Record<string, string> = {
   inspector_general: "inspector", listing_agent: "listing agent", buyer_agent: "buyer's agent",
 };
 
+// Task lifecycle: the checkbox cycles Not started → In progress → Done → (reopen).
+const TASK_NEXT: Record<string, string> = {
+  pending: "in_progress",
+  in_progress: "done",
+  done: "pending",
+  complete: "pending",
+  blocked: "in_progress",
+};
+const TASK_STATUS: Record<string, { label: string; cls: string }> = {
+  pending: { label: "Not started", cls: "st-todo" },
+  in_progress: { label: "In progress", cls: "st-doing" },
+  done: { label: "Done", cls: "st-done" },
+  complete: { label: "Done", cls: "st-done" },
+  blocked: { label: "Blocked", cls: "st-blocked" },
+};
+const taskMeta = (s: string) => TASK_STATUS[s] ?? TASK_STATUS.pending;
+
 export function DealDashboard({
   id,
   state,
@@ -218,6 +235,7 @@ export function DealDashboard({
 
   return (
     <>
+      <div className="deal-ov">
       <div className="il">
         <aside className="il-rail">
           {/* ---- Deal facts (always-visible reference) ---- */}
@@ -326,6 +344,9 @@ export function DealDashboard({
         <div className="stack">
           {myTasks.map((t) => {
             const done = ["done", "complete"].includes(t.status);
+            const inProgress = t.status === "in_progress";
+            const meta = taskMeta(t.status);
+            const next = TASK_NEXT[t.status] ?? "in_progress";
             const due =
               t.due_date ??
               (t.deadline_id ? state.deadlines.find((d) => d.id === t.deadline_id)?.due_date ?? null : null);
@@ -343,22 +364,19 @@ export function DealDashboard({
                     : "var(--muted)";
             const pr = t.priority && t.priority !== "normal" ? t.priority : null;
             return (
-              <div key={t.id} className={`task-row ${done ? "done" : ""} ${pr ? `pr-${pr}` : ""}`}>
+              <div key={t.id} className={`task-row ${done ? "done" : ""} ${inProgress ? "doing" : ""} ${pr ? `pr-${pr}` : ""}`}>
                 <button
-                  className="task-check"
+                  className={`task-check ${done ? "done" : ""} ${inProgress ? "doing" : ""}`}
                   disabled={busy}
-                  title={done ? "Reopen" : "Mark done"}
+                  title={`Mark ${taskMeta(next).label.toLowerCase()}`}
                   onClick={() =>
                     void run(
-                      () =>
-                        api.patch(`/transactions/${id}/tasks/${t.id}`, {
-                          status: done ? "pending" : "done",
-                        }),
-                      done ? "Reopened" : "Task done",
+                      () => api.patch(`/transactions/${id}/tasks/${t.id}`, { status: next }),
+                      taskMeta(next).label,
                     )
                   }
                 >
-                  {done ? "✓" : ""}
+                  {done ? "✓" : inProgress ? "◐" : ""}
                 </button>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div className="task-title">{t.title}</div>
@@ -378,7 +396,7 @@ export function DealDashboard({
                   )}
                 </div>
                 {pr && <span className={`pri-badge ${pr}`}>{pr}</span>}
-                <span className={`badge ${done ? "ok" : "draft"}`}>{t.status.replace(/_/g, " ")}</span>
+                <span className={`st-pill ${meta.cls}`}>{meta.label}</span>
               </div>
             );
           })}
@@ -492,6 +510,7 @@ export function DealDashboard({
             }, `Add ${PARTY_ROLE_LABEL[adding] ?? adding}`)}
           </div>
         )}
+      </div>
       </div>
 
       {peek && (

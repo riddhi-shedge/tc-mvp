@@ -38,6 +38,14 @@ function actionIcon(a: string): IconName {
 function humanize(s: string): string {
   return s.replace(/[._]/g, " ").replace(/\b\w/g, (m) => m.toUpperCase());
 }
+/** Compact "key: value · key: value" rendering of an audit row's details. */
+function fmtDetails(d: Record<string, unknown> | null | undefined): string {
+  if (!d) return "";
+  return Object.entries(d)
+    .filter(([, v]) => v !== null && v !== undefined && v !== "")
+    .map(([k, v]) => `${k.replace(/_/g, " ")}: ${typeof v === "object" ? JSON.stringify(v) : String(v)}`)
+    .join(" · ");
+}
 /** A short hint for hand-entering a missing deadline-driving field. */
 function fieldHint(name: string): string {
   if (name === "possession_date") return "defaults to close of escrow if unspecified";
@@ -184,6 +192,30 @@ export function Deal({ id, onBack }: { id: string; onBack: () => void }) {
       <div className="between" style={{ marginBottom: "1rem" }}>
         <button className="secondary" onClick={onBack}>← Deals</button>
         <div className="row" style={{ gap: "0.5rem" }}>
+          {state.transaction.status === "canceled" ? (
+            <button
+              className="secondary"
+              disabled={busy}
+              onClick={() => void run(() => api.post(`/transactions/${id}/reactivate`), "Deal reactivated")}
+            >
+              Reactivate deal
+            </button>
+          ) : (
+            <button
+              className="secondary"
+              disabled={busy}
+              onClick={() => {
+                const reason = window.prompt(
+                  "Mark this deal as fallen through / canceled (e.g. buyer backed out during inspection). Optional reason:",
+                  "",
+                );
+                if (reason === null) return;
+                void run(() => api.post(`/transactions/${id}/cancel`, { reason }), "Deal marked fell through");
+              }}
+            >
+              Mark fell through
+            </button>
+          )}
           <button
             className="secondary"
             disabled={busy}
@@ -226,6 +258,12 @@ export function Deal({ id, onBack }: { id: string; onBack: () => void }) {
           </button>
         </div>
       </div>
+      {state.transaction.status === "canceled" && (
+        <div className="deal-canceled">
+          <Icon name="warning" size={16} /> This deal fell through / was canceled — kept for your records. Use
+          “Reactivate deal” to resume it.
+        </div>
+      )}
       <div className="deal-header">
         <div className="between">
           <div>
@@ -234,8 +272,9 @@ export function Deal({ id, onBack }: { id: string; onBack: () => void }) {
               Deal {state.transaction.id.slice(0, 8)} · California residential
             </div>
           </div>
-          <span className="badge ok">
-            <span className="dot open" /> {state.transaction.status}
+          <span className={`badge ${state.transaction.status === "canceled" ? "danger" : "ok"}`}>
+            <span className={`dot ${state.transaction.status === "canceled" ? "danger" : "open"}`} />{" "}
+            {state.transaction.status === "canceled" ? "fell through" : state.transaction.status}
           </span>
         </div>
         <div className="kpis">
@@ -692,25 +731,36 @@ export function Deal({ id, onBack }: { id: string; onBack: () => void }) {
             ),
           },
           {
-            id: "activity",
-            label: "Activity",
+            id: "log",
+            label: "Log",
             icon: <Icon name="receipt" size={14} />,
             content: (
       <div className="card">
-        <h2><Icon name="receipt" size={17} /> Activity</h2>
-        <ul className="feed">
-          {[...state.audit_log].reverse().map((a, i) => (
-            <li key={i}>
-              <div className="fd-ic"><Icon name={actionIcon(a.action)} size={13} /></div>
-              <div>
-                <div className="fd-title">{humanize(a.action)}</div>
-                <div className="fd-actor">
-                  {a.actor} · {fmtDateTime(a.created_at)}
-                </div>
-              </div>
-            </li>
-          ))}
-        </ul>
+        <h2><Icon name="receipt" size={17} /> Log</h2>
+        <p className="muted" style={{ margin: "-0.4rem 0 0.85rem" }}>
+          Every action on this deal — uploads, field confirmations, timeline builds, assignments, messages, and
+          approvals — newest first. {state.audit_log.length} entries.
+        </p>
+        <div className="log-wrap">
+          <table className="log-table">
+            <thead>
+              <tr><th>When</th><th>Who</th><th>Action</th><th>On</th><th>Details</th></tr>
+            </thead>
+            <tbody>
+              {[...state.audit_log].reverse().map((a, i) => (
+                <tr key={i}>
+                  <td className="log-when tnum">{fmtDateTime(a.created_at)}</td>
+                  <td className="log-who">{a.actor}</td>
+                  <td>
+                    <span className="log-act"><Icon name={actionIcon(a.action)} size={12} /> {humanize(a.action)}</span>
+                  </td>
+                  <td className="muted">{a.entity_type ?? "—"}</td>
+                  <td className="log-det">{fmtDetails(a.details) || "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
             ),
           },
