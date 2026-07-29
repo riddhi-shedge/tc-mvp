@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   api,
-  CalendarDeadline,
   DEAL_STAGES,
   DealSummary,
   TransactionSummary,
@@ -10,7 +9,7 @@ import { fmtDate } from "../lib/format";
 import { toast } from "../lib/ui";
 import { Icon } from "../lib/icons";
 
-type ViewT = "board" | "cal" | "tbl";
+type ViewT = "board" | "tbl";
 
 function shortDate(iso: string | null): string {
   if (!iso) return "—";
@@ -40,20 +39,12 @@ function coeChipLabel(d: DealSummary): string {
   if (n == null) return "No close date yet";
   return `COE ${shortDate(d.coe_date)} · ${n < 0 ? `${-n}d ago` : `${n}d`}`;
 }
-function calKind(k: string | null, name: string): string {
-  const s = (k ?? name).toLowerCase();
-  if (s.includes("coe") || s.includes("escrow")) return "coe";
-  if (s.includes("loan") || s.includes("appraisal")) return "loan";
-  if (s.includes("inspection")) return "insp";
-  return "other";
-}
 function shortAddr(a: string | null): string {
   return (a ?? "(no address)").split(",")[0];
 }
 
 export function DealsBoard({ onOpenDeal }: { onOpenDeal: (id: string) => void }) {
   const [deals, setDeals] = useState<DealSummary[]>([]);
-  const [cal, setCal] = useState<CalendarDeadline[]>([]);
   const [archived, setArchived] = useState<TransactionSummary[]>([]);
   const [view, setView] = useState<ViewT>(
     () => (localStorage.getItem("deals_view") as ViewT) || "board",
@@ -64,13 +55,11 @@ export function DealsBoard({ onOpenDeal }: { onOpenDeal: (id: string) => void })
 
   const refresh = useCallback(async () => {
     try {
-      const [b, c, all] = await Promise.all([
+      const [b, all] = await Promise.all([
         api.get<DealSummary[]>("/transactions/board"),
-        api.get<CalendarDeadline[]>("/transactions/calendar"),
         api.get<TransactionSummary[]>("/transactions"),
       ]);
       setDeals(b);
-      setCal(c);
       setArchived(all.filter((t) => t.status === "archived"));
     } catch (err) {
       toast(err instanceof Error ? err.message : "Failed to load deals", { error: true });
@@ -137,7 +126,6 @@ export function DealsBoard({ onOpenDeal }: { onOpenDeal: (id: string) => void })
         <h2 style={{ margin: 0 }}><Icon name="board" size={17} /> Deals <span className="muted" style={{ fontWeight: 400, fontSize: "0.9rem" }}>· {deals.length} active</span></h2>
         <div className="db-tabs" role="tablist">
           <button className={`db-tab ${view === "board" ? "on" : ""}`} onClick={() => pick("board")}>▦ Board</button>
-          <button className={`db-tab ${view === "cal" ? "on" : ""}`} onClick={() => pick("cal")}>▤ Calendar</button>
           <button className={`db-tab ${view === "tbl" ? "on" : ""}`} onClick={() => pick("tbl")}>≣ Table</button>
         </div>
       </div>
@@ -172,7 +160,6 @@ export function DealsBoard({ onOpenDeal }: { onOpenDeal: (id: string) => void })
       )}
 
       {/* CALENDAR */}
-      {view === "cal" && <CalendarView deadlines={cal} onOpenDeal={onOpenDeal} />}
 
       {/* TABLE */}
       {view === "tbl" && deals.length > 0 && (
@@ -243,52 +230,3 @@ export function DealsBoard({ onOpenDeal }: { onOpenDeal: (id: string) => void })
   );
 }
 
-function CalendarView({
-  deadlines,
-  onOpenDeal,
-}: {
-  deadlines: CalendarDeadline[];
-  onOpenDeal: (id: string) => void;
-}) {
-  // 6-week window starting the Sunday on/before (today - 7 days).
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const start = new Date(today);
-  start.setDate(start.getDate() - 7 - start.getDay());
-  const DOW = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-  const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-  const byDay: Record<string, CalendarDeadline[]> = {};
-  for (const d of deadlines) (byDay[d.due_date] = byDay[d.due_date] ?? []).push(d);
-
-  const cells = [];
-  for (let i = 0; i < 42; i++) {
-    const day = new Date(start);
-    day.setDate(start.getDate() + i);
-    const key = `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, "0")}-${String(day.getDate()).padStart(2, "0")}`;
-    const isToday = day.getTime() === today.getTime();
-    const chips = byDay[key] ?? [];
-    cells.push(
-      <div key={key} className={`db-cell ${isToday ? "today" : ""}`}>
-        <span className="db-dn">{day.getDate()}{day.getDate() === 1 ? ` ${MON[day.getMonth()]}` : ""}</span>
-        {chips.map((c, j) => (
-          <span
-            key={j}
-            className={`db-calchip cc-${calKind(c.key, c.name)}`}
-            title={`${shortAddr(c.property_address)} · ${c.name}`}
-            onClick={(e) => { e.stopPropagation(); onOpenDeal(c.transaction_id); }}
-          >
-            {shortAddr(c.property_address)} · {c.name.replace(/ (ends|due|delivery).*$/i, "")}
-          </span>
-        ))}
-      </div>,
-    );
-  }
-  return (
-    <div className="db-calwrap">
-      <div className="db-cal">
-        {DOW.map((x) => <div key={x} className="db-dow">{x}</div>)}
-        {cells}
-      </div>
-    </div>
-  );
-}

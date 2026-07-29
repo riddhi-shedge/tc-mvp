@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { supabase } from "./lib/supabase";
 import { Deal } from "./screens/Deal";
 import { Home } from "./screens/Home";
+import { Calendar } from "./screens/Calendar";
 import { Inbox } from "./screens/Inbox";
 import { Login } from "./screens/Login";
 import { InviteView } from "./screens/InviteView";
@@ -22,7 +23,7 @@ const inviteToken = (() => {
 const _initTheme = localStorage.getItem("theme") === "dark" ? "dark" : "light";
 document.documentElement.setAttribute("data-theme", _initTheme);
 
-type View = { name: "home" } | { name: "inbox" } | { name: "deal"; id: string };
+type View = { name: "home" } | { name: "calendar" } | { name: "inbox" } | { name: "deal"; id: string };
 
 export default function App() {
   // An invited party (not a TC) lands here — no login, just their scoped view.
@@ -109,6 +110,15 @@ function TcApp() {
           <span className="ni-label"><span className="ic"><Icon name="home" /></span> Home</span>
         </button>
         <button
+          className={`nav-item ${view.name === "calendar" ? "active" : ""}`}
+          onClick={() => setView({ name: "calendar" })}
+        >
+          {view.name === "calendar" && (
+            <motion.span layoutId="side-ind" className="side-ind" transition={{ type: "spring", stiffness: 400, damping: 34 }} />
+          )}
+          <span className="ni-label"><span className="ic"><Icon name="calendar" /></span> Calendar</span>
+        </button>
+        <button
           className={`nav-item ${view.name === "inbox" ? "active" : ""}`}
           onClick={() => setView({ name: "inbox" })}
         >
@@ -162,7 +172,7 @@ function TcApp() {
                 <b>Current deal</b>
               </>
             ) : (
-              <b>{view.name === "home" ? "Home" : "Deals"}</b>
+              <b>{view.name === "home" ? "Home" : view.name === "calendar" ? "Calendar" : "Deals"}</b>
             )}
           </div>
           <div className="top-sp" />
@@ -171,6 +181,9 @@ function TcApp() {
           </button>
         </div>
         <div className="page">
+          {view.name === "calendar" && (
+            <Calendar onOpenDeal={(id) => { setView({ name: "deal", id }); setCollapsed(true); }} />
+          )}
           {view.name === "home" && (
             <Home
               onOpenDeal={(id) => {
