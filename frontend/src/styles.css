@@ -1364,3 +1364,24 @@ button.secondary.sm { padding: 0.28rem 0.55rem; font-size: 0.76rem; }
 .ask-msg.ai .ask-bubble { background: var(--surface-2); border: 1px solid var(--line); color: var(--ink-2); border-bottom-left-radius: 4px; }
 .ask-input { display: flex; gap: 0.5rem; }
 .ask-input input { flex: 1; }
+
+/* ---- Floating "ask about this deal" chat widget ------------------------ */
+.chat-fab { position: fixed; bottom: 22px; right: 22px; z-index: 50; display: inline-flex; align-items: center; gap: 8px;
+  background: var(--gold-500); color: var(--on-accent); border: 0; border-radius: 999px; padding: 12px 18px;
+  font-size: 0.9rem; font-weight: 650; cursor: pointer; box-shadow: var(--shadow-lg); transition: transform 0.15s, background 0.15s; }
+.chat-fab:hover { background: var(--gold-600); transform: translateY(-2px); }
+.chat-fab.open { padding: 13px; }
+.chat-panel { position: fixed; bottom: 84px; right: 22px; z-index: 50;
+  width: min(380px, calc(100vw - 44px)); height: min(560px, calc(100vh - 130px));
+  display: flex; flex-direction: column; background: var(--surface); border: 1px solid var(--line);
+  border-radius: var(--r-lg); box-shadow: var(--shadow-lg); overflow: hidden; animation: uplo-pop 0.24s cubic-bezier(0.16, 1, 0.3, 1); }
+.chat-phead { display: flex; align-items: center; gap: 0.5rem; padding: 0.8rem 1rem;
+  background: linear-gradient(145deg, var(--gold-500), var(--gold-700)); color: var(--on-accent); }
+.chat-ptitle { display: flex; align-items: center; gap: 0.45rem; font-weight: 650; font-size: 0.95rem; }
+.chat-x { margin-left: auto; background: rgba(255, 255, 255, 0.18); color: #fff; border: 0; border-radius: 7px;
+  padding: 4px 6px; cursor: pointer; box-shadow: none; display: inline-flex; }
+.chat-x:hover { background: rgba(255, 255, 255, 0.3); }
+.chat-sub { font-size: 0.74rem; color: var(--muted); padding: 0.6rem 1rem 0; }
+.chat-panel .ask-log { flex: 1; padding: 0.9rem 1rem; margin: 0; max-height: none; }
+.chat-panel .ask-input { padding: 0.7rem 1rem; border-top: 1px solid var(--line); }
+@media (max-width: 560px) { .chat-fab span { display: none; } }

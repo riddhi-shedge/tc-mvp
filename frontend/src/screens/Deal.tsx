@@ -96,6 +96,7 @@ export function Deal({ id, onBack }: { id: string; onBack: () => void }) {
   const [chat, setChat] = useState<{ role: "you" | "ai"; text: string }[]>([]);
   const [chatQ, setChatQ] = useState("");
   const [chatBusy, setChatBusy] = useState(false);
+  const [chatOpen, setChatOpen] = useState(false);
 
   const refresh = useCallback(async () => {
     try {
@@ -490,49 +491,6 @@ export function Deal({ id, onBack }: { id: string; onBack: () => void }) {
             icon: <Icon name="doc" size={14} />,
             content: (
               <>
-      <div className="card askbot">
-        <h2><Icon name="sparkle" size={17} /> Ask about this deal</h2>
-        <p className="muted" style={{ margin: "-0.4rem 0 0.85rem" }}>
-          Ask anything about the contract, dates, parties, or documents — answered only from this deal's records,
-          or it'll tell you it couldn't find it.
-        </p>
-        <div className="ask-log">
-          {chat.length === 0 && (
-            <div className="ask-suggest">
-              {[
-                "When is close of escrow?",
-                "What's the earnest money deposit?",
-                "Who is the buyer's agent and their email?",
-                "Which contingencies are in play?",
-              ].map((s) => (
-                <button key={s} className="ask-chip" onClick={() => ask(s)}>{s}</button>
-              ))}
-            </div>
-          )}
-          {chat.map((m, i) => (
-            <div key={i} className={`ask-msg ${m.role}`}>
-              {m.role === "ai" && <div className="ask-ava"><Icon name="sparkle" size={13} /></div>}
-              <div className="ask-bubble">{m.text}</div>
-            </div>
-          ))}
-          {chatBusy && (
-            <div className="ask-msg ai">
-              <div className="ask-ava"><Icon name="sparkle" size={13} /></div>
-              <div className="ask-bubble"><span className="spinner" /> Thinking…</div>
-            </div>
-          )}
-        </div>
-        <div className="ask-input">
-          <input
-            placeholder="Ask a question about this deal…"
-            value={chatQ}
-            disabled={chatBusy}
-            onChange={(e) => setChatQ(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter" && chatQ.trim()) ask(chatQ); }}
-          />
-          <button className="gold" disabled={chatBusy || !chatQ.trim()} onClick={() => ask(chatQ)}>Ask</button>
-        </div>
-      </div>
 
       <div className="card">
         <h2><Icon name="doc" size={17} /> Documents</h2>
@@ -869,6 +827,61 @@ export function Deal({ id, onBack }: { id: string; onBack: () => void }) {
           },
         ]}
       />
+
+      {/* Floating "ask about this deal" chat widget (bottom-right) */}
+      {chatOpen && (
+        <div className="chat-panel">
+          <div className="chat-phead">
+            <div className="chat-ptitle"><Icon name="sparkle" size={15} /> Ask about this deal</div>
+            <button className="chat-x" onClick={() => setChatOpen(false)} title="Close"><Icon name="x" size={15} /></button>
+          </div>
+          <div className="chat-sub">Answered only from this deal's records — the contract, dates, parties, and documents.</div>
+          <div className="ask-log">
+            {chat.length === 0 && (
+              <div className="ask-suggest">
+                {[
+                  "When is close of escrow?",
+                  "What's the earnest money deposit?",
+                  "Who is the buyer's agent and their email?",
+                  "Which contingencies are in play?",
+                ].map((s) => (
+                  <button key={s} className="ask-chip" onClick={() => ask(s)}>{s}</button>
+                ))}
+              </div>
+            )}
+            {chat.map((m, i) => (
+              <div key={i} className={`ask-msg ${m.role}`}>
+                {m.role === "ai" && <div className="ask-ava"><Icon name="sparkle" size={13} /></div>}
+                <div className="ask-bubble">{m.text}</div>
+              </div>
+            ))}
+            {chatBusy && (
+              <div className="ask-msg ai">
+                <div className="ask-ava"><Icon name="sparkle" size={13} /></div>
+                <div className="ask-bubble"><span className="spinner" /> Thinking…</div>
+              </div>
+            )}
+          </div>
+          <div className="ask-input">
+            <input
+              placeholder="Ask a question…"
+              value={chatQ}
+              disabled={chatBusy}
+              autoFocus
+              onChange={(e) => setChatQ(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter" && chatQ.trim()) ask(chatQ); }}
+            />
+            <button className="gold" disabled={chatBusy || !chatQ.trim()} onClick={() => ask(chatQ)}>Ask</button>
+          </div>
+        </div>
+      )}
+      <button
+        className={`chat-fab ${chatOpen ? "open" : ""}`}
+        onClick={() => setChatOpen((o) => !o)}
+        title={chatOpen ? "Close assistant" : "Ask about this deal"}
+      >
+        {chatOpen ? <Icon name="x" size={20} /> : <><Icon name="sparkle" size={18} /> <span>Ask</span></>}
+      </button>
     </>
   );
 }
