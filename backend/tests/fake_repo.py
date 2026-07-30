@@ -664,6 +664,33 @@ class InMemoryRepo:
             return None
         return f"https://signed.example/{d['storage_path']}"
 
+    def add_party_document(
+        self, *, transaction_id, party_id, filename, content_base64, doc_type, actor
+    ) -> dict[str, Any]:
+        import base64
+        import binascii
+
+        try:
+            base64.b64decode(content_base64, validate=True)
+        except (binascii.Error, ValueError) as exc:
+            raise ValueError("document content is not valid base64") from exc
+        doc = {
+            "id": str(uuid.uuid4()),
+            "transaction_id": transaction_id,
+            "external_ref": f"party:{party_id}",
+            "doc_type": doc_type,
+            "storage_path": f"fake/{party_id}/{filename}",
+            "status": "uploaded",
+            "created_at": _now(),
+        }
+        self.documents[doc["id"]] = doc
+        self._audit(
+            transaction_id=transaction_id, actor=actor, action="document.party_uploaded",
+            entity_type="document", entity_id=doc["id"],
+            details={"party_id": party_id, "doc_type": doc_type, "filename": filename},
+        )
+        return doc
+
     def send_invite(
         self, *, transaction_id, party_id, to, subject, body, mailer, actor
     ) -> None:

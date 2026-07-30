@@ -113,6 +113,48 @@ def _decode(token: str) -> dict:
     raise jwt.InvalidTokenError("Auth not configured")
 
 
+@dataclass(frozen=True)
+class PartyUser:
+    """An outside party (agent, escrow, lender, inspector, buyer/seller…) on a
+    scoped invite session. Their app_metadata pins them to one party + one deal."""
+
+    party_id: str
+    transaction_id: str
+    tier: str
+
+    @property
+    def actor(self) -> str:
+        return f"party:{self.party_id}"
+
+
+def require_party(
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
+) -> PartyUser:
+    """A scoped party session: any authenticated token carrying app_metadata.
+    party_id + transaction_id. The party can only ever touch their own deal — the
+    transaction_id is taken from the (signed, admin-set) token, never the client."""
+    if credentials is None:
+        raise _unauthorized("Missing bearer token")
+    try:
+        claims = _decode(credentials.credentials)
+    except jwt.InvalidTokenError:
+        raise _unauthorized("Invalid or expired token") from None
+    if claims.get("role") != "authenticated":
+        raise _unauthorized("Not an authenticated session")
+    app_metadata = claims.get("app_metadata")
+    if not isinstance(app_metadata, dict):
+        raise _unauthorized("Not a party session")
+    party_id = app_metadata.get("party_id")
+    transaction_id = app_metadata.get("transaction_id")
+    if not party_id or not transaction_id:
+        raise _unauthorized("Not a party session")
+    return PartyUser(
+        party_id=str(party_id),
+        transaction_id=str(transaction_id),
+        tier=str(app_metadata.get("tier") or "receiving_end"),
+    )
+
+
 def require_tc(
     credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
 ) -> TCUser:

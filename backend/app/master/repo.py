@@ -271,6 +271,11 @@ class MasterRepo(Protocol):
 
     def document_signed_url(self, *, transaction_id: str, document_id: str) -> str | None: ...
 
+    def add_party_document(
+        self, *, transaction_id: str, party_id: str, filename: str,
+        content_base64: str, doc_type: str, actor: str,
+    ) -> dict[str, Any]: ...
+
     def approve_and_send(
         self,
         *,
@@ -1364,6 +1369,50 @@ class SupabaseRepo:
         if isinstance(res, dict):
             return res.get("signedURL") or res.get("signedUrl") or res.get("signed_url")
         return None
+
+    def add_party_document(
+        self, *, transaction_id: str, party_id: str, filename: str,
+        content_base64: str, doc_type: str, actor: str,
+    ) -> dict[str, Any]:
+        """A party uploads their own document (e.g. an inspector's report, a
+        buyer's proof of funds). Stored in the private bucket; the row is tagged
+        external_ref='party:{id}' so it's attributable back to who uploaded it."""
+        import base64
+        import binascii
+        import re as _re
+
+        try:
+            content = base64.b64decode(content_base64, validate=True)
+        except (binascii.Error, ValueError) as exc:
+            raise ValueError("document content is not valid base64") from exc
+        safe = _re.sub(r"[^A-Za-z0-9._-]", "_", filename)[:120] or "upload"
+        path = f"{transaction_id}/party/{party_id}/{uuid.uuid4()}_{safe}"
+        self._db.storage.from_(ATTACHMENT_BUCKET).upload(
+            path, content, {"content-type": "application/octet-stream"}
+        )
+        doc = (
+            self._db.table("documents")
+            .insert(
+                {
+                    "transaction_id": transaction_id,
+                    "external_ref": f"party:{party_id}",
+                    "doc_type": doc_type,
+                    "storage_path": path,
+                    "status": "uploaded",
+                }
+            )
+            .execute()
+            .data[0]
+        )
+        self._audit(
+            transaction_id=transaction_id,
+            actor=actor,
+            action="document.party_uploaded",
+            entity_type="document",
+            entity_id=doc["id"],
+            details={"party_id": party_id, "doc_type": doc_type, "filename": filename},
+        )
+        return doc
 
     def approve_and_send(
         self,

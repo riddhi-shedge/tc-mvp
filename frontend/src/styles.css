@@ -1385,3 +1385,16 @@ button.secondary.sm { padding: 0.28rem 0.55rem; font-size: 0.76rem; }
 .chat-panel .ask-log { flex: 1; padding: 0.9rem 1rem; margin: 0; max-height: none; }
 .chat-panel .ask-input { padding: 0.7rem 1rem; border-top: 1px solid var(--line); }
 @media (max-width: 560px) { .chat-fab span { display: none; } }
+
+/* ---- Party workspace (invite view) additions --------------------------- */
+.inv-upload { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
+.inv-uploadbtn { display: inline-flex; align-items: center; gap: 0.45rem; background: var(--gold-500); color: var(--on-accent);
+  border-radius: var(--r-sm); padding: 0.5rem 0.85rem; font-size: 0.85rem; font-weight: 600; cursor: pointer; }
+.inv-uploadbtn:hover { background: var(--gold-600); }
+.inv-uploadbtn.off { opacity: 0.6; pointer-events: none; }
+.inv-doc { display: flex; align-items: center; gap: 0.7rem; border: 1px solid var(--line); border-radius: var(--r-sm);
+  padding: 0.6rem 0.75rem; background: var(--surface-2); }
+.doc-ic.sm { width: 36px; height: 36px; border-radius: 9px; }
+.inv-roster { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 0.6rem; }
+.inv-person { display: flex; align-items: center; gap: 0.6rem; border: 1px solid var(--line); border-radius: var(--r-sm);
+  padding: 0.5rem 0.6rem; background: var(--surface); }

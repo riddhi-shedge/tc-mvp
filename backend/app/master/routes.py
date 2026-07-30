@@ -20,7 +20,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel, Field
 
-from app.common.auth import TCUser, require_tc
+from app.common.auth import PartyUser, TCUser, require_party, require_tc
 from app.common.zdr import ZdrNotConfirmed
 from app.contracts.compliance import ComplianceResult
 from app.contracts.fields import EXTRACTABLE_FIELD_NAMES
@@ -1099,6 +1099,126 @@ def ask_deal(
     except AssistantError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from None
     return {"answer": answer}
+
+
+# ---- Party workspace: each invited stakeholder's own scoped view ------------
+# Everything is pinned to the party's own deal + identity from their (signed)
+# token — never a client-supplied id. Everyone sees the ROSTER (who's involved)
+# and the process TIMELINE; each sees only THEIR tasks and THEIR documents; and
+# no private financials / other parties' contact / messages are exposed.
+
+
+def _due_for(task: dict[str, Any], deadlines: list[dict[str, Any]]) -> str | None:
+    if task.get("due_date"):
+        return task["due_date"]
+    did = task.get("deadline_id")
+    return next((d["due_date"] for d in deadlines if d["id"] == did), None) if did else None
+
+
+@router.get("/party/workspace")
+def party_workspace(
+    party: PartyUser = Depends(require_party),
+    repo: MasterRepo = Depends(get_repo),
+) -> dict[str, Any]:
+    state = repo.get_full_state(party.transaction_id)
+    if state is None:
+        raise HTTPException(status_code=404, detail="Deal not found")
+    _merge_task_meta(state)
+    parties = state.get("parties", [])
+    me = next((p for p in parties if p["id"] == party.party_id), None)
+    if me is None:
+        raise HTTPException(status_code=403, detail="You are not on this deal")
+    deadlines = state.get("deadlines", [])
+    prop = state.get("property") or {}
+    return {
+        "me": {
+            "name": me.get("name"),
+            "role": me.get("role"),
+            "email": me.get("email"),
+            "company": me.get("company"),
+            "tier": party.tier,
+        },
+        "property_address": prop.get("address"),
+        "stage": (state.get("transaction") or {}).get("stage"),
+        # Everyone can see WHO is involved — names + roles only, no contact/financials.
+        "roster": [{"name": p.get("name"), "role": p.get("role")} for p in parties],
+        # The process, read-only.
+        "timeline": [
+            {"name": d["name"], "due_date": d["due_date"]}
+            for d in sorted(deadlines, key=lambda x: x.get("due_date", ""))
+        ],
+        # Only THIS party's tasks.
+        "my_tasks": [
+            {
+                "id": t["id"],
+                "title": t["title"],
+                "status": t["status"],
+                "due_date": _due_for(t, deadlines),
+                "priority": t.get("priority", "normal"),
+            }
+            for t in state.get("tasks", [])
+            if t.get("assigned_party_id") == party.party_id
+        ],
+        # Only documents THIS party uploaded.
+        "my_documents": [
+            {"id": d["id"], "doc_type": d.get("doc_type"), "status": d.get("status"), "created_at": d.get("created_at")}
+            for d in state.get("documents", [])
+            if d.get("external_ref") == f"party:{party.party_id}"
+        ],
+    }
+
+
+class PartyTaskStatusRequest(BaseModel):
+    status: str = Field(min_length=1)
+
+
+@router.post("/party/tasks/{task_id}/status")
+def party_set_task_status(
+    task_id: str,
+    body: PartyTaskStatusRequest,
+    party: PartyUser = Depends(require_party),
+    repo: MasterRepo = Depends(get_repo),
+) -> dict[str, Any]:
+    """A party updates the status of ONE OF THEIR OWN tasks."""
+    if body.status not in {"pending", "in_progress", "done"}:
+        raise HTTPException(status_code=422, detail="status must be pending, in_progress, or done")
+    state = repo.get_full_state(party.transaction_id)
+    if state is None:
+        raise HTTPException(status_code=404, detail="Deal not found")
+    task = next((t for t in state.get("tasks", []) if t["id"] == task_id), None)
+    if task is None or task.get("assigned_party_id") != party.party_id:
+        raise HTTPException(status_code=404, detail="That task isn't assigned to you")
+    updated = repo.set_task_status(
+        transaction_id=party.transaction_id, task_id=task_id, status=body.status, actor=party.actor
+    )
+    return updated or {}
+
+
+class PartyUploadRequest(BaseModel):
+    filename: str = Field(min_length=1)
+    content_base64: str = Field(min_length=1)
+    doc_type: str = "other"
+
+
+@router.post("/party/documents", status_code=201)
+def party_upload_document(
+    body: PartyUploadRequest,
+    party: PartyUser = Depends(require_party),
+    repo: MasterRepo = Depends(get_repo),
+) -> dict[str, Any]:
+    """A party uploads their own document to the deal."""
+    try:
+        doc = repo.add_party_document(
+            transaction_id=party.transaction_id,
+            party_id=party.party_id,
+            filename=body.filename.strip(),
+            content_base64=body.content_base64,
+            doc_type=(body.doc_type or "other").strip() or "other",
+            actor=party.actor,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from None
+    return {"document": {"id": doc["id"], "doc_type": doc.get("doc_type"), "status": doc.get("status")}}
 
 
 @router.post("/transactions/{transaction_id}/payloads", status_code=201)
