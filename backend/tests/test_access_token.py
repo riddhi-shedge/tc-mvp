@@ -50,8 +50,9 @@ def test_access_token_delegates_to_issuer_and_audits(client, tc_headers, party_a
     assert len(audit) == 1 and audit[0]["entity_id"] == party_id
 
 
-def test_access_token_only_for_receiving_end_parties(client, tc_headers, party_access_issuer):
-    """A non-receiving-end party (lender = email_participant) gets no live token."""
+def test_access_token_issued_for_every_party_scoped_tier(client, tc_headers, party_access_issuer):
+    """Every party now gets their own scoped workspace token. A lender (not an
+    agent/broker) gets one at the locked 'receiving_end' DB tier."""
     txn_id = _txn(client, tc_headers)
     lender_id = client.post(
         f"/transactions/{txn_id}/parties",
@@ -61,8 +62,8 @@ def test_access_token_only_for_receiving_end_parties(client, tc_headers, party_a
     r = client.post(
         f"/transactions/{txn_id}/parties/{lender_id}/access-token", headers=tc_headers
     )
-    assert r.status_code == 409
-    assert party_access_issuer.calls == []  # never mint for an out-of-scope tier
+    assert r.status_code == 201
+    assert party_access_issuer.calls[-1]["tier"] == "receiving_end"
 
 
 def test_access_token_unknown_party_is_404(client, tc_headers, party_access_issuer):
@@ -117,7 +118,8 @@ def test_invite_email_requires_an_address(client, tc_headers):
     assert r.status_code == 422
 
 
-def test_invite_email_rejects_email_only_party(client, tc_headers):
+def test_invite_email_works_for_any_party_with_email(client, tc_headers):
+    """Every party can be emailed their own scoped workspace link now."""
     txn = _txn(client, tc_headers)
     lender = client.post(
         f"/transactions/{txn}/parties",
@@ -127,7 +129,7 @@ def test_invite_email_rejects_email_only_party(client, tc_headers):
         f"/transactions/{txn}/parties/{lender}/invite-email",
         json={"base_url": "https://app.test/"}, headers=tc_headers,
     )
-    assert r.status_code == 409
+    assert r.status_code == 200 and r.json().get("sent") is True
 
 
 def test_invite_email_disabled_returns_link_for_manual_share(client, tc_headers):

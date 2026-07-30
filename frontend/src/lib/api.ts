@@ -359,8 +359,9 @@ export function isCollaborator(p: DealParty): boolean {
 }
 /** Parties who can receive a live invite link (vendors: own task; agents/broker:
  *  read-only deal view). Email-only parties (buyer/seller/lender/escrow) can't. */
-export function isInvitable(p: DealParty): boolean {
-  return isReceivingEnd(p) || isCollaborator(p);
+export function isInvitable(_p: DealParty): boolean {
+  // Every party on the deal gets their own scoped workspace link.
+  return true;
 }
 
 // Timeline-readiness breakdown (backend _deadline_gate_state): which

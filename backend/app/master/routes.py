@@ -526,11 +526,13 @@ _COLLAB_ROLES = {"buyer_agent", "listing_agent", "broker", "agent"}
 
 
 def _invite_tier(party: dict[str, Any]) -> str | None:
-    if party.get("permission_tier") == "receiving_end":
-        return "receiving_end"
+    # Every party gets their own scoped workspace link. Agents/broker keep the
+    # broader 'collaborator' DB tier; everyone else gets 'receiving_end' (most
+    # locked at the DB) — the workspace scoping itself is enforced by the party
+    # API from the signed token, independent of this tier.
     if party.get("permission_tier") == "collaborator" or party.get("role") in _COLLAB_ROLES:
         return "collaborator"
-    return None
+    return "receiving_end"
 
 
 @router.post("/transactions/{transaction_id}/parties/{party_id}/access-token", status_code=201)
