@@ -8,14 +8,16 @@ Supabase service-role key: backend only, never exposed to a frontend.
 from __future__ import annotations
 
 import os
+import re
 import uuid
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Protocol
 
 from app.common.db import ThreadLocalSupabase
 from app.contracts.compliance import ComplianceResult
+from app.contracts.documents import COUNTER_OFFER_TYPES
 from app.contracts.fields import DEADLINE_DRIVING
-from app.contracts.payload import Payload
+from app.contracts.payload import CounterMeta, Payload
 from app.master.deal_tasks import derive_tasks
 from app.master.inconsistency import CRITICAL_FIELDS, MATERIAL_FIELDS, find_field_conflicts
 from app.master.parties import derive_parties, party_key, tier_for
@@ -75,6 +77,104 @@ _LEGACY_STAGE = {"funds": "new", "removed": "closing"}
 def _normalize_stage(stage: str | None) -> str:
     stage = stage or "new"
     return _LEGACY_STAGE.get(stage, stage if stage in DEAL_STAGES else "new")
+
+
+def _effective_fields(rows: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    """Resolve extracted-field rows to ONE effective value per field name so a
+    later confirmed value supersedes an earlier one — this is how a counter
+    offer's price overrides the purchase agreement's. Rule: among rows sharing a
+    name, the latest CONFIRMED by created_at wins; if none is confirmed, the
+    latest row wins. `superseded_from` carries the prior confirmed value it
+    replaced, for provenance in the UI ("$1.9M — was $1.8M")."""
+    by_name: dict[str, list[dict[str, Any]]] = {}
+    for r in rows:
+        by_name.setdefault(r["name"], []).append(r)
+    out: dict[str, dict[str, Any]] = {}
+    for name, group in by_name.items():
+        ordered = sorted(group, key=lambda r: r.get("created_at") or "")
+        confirmed = [r for r in ordered if r.get("confirmed")]
+        chosen = (confirmed or ordered)[-1]
+        prior = next(
+            (r["value"] for r in reversed(confirmed) if r is not chosen and r["value"] != chosen["value"]),
+            None,
+        )
+        out[name] = {
+            "value": chosen["value"],
+            "confirmed": bool(chosen.get("confirmed")),
+            "deadline_driving": bool(chosen.get("deadline_driving")),
+            "superseded_from": prior,
+        }
+    return out
+
+
+_LOOSE_DATE_FORMATS = (
+    "%Y-%m-%d", "%m/%d/%Y", "%m/%d/%y", "%m-%d-%Y",
+    "%B %d, %Y", "%b %d, %Y", "%B %d %Y", "%b %d %Y",
+)
+
+
+def _parse_loose_date(value: str | None) -> date | None:
+    """Parse a date written in any common form (ISO, US slash, month name) out of
+    a possibly longer phrase. Returns None when nothing matches."""
+    if not value:
+        return None
+    v = re.sub(r"\s+", " ", value.strip())
+    try:
+        return date.fromisoformat(v[:10])
+    except ValueError:
+        pass
+    m = re.search(r"\d{1,2}[/-]\d{1,2}[/-]\d{2,4}|[A-Za-z]{3,9} \d{1,2},? \d{4}", v)
+    token = m.group(0) if m else v
+    for fmt in _LOOSE_DATE_FORMATS:
+        try:
+            return datetime.strptime(token, fmt).date()
+        except ValueError:
+            continue
+    return None
+
+
+def _signed_after(signed: str | None, expiration: str | None) -> bool:
+    s, e = _parse_loose_date(signed), _parse_loose_date(expiration)
+    return bool(s and e and s > e)
+
+
+def evaluate_counter_flags(doc_type: str, cm: CounterMeta) -> list[dict[str, str]]:
+    """Turn a counter offer's chain/expiration facts into risk flags. A counter
+    that the accepting party never signed (or signed too late) means the deal may
+    have FALLEN THROUGH; a 'subject to attached counter' box means the true terms
+    live in a FURTHER counter that must be uploaded. Pure — inserted by each repo."""
+    accepting = (
+        "buyer" if doc_type == "seller_counter_offer"
+        else "seller" if doc_type == "buyer_counter_offer"
+        else "receiving party"
+    )
+    label = doc_type.replace("_", " ")
+    flags: list[dict[str, str]] = []
+    late = _signed_after(cm.signed_date, cm.expiration)
+    if not cm.recipient_signed or late:
+        by = f" by {cm.expiration}" if cm.expiration else ""
+        why = "did not sign it in time" if late else "has not signed it"
+        flags.append({
+            "severity": "critical",
+            "case_key": "counter_not_accepted",
+            "description": (
+                f"The {accepting} {why}{by} — this {label} may not be accepted and the "
+                "deal could have fallen through. Confirm acceptance, or mark the deal canceled."
+            ),
+        })
+    if cm.subject_to_further_counter:
+        further = (
+            "buyer counter offer" if doc_type == "seller_counter_offer" else "seller counter offer"
+        )
+        flags.append({
+            "severity": "warning",
+            "case_key": "counter_chain",
+            "description": (
+                f"This {label} is marked subject to a further counter — the current terms "
+                f"are in the {further}. Upload it to capture the latest price and terms."
+            ),
+        })
+    return flags
 
 
 def _deal_summary(
@@ -565,13 +665,20 @@ class SupabaseRepo:
             .in_("transaction_id", ids).execute().data
         ):
             risks[r["transaction_id"]] = risks.get(r["transaction_id"], 0) + 1
-        fields: dict[str, dict[str, str]] = {}
+        raw_fields: dict[str, list[dict[str, Any]]] = {}
         for f in (
-            self._db.table("extracted_fields").select("transaction_id, name, value")
+            self._db.table("extracted_fields")
+            .select("transaction_id, name, value, confirmed, created_at")
             .in_("transaction_id", ids).in_("name", ["purchase_price", "all_cash"])
             .execute().data
         ):
-            fields.setdefault(f["transaction_id"], {})[f["name"]] = f["value"]
+            raw_fields.setdefault(f["transaction_id"], []).append(f)
+        # Resolve each field to its effective value so a counter offer's price
+        # supersedes the PA's on the board.
+        fields: dict[str, dict[str, str]] = {
+            tid: {n: v["value"] for n, v in _effective_fields(rows).items()}
+            for tid, rows in raw_fields.items()
+        }
         return [_deal_summary(t, props, coe, tasks, risks, fields) for t in txns]
 
     def list_active_deadlines(self) -> list[dict[str, Any]]:
@@ -799,6 +906,30 @@ class SupabaseRepo:
                 self._db.table("documents").delete().eq(
                     "transaction_id", transaction_id
                 ).eq("doc_type", "purchase_agreement").neq("id", doc["id"]).execute()
+
+            # A counter offer's chain/expiration facts → risk flags (fell-through
+            # if unaccepted; "upload the further counter" if subject-to-counter).
+            if payload.document_type in COUNTER_OFFER_TYPES and payload.counter_meta:
+                for flag in evaluate_counter_flags(payload.document_type, payload.counter_meta):
+                    self._db.table("risk_flags").insert(
+                        {
+                            "transaction_id": transaction_id,
+                            "severity": flag["severity"],
+                            "description": flag["description"],
+                            "generated_by": "master",
+                            "case_key": flag["case_key"],
+                            "resolved": False,
+                        }
+                    ).execute()
+                    self._audit(
+                        transaction_id=transaction_id,
+                        actor=actor,
+                        action="risk_flag.counter",
+                        entity_type="risk_flag",
+                        entity_id=None,
+                        details={"case": flag["case_key"]},
+                    )
+
             # A document arriving reopens an archived deal (work resumed).
             self._db.table("transactions").update({"status": "open"}).eq(
                 "id", transaction_id
@@ -1727,4 +1858,5 @@ class SupabaseRepo:
                 .data
             )
         state["timeline_gate"] = _deadline_gate_state(state["extracted_fields"])
+        state["effective_fields"] = _effective_fields(state["extracted_fields"])
         return state

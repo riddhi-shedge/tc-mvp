@@ -26,7 +26,7 @@ const stageName = (id: string) => DEAL_STAGES.find((s) => s.id === id)?.name ?? 
 
 /** Home — the cross-deal command center: what's due, what's at risk, this week's
  *  deadlines, and the open work queue, across every active deal. */
-export function Home({ onOpenDeal }: { onOpenDeal: (id: string) => void }) {
+export function Home({ onOpenDeal, onOpenRail }: { onOpenDeal: (id: string) => void; onOpenRail?: () => void }) {
   const [deals, setDeals] = useState<DealSummary[]>([]);
   const [cal, setCal] = useState<CalendarDeadline[]>([]);
   const [tasks, setTasks] = useState<OpenTask[]>([]);
@@ -95,6 +95,14 @@ export function Home({ onOpenDeal }: { onOpenDeal: (id: string) => void }) {
         <Stat k="Closing this week" v={closingWk} dot="var(--gold-500)" />
         <Stat k="Open tasks" v={tasks.length} dot="var(--muted)" />
       </div>
+
+      <FieldNote
+        attention={attention}
+        dueToday={dueToday}
+        closingWk={closingWk}
+        onOpenDeal={onOpenDeal}
+        onOpenRail={onOpenRail}
+      />
 
       <div className="hm-cols">
         <div>
@@ -187,4 +195,76 @@ function Section({ title, count, children }: { title: string; count: number; chi
 }
 function Empty({ children }: { children: ReactNode }) {
   return <div className="hm-empty">{children}</div>;
+}
+
+function FieldNote({
+  attention,
+  dueToday,
+  closingWk,
+  onOpenDeal,
+  onOpenRail,
+}: {
+  attention: DealSummary[];
+  dueToday: number;
+  closingWk: number;
+  onOpenDeal: (id: string) => void;
+  onOpenRail?: () => void;
+}) {
+  const time = new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+  const items = attention.slice(0, 3).map((d) => {
+    const n = daysTo(d.coe_date);
+    const u = urg(n);
+    return {
+      id: d.id,
+      sev: u === "plain" ? "amber" : u,
+      lead: addr(d.property_address),
+      detail:
+        d.risk_count > 0
+          ? `${d.risk_count} unresolved risk${d.risk_count > 1 ? "s" : ""}`
+          : `closes ${countdown(n)}`,
+      src: stageName(d.stage),
+    };
+  });
+  const headline =
+    attention.length > 0
+      ? `${attention.length} deal${attention.length > 1 ? "s" : ""} need a decision today.`
+      : "Nothing at risk this morning — you're on top of it.";
+  const summary =
+    attention.length > 0
+      ? `${dueToday} deadline${dueToday === 1 ? "" : "s"} due today and ${closingWk} deal${closingWk === 1 ? "" : "s"} closing this week. Terra has grouped what needs your attention below.`
+      : `${dueToday} deadline${dueToday === 1 ? "" : "s"} due today and ${closingWk} deal${closingWk === 1 ? "" : "s"} closing this week. Everything else is on track.`;
+
+  return (
+    <div className="fieldnote">
+      <svg className="fn-contour" viewBox="0 0 240 140" fill="none" stroke="currentColor" strokeWidth={1} aria-hidden>
+        {Array.from({ length: 6 }, (_, i) => (
+          <path key={i} d={`M-10 ${28 + i * 20}C50 ${8 + i * 20} 100 ${58 + i * 20} 160 ${34 + i * 20} 220 ${14 + i * 20} 260 ${48 + i * 20} 300 ${28 + i * 20}`} opacity={0.5 - i * 0.05} />
+        ))}
+      </svg>
+      <div className="fn-lab">
+        <span className="fn-chip">◆ Morning Field Note</span>
+        <span className="fn-time tnum">{time}</span>
+      </div>
+      <h3 className="fn-head">{headline}</h3>
+      <p className="fn-p">{summary}</p>
+      {items.length > 0 && (
+        <div className="fn-pts">
+          {items.map((it) => (
+            <button key={it.id} className="fn-pt" onClick={() => onOpenDeal(it.id)}>
+              <span className={`fn-b ${it.sev}`} />
+              <span className="fn-pt-t">
+                <b>{it.lead}</b> — {it.detail}
+                <span className="fn-src">Source: {it.src}</span>
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+      {onOpenRail && (
+        <button className="fn-cta" onClick={onOpenRail}>
+          Review recommendations <Icon name="chevron" size={14} />
+        </button>
+      )}
+    </div>
+  );
 }

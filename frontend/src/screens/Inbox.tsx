@@ -12,9 +12,14 @@ import { Icon } from "../lib/icons";
 
 const DOC_TYPE_LABELS: Record<string, string> = {
   purchase_agreement: "Purchase agreement",
+  seller_counter_offer: "Seller counter offer",
+  buyer_counter_offer: "Buyer counter offer",
+  counter_offer: "Counter offer",
+  contingency_removal: "Contingency removal",
   proof_of_funds: "Proof of funds",
   disclosure: "Disclosure",
   inspection_report: "Inspection report",
+  other: "Other — let Terra identify it",
   unknown: "Unknown — pick a type",
 };
 
@@ -29,6 +34,7 @@ export function Inbox({ onOpenDeal }: { onOpenDeal: (id: string) => void }) {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [processing, setProcessing] = useState(false);
+  const [procName, setProcName] = useState<string | null>(null);
   const [uploadName, setUploadName] = useState<string | null>(null);
   const [uploadB64, setUploadB64] = useState<string | null>(null);
   // Manual field-entry fallback (open per item after an extraction 422)
@@ -59,6 +65,7 @@ export function Inbox({ onOpenDeal }: { onOpenDeal: (id: string) => void }) {
 
   async function confirm(item: InboxItem, manualFields?: { name: string; value: string }[]) {
     setBusy(item.id);
+    setProcName(item.attachment_name ?? item.subject ?? null);
     setProcessing(true);
     setError(null);
     try {
@@ -120,6 +127,7 @@ export function Inbox({ onOpenDeal }: { onOpenDeal: (id: string) => void }) {
   async function uploadManual() {
     if (!uploadName || !uploadB64) return;
     setBusy("upload");
+    setProcName(uploadName);
     setProcessing(true);
     setError(null);
     try {
@@ -143,7 +151,7 @@ export function Inbox({ onOpenDeal }: { onOpenDeal: (id: string) => void }) {
 
   return (
     <>
-      <UploadOverlay show={processing} />
+      <UploadOverlay show={processing} docName={procName} />
       <div className="page-head">
         <div>
           <h1>Deals &amp; Inbox</h1>

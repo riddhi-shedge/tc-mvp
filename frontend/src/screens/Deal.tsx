@@ -3,6 +3,8 @@ import { api, AuditRow, FullState, Message } from "../lib/api";
 import { fmtDate, fmtDateTime } from "../lib/format";
 import { ExtractionReview } from "./ExtractionReview";
 import { DealDashboard } from "./DealDashboard";
+import { DealNotes } from "./DealNotes";
+import { DealMap } from "./DealMap";
 import { DealTimeline } from "./DealTimeline";
 import { AnimatedTabs, CountUp, toast } from "../lib/ui";
 import { Icon, IconName } from "../lib/icons";
@@ -483,7 +485,25 @@ export function Deal({ id, onBack }: { id: string; onBack: () => void }) {
             id: "overview",
             label: "Overview",
             icon: <Icon name="board" size={14} />,
-            content: <DealDashboard id={id} state={state} onChanged={refresh} />,
+            content: (
+              <>
+                <DealDashboard id={id} state={state} onChanged={refresh} />
+                <DealNotes id={id} onChanged={refresh} />
+              </>
+            ),
+          },
+          {
+            id: "map",
+            label: "Deal Map",
+            icon: <Icon name="calendar" size={14} />,
+            content: (
+              <DealMap
+                deadlines={state.deadlines}
+                tasks={state.tasks}
+                documents={state.documents}
+                riskFlags={state.risk_flags}
+              />
+            ),
           },
           {
             id: "documents",

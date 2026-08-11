@@ -21,6 +21,26 @@ _DOC_TYPE_PATTERNS: list[tuple[DocType, re.Pattern[str]]] = [
         "purchase_agreement",
         re.compile(r"purchase\s+agreement|residential\s+purchase|\brpa\b", re.IGNORECASE),
     ),
+    (
+        # A seller counter (SCO/SMCO) — check before the generic counter pattern.
+        "seller_counter_offer",
+        re.compile(r"seller[\s\-_]*counter|\bsco\b|\bspco\b|\bsmco\b", re.IGNORECASE),
+    ),
+    (
+        # A buyer counter (BCO/BMCO).
+        "buyer_counter_offer",
+        re.compile(r"buyer[\s\-_]*counter|\bbco\b|\bbmco\b", re.IGNORECASE),
+    ),
+    (
+        # Generic counter offer when the side isn't in the name ("Counter Offer
+        # No. 3", "Counter 1"). Real filenames often omit "offer".
+        "counter_offer",
+        re.compile(r"counter[\s\-_]*offer|counteroffer|counter[\s\-_]*\d", re.IGNORECASE),
+    ),
+    (
+        "contingency_removal",
+        re.compile(r"conting\w*\s*removal|removal\s*of\s*conting|\bcr[\s\-_]?[bs]\b", re.IGNORECASE),
+    ),
     ("proof_of_funds", re.compile(r"proof\s+of\s+funds|\bpof\b", re.IGNORECASE)),
     ("disclosure", re.compile(r"disclosure", re.IGNORECASE)),
     (

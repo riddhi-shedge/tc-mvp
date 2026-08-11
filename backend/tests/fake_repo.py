@@ -10,6 +10,7 @@ import uuid
 from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
+from app.contracts.documents import COUNTER_OFFER_TYPES
 from app.contracts.fields import DEADLINE_DRIVING
 from app.contracts.payload import Payload
 from app.master.deal_tasks import derive_tasks
@@ -175,7 +176,7 @@ class InMemoryRepo:
         return f
 
     def list_deal_summaries(self) -> list[dict[str, Any]]:
-        from app.master.repo import _deal_summary
+        from app.master.repo import _deal_summary, _effective_fields
 
         txns = [t for t in self.transactions.values() if t.get("status") != "archived"]
         ids = {t["id"] for t in txns}
@@ -197,10 +198,14 @@ class InMemoryRepo:
         for r in self.risk_flags:
             if r["transaction_id"] in ids and not r.get("resolved"):
                 risks[r["transaction_id"]] = risks.get(r["transaction_id"], 0) + 1
-        fields: dict[str, dict[str, str]] = {}
+        raw_fields: dict[str, list[dict[str, Any]]] = {}
         for f in self.extracted_fields:
             if f["transaction_id"] in ids and f["name"] in ("purchase_price", "all_cash"):
-                fields.setdefault(f["transaction_id"], {})[f["name"]] = f["value"]
+                raw_fields.setdefault(f["transaction_id"], []).append(f)
+        fields: dict[str, dict[str, str]] = {
+            tid: {n: v["value"] for n, v in _effective_fields(rows).items()}
+            for tid, rows in raw_fields.items()
+        }
         return [_deal_summary(t, props, coe, tasks, risks, fields) for t in txns]
 
     def list_active_deadlines(self) -> list[dict[str, Any]]:
@@ -873,6 +878,27 @@ class InMemoryRepo:
                     entity_type="risk_flag", entity_id=None, details={"field": name, "old": old, "new": new},
                 )
 
+        # A counter offer's chain/expiration facts → risk flags.
+        if payload.document_type in COUNTER_OFFER_TYPES and payload.counter_meta:
+            from app.master.repo import evaluate_counter_flags
+
+            for flag in evaluate_counter_flags(payload.document_type, payload.counter_meta):
+                self.risk_flags.append(
+                    {
+                        "id": str(uuid.uuid4()),
+                        "transaction_id": transaction_id,
+                        "severity": flag["severity"],
+                        "description": flag["description"],
+                        "generated_by": "master",
+                        "case_key": flag["case_key"],
+                        "resolved": False,
+                    }
+                )
+                self._audit(
+                    transaction_id=transaction_id, actor=actor, action="risk_flag.counter",
+                    entity_type="risk_flag", entity_id=None, details={"case": flag["case_key"]},
+                )
+
         # A re-uploaded PA supersedes the prior one (cascade its payload+fields).
         if payload.document_type == "purchase_agreement":
             old_docs = [
@@ -1026,11 +1052,14 @@ class InMemoryRepo:
         txn = self.transactions.get(transaction_id)
         if txn is None:
             return None
+        from app.master.repo import _effective_fields
+
         fields = [f for f in self.extracted_fields if f["transaction_id"] == transaction_id]
         return {
             "transaction": txn,
             "property": self.properties.get(transaction_id),
             "timeline_gate": _deadline_gate_state(fields),
+            "effective_fields": _effective_fields(fields),
             "parties": [p for p in self.parties.values() if p["transaction_id"] == transaction_id],
             "documents": [
                 d for d in self.documents.values() if d["transaction_id"] == transaction_id

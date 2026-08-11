@@ -10,10 +10,24 @@ from typing import Literal
 
 DocType = Literal[
     "purchase_agreement",
+    "counter_offer",
+    "seller_counter_offer",
+    "buyer_counter_offer",
+    "contingency_removal",
     "proof_of_funds",
     "disclosure",
     "inspection_report",
+    "other",
     "unknown",
 ]
 
 UNKNOWN_DOC_TYPE: DocType = "unknown"
+# The TC can ask Terra to classify a document itself: picking this sends it
+# through the model's content-level detection at confirm time.
+OTHER_DOC_TYPE: DocType = "other"
+
+# Counter offers supersede the purchase agreement's terms (price, dates). The
+# generic "counter_offer" is kept for back-compat / when the side is unknown.
+COUNTER_OFFER_TYPES: frozenset[str] = frozenset(
+    {"counter_offer", "seller_counter_offer", "buyer_counter_offer"}
+)

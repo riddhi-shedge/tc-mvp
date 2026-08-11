@@ -380,6 +380,12 @@ export interface FullState {
   parties: DealParty[];
   documents: DealDocument[];
   extracted_fields: ExtractedField[];
+  // One resolved value per field name — a later confirmed value (e.g. a counter
+  // offer's price) supersedes an earlier one; superseded_from carries the prior.
+  effective_fields?: Record<
+    string,
+    { value: string; confirmed: boolean; deadline_driving: boolean; superseded_from: string | null }
+  >;
   deadlines: Deadline[];
   tasks: Task[];
   messages: Message[];

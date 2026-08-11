@@ -21,9 +21,14 @@ from fastapi.security import HTTPAuthorizationCredentials
 from pydantic import BaseModel, Field
 
 from app.common.auth import TCUser, bearer_scheme, require_tc
-from app.contracts.documents import UNKNOWN_DOC_TYPE, DocType
+from app.contracts.documents import (
+    COUNTER_OFFER_TYPES,
+    OTHER_DOC_TYPE,
+    UNKNOWN_DOC_TYPE,
+    DocType,
+)
 from app.contracts.fields import EXTRACTABLE_FIELD_NAMES
-from app.contracts.payload import NEW_TRANSACTION, ExtractedField, Payload
+from app.contracts.payload import NEW_TRANSACTION, CounterMeta, ExtractedField, Payload
 from app.ingestion.detector import check_readability, detect_doc_type
 from app.ingestion.extractor import (
     ClaudeExtractor,
@@ -290,6 +295,127 @@ def _extraction_error(message: str, reasons: list[str]) -> HTTPException:
     )
 
 
+def _classify_document(
+    item: dict[str, Any], inbox: InboxRepo, extractor: Extractor
+) -> DocType:
+    """Content-level classification for the TC's 'Other — let Terra identify it'
+    choice: the model reads the document and reports what it actually is. This is
+    best-effort — an unreadable, blocked, or unrecognizable document files as
+    'other' rather than blocking the confirm."""
+    storage_path = item.get("storage_path")
+    if not storage_path:
+        return OTHER_DOC_TYPE
+    try:
+        pdf_bytes = inbox.download_attachment(storage_path)
+    except StorageUnavailable:
+        raise HTTPException(
+            status_code=503, detail="Attachment store unavailable; try again shortly"
+        ) from None
+    readable = decrypt_pdf(pdf_bytes)
+    if readable is None:
+        return OTHER_DOC_TYPE
+    try:
+        result = extractor.extract(pdf_bytes=readable, doc_type=OTHER_DOC_TYPE)
+    except (ExtractionFailed, ExtractionBlocked):
+        return OTHER_DOC_TYPE
+    looks = result.doc_looks_like
+    return looks if looks in {  # doc_looks_like is already schema-constrained
+        "purchase_agreement", "counter_offer", "proof_of_funds",
+        "disclosure", "inspection_report",
+    } else OTHER_DOC_TYPE
+
+
+def _extract_counter(
+    item: dict[str, Any], inbox: InboxRepo, extractor: Extractor
+) -> tuple[list[ExtractedField], CounterMeta]:
+    """Extract a counter offer's overriding §5 fields (new price, changed dates)
+    AND its chain/expiration facts. Uses the same model extractor as a PA but
+    WITHOUT the purchase-agreement gates — a counter is short, reads as a counter,
+    and legitimately restates only the changed terms. Fields come back confirmed:
+    they are the agreed terms and supersede the PA. The metadata drives the
+    fell-through / further-counter risk flags the master raises."""
+    storage_path = item.get("storage_path")
+    if not storage_path:
+        raise _extraction_error(
+            "No stored document for this item", ["no attachment file is stored"]
+        )
+    try:
+        pdf_bytes = inbox.download_attachment(storage_path)
+    except StorageUnavailable:
+        raise HTTPException(
+            status_code=503, detail="Attachment store unavailable; try again shortly"
+        ) from None
+    readable = decrypt_pdf(pdf_bytes)
+    if readable is None:
+        raise _extraction_error(
+            "The document is password-protected",
+            ["the PDF requires a password to open — upload an unlocked copy"],
+        )
+    try:
+        result = extractor.extract(pdf_bytes=readable, doc_type="seller_counter_offer")
+        meta = extractor.extract_counter_meta(pdf_bytes=readable)
+    except ExtractionBlocked as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from None
+    except ExtractionFailed as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from None
+    fields = [
+        ExtractedField(name=f.name, value=f.value, confidence=f.confidence, confirmed=True)
+        for f in result.fields
+    ]
+    return fields, meta
+
+
+def _extract_contingency_removal_fields(
+    item: dict[str, Any], inbox: InboxRepo, extractor: Extractor
+) -> list[ExtractedField]:
+    """Turn a Contingency Removal (CR-B) into confirmed field overrides: each
+    removed contingency's §5 day-field becomes 'removed' (which the timeline skips
+    like a waiver) and its *_present flag becomes 'false'. These supersede the PA
+    via the master's latest-confirmed rule, so removed contingencies drop off the
+    timeline on the next build — the buyer can no longer back out on that basis."""
+    storage_path = item.get("storage_path")
+    if not storage_path:
+        raise _extraction_error(
+            "No stored document for this item", ["no attachment file is stored"]
+        )
+    try:
+        pdf_bytes = inbox.download_attachment(storage_path)
+    except StorageUnavailable:
+        raise HTTPException(
+            status_code=503, detail="Attachment store unavailable; try again shortly"
+        ) from None
+    readable = decrypt_pdf(pdf_bytes)
+    if readable is None:
+        raise _extraction_error(
+            "The document is password-protected",
+            ["the PDF requires a password to open — upload an unlocked copy"],
+        )
+    try:
+        cr = extractor.extract_contingency_removal(pdf_bytes=readable)
+    except ExtractionBlocked as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from None
+    except ExtractionFailed as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from None
+
+    removed = {
+        "loan": cr.all_contingencies_removed or cr.loan_removed,
+        "appraisal": cr.all_contingencies_removed or cr.appraisal_removed,
+        "inspection": cr.all_contingencies_removed or cr.inspection_removed,
+        "insurance": cr.all_contingencies_removed or cr.insurance_removed,
+    }
+    fields: list[ExtractedField] = []
+    for key, gone in removed.items():
+        if not gone:
+            continue
+        fields.append(
+            ExtractedField(name=f"{key}_contingency_days", value="removed", confidence=1.0, confirmed=True)
+        )
+        fields.append(
+            ExtractedField(name=f"{key}_contingency_present", value="false", confidence=1.0, confirmed=True)
+        )
+    return fields
+
+
 def _extract_pa_fields(
     item: dict[str, Any], inbox: InboxRepo, extractor: Extractor
 ) -> list[ExtractedField]:
@@ -375,6 +501,9 @@ def confirm_inbox_item(
 
     token = _tc_token(credentials)
     doc_type = body.doc_type or item.get("detected_doc_type") or UNKNOWN_DOC_TYPE
+    if doc_type == OTHER_DOC_TYPE:
+        # The TC asked Terra to identify it — classify from the content itself.
+        doc_type = _classify_document(item, inbox, extractor)
     if doc_type == UNKNOWN_DOC_TYPE:
         # Never guess: an unclassified document can't enter the SOR.
         raise HTTPException(
@@ -390,20 +519,31 @@ def confirm_inbox_item(
         # §5 fields come only from a purchase agreement (real extraction,
         # Phase 4). Other doc types attach field-less. Manual entry skips
         # extraction: the TC's typed values are the confirmed truth.
-        if doc_type != "purchase_agreement":
-            if body.manual_fields:
-                raise HTTPException(
-                    status_code=422,
-                    detail=(
-                        "manual_fields apply only to purchase agreements — "
-                        f"this item is a {doc_type}"
-                    ),
-                )
-            fields: list[ExtractedField] = []
-        elif body.manual_fields:
-            fields = _manual_extracted_fields(body.manual_fields)
+        if doc_type != "purchase_agreement" and body.manual_fields:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    "manual_fields apply only to purchase agreements — "
+                    f"this item is a {doc_type}"
+                ),
+            )
+        counter_meta: CounterMeta | None = None
+        if doc_type == "purchase_agreement":
+            fields: list[ExtractedField] = (
+                _manual_extracted_fields(body.manual_fields)
+                if body.manual_fields
+                else _extract_pa_fields(item, inbox, extractor)
+            )
+        elif doc_type in COUNTER_OFFER_TYPES:
+            # A counter offer restates the changed terms (e.g. a new price); its
+            # fields supersede the PA's via the master's latest-confirmed rule, and
+            # its metadata drives the fell-through / further-counter flags.
+            fields, counter_meta = _extract_counter(item, inbox, extractor)
+        elif doc_type == "contingency_removal":
+            # Removed contingencies override the PA to 'removed' → drop off the timeline.
+            fields = _extract_contingency_removal_fields(item, inbox, extractor)
         else:
-            fields = _extract_pa_fields(item, inbox, extractor)
+            fields = []
 
         address = next(
             (f.value for f in fields if f.name == "property_address"),
@@ -426,6 +566,7 @@ def confirm_inbox_item(
             extracted_fields=fields,
             document_type=doc_type,
             document_storage_ref=item.get("storage_path"),
+            counter_meta=counter_meta,
         )
         status, data = master.write_payload(
             token=token, transaction_id=transaction_id, payload=payload

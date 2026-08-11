@@ -26,7 +26,7 @@ from typing import Any, Protocol
 from app.common.zdr import ZdrNotConfirmed, check_zdr_gate
 from app.contracts.documents import DocType
 from app.contracts.fields import S5_FIELDS, is_extractable_field
-from app.contracts.payload import ExtractedField
+from app.contracts.payload import CounterMeta, ExtractedField
 
 # Back-compat alias — the gate now lives in app/common/zdr.py (shared).
 ExtractionBlocked = ZdrNotConfirmed
@@ -43,8 +43,97 @@ class ExtractionResult:
     signature_detected: bool
 
 
+@dataclass(frozen=True)
+class ContingencyRemoval:
+    """Which contingencies a C.A.R. Contingency Removal (CR-B) form removes. The
+    model resolves the form's paragraph 2 (individual), 3 (all-except), and 4 (all)
+    checkboxes into the net removed state per contingency. A removed contingency's
+    deadline no longer applies — the buyer can't back out on that basis."""
+
+    all_contingencies_removed: bool = False
+    loan_removed: bool = False
+    appraisal_removed: bool = False
+    inspection_removed: bool = False
+    insurance_removed: bool = False
+    effective_date: str | None = None
+
+
 class Extractor(Protocol):
     def extract(self, *, pdf_bytes: bytes, doc_type: DocType) -> ExtractionResult: ...
+
+    def extract_counter_meta(self, *, pdf_bytes: bytes) -> CounterMeta: ...
+
+    def extract_contingency_removal(self, *, pdf_bytes: bytes) -> ContingencyRemoval: ...
+
+
+def _cr_schema() -> dict[str, Any]:
+    props = {
+        k: {"type": "boolean"}
+        for k in (
+            "all_contingencies_removed", "loan_removed", "appraisal_removed",
+            "inspection_removed", "insurance_removed",
+        )
+    }
+    props["effective_date"] = {"type": "string"}
+    return {
+        "type": "object",
+        "properties": props,
+        "required": list(props),
+        "additionalProperties": False,
+    }
+
+
+def _cr_prompt() -> str:
+    return (
+        "This is a California Contingency Removal (C.A.R. Form CR-B / CR-S). Report "
+        "which BUYER contingencies this form removes, resolving its checkboxes:\n"
+        "- Paragraph 2 removes ONLY the individually checked contingencies "
+        "(A Loan, B Appraisal, C Investigation/inspection, D Insurance, …).\n"
+        "- Paragraph 3 removes ALL contingencies EXCEPT the ones checked as "
+        "exceptions.\n"
+        "- Paragraph 4 removes ALL contingencies unconditionally.\n\n"
+        "Return the NET removed state as JSON booleans: all_contingencies_removed "
+        "(true only if para 3 with no relevant exception, or para 4), and per "
+        "contingency loan_removed / appraisal_removed / inspection_removed / "
+        "insurance_removed (true if removed by any of paragraphs 2–4). Also "
+        "effective_date: the form's date, as written (empty string if none)."
+    )
+
+
+def _counter_meta_schema() -> dict[str, Any]:
+    return {
+        "type": "object",
+        "properties": {
+            # As written; empty string when not stated (avoids nullable unions).
+            "expiration": {"type": "string"},
+            "recipient_signed": {"type": "boolean"},
+            "signed_date": {"type": "string"},
+            "subject_to_further_counter": {"type": "boolean"},
+        },
+        "required": [
+            "expiration", "recipient_signed", "signed_date", "subject_to_further_counter",
+        ],
+        "additionalProperties": False,
+    }
+
+
+def _counter_meta_prompt() -> str:
+    return (
+        "This is a California residential counter offer (C.A.R. Seller Counter "
+        "Offer or Buyer Counter Offer). Report ONLY these facts as JSON:\n"
+        "1. expiration: the date/time by which this counter must be accepted and "
+        "signed to be valid, exactly as written (e.g. 'April 30, 2025 5:00 PM'). "
+        "Empty string if none is stated.\n"
+        "2. recipient_signed: true only if the party who must ACCEPT this counter "
+        "(the BUYER for a seller counter offer; the SELLER for a buyer counter "
+        "offer) has signed and dated their acceptance on this document.\n"
+        "3. signed_date: the date that accepting party signed, as written. Empty "
+        "string if they have not signed.\n"
+        "4. subject_to_further_counter: true if a box such as 'SUBJECT TO THE "
+        "ATTACHED COUNTER OFFER' (i.e. acceptance is subject to a further counter "
+        "offer) is checked.\n"
+        "Never extract wiring, bank-account, or payment-transfer details."
+    )
 
 
 def _output_schema() -> dict[str, Any]:
@@ -59,6 +148,10 @@ def _output_schema() -> dict[str, Any]:
                 "type": "string",
                 "enum": [
                     "purchase_agreement",
+                    "counter_offer",
+                    "seller_counter_offer",
+                    "buyer_counter_offer",
+                    "contingency_removal",
                     "proof_of_funds",
                     "disclosure",
                     "inspection_report",
@@ -162,9 +255,112 @@ class ClaudeExtractor:
             raise ExtractionFailed("extraction returned unparseable output") from exc
         return parse_extraction_output(data)
 
+    def extract_counter_meta(self, *, pdf_bytes: bytes) -> CounterMeta:
+        check_zdr_gate()
+        import anthropic
+
+        client = anthropic.Anthropic(timeout=120.0, max_retries=1)
+        model = os.environ.get("EXTRACTION_MODEL", "claude-sonnet-5")
+        try:
+            response = client.messages.create(
+                model=model,
+                max_tokens=1000,
+                output_config={"format": {"type": "json_schema", "schema": _counter_meta_schema()}},
+                messages=[
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "document",
+                                "source": {
+                                    "type": "base64",
+                                    "media_type": "application/pdf",
+                                    "data": base64.standard_b64encode(pdf_bytes).decode(),
+                                },
+                            },
+                            {"type": "text", "text": _counter_meta_prompt()},
+                        ],
+                    }
+                ],
+            )
+        except anthropic.APIStatusError as exc:
+            raise ExtractionFailed(f"extraction service error (HTTP {exc.status_code})") from exc
+        except anthropic.APIConnectionError as exc:
+            raise ExtractionFailed("extraction service unreachable") from exc
+
+        if response.stop_reason == "refusal":
+            raise ExtractionFailed("extraction request was refused by the model")
+        text = next((b.text for b in response.content if b.type == "text"), None)
+        if text is None:
+            raise ExtractionFailed("extraction returned no output")
+        try:
+            data = json.loads(text)
+        except ValueError as exc:
+            raise ExtractionFailed("extraction returned unparseable output") from exc
+        return CounterMeta(
+            expiration=(str(data.get("expiration", "")).strip() or None),
+            recipient_signed=bool(data.get("recipient_signed", False)),
+            signed_date=(str(data.get("signed_date", "")).strip() or None),
+            subject_to_further_counter=bool(data.get("subject_to_further_counter", False)),
+        )
+
+    def extract_contingency_removal(self, *, pdf_bytes: bytes) -> ContingencyRemoval:
+        check_zdr_gate()
+        import anthropic
+
+        client = anthropic.Anthropic(timeout=120.0, max_retries=1)
+        model = os.environ.get("EXTRACTION_MODEL", "claude-sonnet-5")
+        try:
+            response = client.messages.create(
+                model=model,
+                max_tokens=1000,
+                output_config={"format": {"type": "json_schema", "schema": _cr_schema()}},
+                messages=[
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "document",
+                                "source": {
+                                    "type": "base64",
+                                    "media_type": "application/pdf",
+                                    "data": base64.standard_b64encode(pdf_bytes).decode(),
+                                },
+                            },
+                            {"type": "text", "text": _cr_prompt()},
+                        ],
+                    }
+                ],
+            )
+        except anthropic.APIStatusError as exc:
+            raise ExtractionFailed(f"extraction service error (HTTP {exc.status_code})") from exc
+        except anthropic.APIConnectionError as exc:
+            raise ExtractionFailed("extraction service unreachable") from exc
+
+        if response.stop_reason == "refusal":
+            raise ExtractionFailed("extraction request was refused by the model")
+        text = next((b.text for b in response.content if b.type == "text"), None)
+        if text is None:
+            raise ExtractionFailed("extraction returned no output")
+        try:
+            data = json.loads(text)
+        except ValueError as exc:
+            raise ExtractionFailed("extraction returned unparseable output") from exc
+        return ContingencyRemoval(
+            all_contingencies_removed=bool(data.get("all_contingencies_removed", False)),
+            loan_removed=bool(data.get("loan_removed", False)),
+            appraisal_removed=bool(data.get("appraisal_removed", False)),
+            inspection_removed=bool(data.get("inspection_removed", False)),
+            insurance_removed=bool(data.get("insurance_removed", False)),
+            effective_date=(str(data.get("effective_date", "")).strip() or None),
+        )
+
 
 _DOC_LOOKS_LIKE = {
     "purchase_agreement",
+    "counter_offer",
+    "seller_counter_offer",
+    "buyer_counter_offer",
     "proof_of_funds",
     "disclosure",
     "inspection_report",

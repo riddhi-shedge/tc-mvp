@@ -8,8 +8,13 @@ count) with a spread of confidences, four of them deadline-driving.
 from __future__ import annotations
 
 from app.contracts.documents import DocType
-from app.contracts.payload import ExtractedField
-from app.ingestion.extractor import ExtractionBlocked, ExtractionFailed, ExtractionResult
+from app.contracts.payload import CounterMeta, ExtractedField
+from app.ingestion.extractor import (
+    ContingencyRemoval,
+    ExtractionBlocked,
+    ExtractionFailed,
+    ExtractionResult,
+)
 
 # All 10 deadline-driving fields + two informational ones: the coverage gate
 # requires every DEADLINE_DRIVING name to exist AND be confirmed before the
@@ -39,9 +44,15 @@ class FakeExtractor:
         fields: list[ExtractedField] | None = None,
         raise_blocked: bool = False,
         raise_failed: bool = False,
+        counter_meta: CounterMeta | None = None,
+        contingency_removal: ContingencyRemoval | None = None,
     ) -> None:
         self.doc_looks_like = doc_looks_like
         self.signature_detected = signature_detected
+        self.counter_meta = counter_meta or CounterMeta(
+            recipient_signed=True, signed_date="2026-07-10", expiration="2026-07-12"
+        )
+        self.contingency_removal = contingency_removal or ContingencyRemoval()
         self.fields = (
             fields
             if fields is not None
@@ -62,3 +73,19 @@ class FakeExtractor:
             doc_looks_like=self.doc_looks_like,
             signature_detected=self.signature_detected,
         )
+
+    def extract_counter_meta(self, *, pdf_bytes: bytes) -> CounterMeta:
+        self.calls.append(len(pdf_bytes))
+        if self.raise_blocked:
+            raise ExtractionBlocked("Extraction is disabled (synthetic test gate)")
+        if self.raise_failed:
+            raise ExtractionFailed("extraction service error (synthetic)")
+        return self.counter_meta
+
+    def extract_contingency_removal(self, *, pdf_bytes: bytes) -> ContingencyRemoval:
+        self.calls.append(len(pdf_bytes))
+        if self.raise_blocked:
+            raise ExtractionBlocked("Extraction is disabled (synthetic test gate)")
+        if self.raise_failed:
+            raise ExtractionFailed("extraction service error (synthetic)")
+        return self.contingency_removal

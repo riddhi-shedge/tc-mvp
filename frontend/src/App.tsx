@@ -6,6 +6,13 @@ import { Calendar } from "./screens/Calendar";
 import { Inbox } from "./screens/Inbox";
 import { Login } from "./screens/Login";
 import { InviteView } from "./screens/InviteView";
+import { Quarter } from "./screens/Quarter";
+import { Recommendations } from "./screens/Recommendations";
+import { CommandPalette } from "./screens/CommandPalette";
+import { Support } from "./screens/Support";
+import { Admin } from "./screens/Admin";
+import { GuideModal, GuidePage, guideSeen } from "./screens/Guide";
+import { ErrorBoundary } from "./lib/ErrorBoundary";
 import { Toaster } from "./lib/ui";
 import { Icon } from "./lib/icons";
 import { motion } from "framer-motion";
@@ -23,7 +30,33 @@ const inviteToken = (() => {
 const _initTheme = localStorage.getItem("theme") === "dark" ? "dark" : "light";
 document.documentElement.setAttribute("data-theme", _initTheme);
 
-type View = { name: "home" } | { name: "calendar" } | { name: "inbox" } | { name: "deal"; id: string };
+type View =
+  | { name: "home" }
+  | { name: "calendar" }
+  | { name: "inbox" }
+  | { name: "quarter" }
+  | { name: "guide" }
+  | { name: "deal"; id: string };
+
+const VIEW_KEY = "tc_view";
+const VIEW_NAMES = ["home", "calendar", "inbox", "quarter", "guide", "deal"];
+
+// Persist the current view so a page refresh keeps the TC where they were —
+// most importantly, on the deal they were reading rather than bouncing home.
+function loadView(): View {
+  try {
+    const raw = localStorage.getItem(VIEW_KEY);
+    if (raw) {
+      const v = JSON.parse(raw) as View;
+      if (v && VIEW_NAMES.includes(v.name) && (v.name !== "deal" || typeof v.id === "string")) {
+        return v;
+      }
+    }
+  } catch {
+    /* ignore malformed state */
+  }
+  return { name: "home" };
+}
 
 export default function App() {
   // An invited party (not a TC) lands here — no login, just their scoped view.
@@ -36,8 +69,31 @@ function TcApp() {
   const [ready, setReady] = useState(false);
   const [signedIn, setSignedIn] = useState(false);
   const [email, setEmail] = useState<string | null>(null);
-  const [view, setView] = useState<View>({ name: "home" });
+  const [view, setView] = useState<View>(() => loadView());
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem("sidebar_collapsed") === "1");
+  const [supportOpen, setSupportOpen] = useState(false);
+  const [adminOpen, setAdminOpen] = useState(false);
+  const [showGuide, setShowGuide] = useState(false);
+  const [railOpen, setRailOpen] = useState(() => localStorage.getItem("rail_open") !== "0");
+  const [cmdOpen, setCmdOpen] = useState(false);
+
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setCmdOpen((o) => !o);
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  function toggleRail() {
+    setRailOpen((r) => {
+      localStorage.setItem("rail_open", r ? "0" : "1");
+      return !r;
+    });
+  }
 
   const [dark, setDark] = useState(
     () => document.documentElement.getAttribute("data-theme") === "dark",
@@ -68,6 +124,18 @@ function TcApp() {
       setReady(true);
     });
   }, []);
+
+  useEffect(() => {
+    if (signedIn && !guideSeen()) setShowGuide(true);
+  }, [signedIn]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(VIEW_KEY, JSON.stringify(view));
+    } catch {
+      /* ignore */
+    }
+  }, [view]);
 
   if (!ready) return null;
   if (!signedIn) return <Login onSignedIn={() => setSignedIn(true)} />;
@@ -131,6 +199,15 @@ function TcApp() {
           )}
           <span className="ni-label"><span className="ic"><Icon name="deals" /></span> Deals &amp; Inbox</span>
         </button>
+        <button
+          className={`nav-item ${view.name === "quarter" ? "active" : ""}`}
+          onClick={() => setView({ name: "quarter" })}
+        >
+          {view.name === "quarter" && (
+            <motion.span layoutId="side-ind" className="side-ind" transition={{ type: "spring", stiffness: 400, damping: 34 }} />
+          )}
+          <span className="ni-label"><span className="ic"><Icon name="board" /></span> My quarter</span>
+        </button>
         {view.name === "deal" && (
           <div className="nav-item active" style={{ cursor: "default" }}>
             <motion.span
@@ -143,6 +220,22 @@ function TcApp() {
         )}
 
         <div className="spacer" />
+        <button
+          className={`nav-item ${view.name === "guide" ? "active" : ""}`}
+          onClick={() => setView({ name: "guide" })}
+        >
+          {view.name === "guide" && (
+            <motion.span layoutId="side-ind" className="side-ind" transition={{ type: "spring", stiffness: 400, damping: 34 }} />
+          )}
+          <span className="ni-label"><span className="ic"><Icon name="clipboard" /></span> Guide</span>
+        </button>
+        <button className="nav-item" onClick={() => setSupportOpen(true)}>
+          <span className="ni-label"><span className="ic"><Icon name="shield" /></span> Help &amp; support</span>
+        </button>
+        <button className="nav-item nav-admin" onClick={() => setAdminOpen(true)}>
+          <span className="ni-label"><span className="ic"><Icon name="lock" /></span> Admin console</span>
+          <span className="admin-tag">ADMIN</span>
+        </button>
         <div className="side-synth">
           <span className="badge gold" style={{ fontSize: "0.66rem" }}>◆ Synthetic data</span>
         </div>
@@ -172,15 +265,51 @@ function TcApp() {
                 <b>Current deal</b>
               </>
             ) : (
-              <b>{view.name === "home" ? "Home" : view.name === "calendar" ? "Calendar" : "Deals"}</b>
+              <b>
+                {view.name === "home"
+                  ? "Home"
+                  : view.name === "calendar"
+                    ? "Calendar"
+                    : view.name === "quarter"
+                      ? "My quarter"
+                      : view.name === "guide"
+                        ? "Guide"
+                        : "Deals"}
+              </b>
             )}
           </div>
           <div className="top-sp" />
-          <button className="kbtn icon" title="Toggle theme" onClick={toggleTheme}>
-            {dark ? "☀" : "☾"}
+          <button className="kbtn" title="Ask Terra" onClick={() => setCmdOpen(true)}>
+            <Icon name="search" size={14} /> Ask Terra <kbd>⌘K</kbd>
+          </button>
+          <button
+            className="kbtn pri"
+            title="Create — deals start from inbound documents"
+            onClick={() => { setView({ name: "inbox" }); setCollapsed(false); }}
+          >
+            <Icon name="plus" size={14} /> Create
+          </button>
+          {view.name !== "deal" && (
+            <button
+              className={`kbtn icon notif ${railOpen ? "on" : ""}`}
+              title="Notifications & recommendations"
+              aria-label="Notifications"
+              onClick={toggleRail}
+            >
+              <Icon name="bell" size={15} />
+              <span className="dot" />
+            </button>
+          )}
+          <button className="kbtn icon" title="Help &amp; support" aria-label="Help and support" onClick={() => setSupportOpen(true)}>
+            <Icon name="help" size={15} />
+          </button>
+          <button className="kbtn icon" title="Toggle theme" aria-label="Toggle theme" onClick={toggleTheme}>
+            <Icon name={dark ? "sun" : "moon"} size={15} />
           </button>
         </div>
+        <div className={`workarea ${railOpen && view.name !== "deal" ? "" : "rail-closed"}`}>
         <div className="page">
+          <ErrorBoundary>
           {view.name === "calendar" && (
             <Calendar onOpenDeal={(id) => { setView({ name: "deal", id }); setCollapsed(true); }} />
           )}
@@ -190,8 +319,11 @@ function TcApp() {
                 setView({ name: "deal", id });
                 setCollapsed(true);
               }}
+              onOpenRail={() => setRailOpen(true)}
             />
           )}
+          {view.name === "quarter" && <Quarter />}
+          {view.name === "guide" && <GuidePage />}
           {view.name === "inbox" && (
             <Inbox
               onOpenDeal={(id) => {
@@ -209,8 +341,42 @@ function TcApp() {
               }}
             />
           )}
+          </ErrorBoundary>
+        </div>
+        {railOpen && view.name !== "deal" && (
+          <aside className="ctx-rail">
+            <Recommendations
+              onOpenDeal={(id) => {
+                setView({ name: "deal", id });
+                setCollapsed(true);
+              }}
+              onClose={() => setRailOpen(false)}
+            />
+          </aside>
+        )}
         </div>
       </main>
+
+      {cmdOpen && (
+        <CommandPalette
+          onClose={() => setCmdOpen(false)}
+          onOpenDeal={(id) => { setView({ name: "deal", id }); setCollapsed(true); }}
+          onGoHome={() => setView({ name: "home" })}
+          onGoDeals={() => setView({ name: "inbox" })}
+          onToggleTheme={toggleTheme}
+        />
+      )}
+      {supportOpen && <Support onClose={() => setSupportOpen(false)} />}
+      {adminOpen && <Admin onClose={() => setAdminOpen(false)} />}
+      {showGuide && (
+        <GuideModal
+          onClose={() => setShowGuide(false)}
+          onOpenFull={() => {
+            setShowGuide(false);
+            setView({ name: "guide" });
+          }}
+        />
+      )}
 
       <Toaster />
       {/* Shared SVG gradient for progress rings */}

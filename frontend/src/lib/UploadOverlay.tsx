@@ -1,27 +1,34 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
-/* A calm, real-estate-themed processing overlay shown while a purchase agreement
- * is read and the deal is assembled. The house blueprint draws itself while a
- * scan line sweeps the document and the status advances through the real steps
- * the backend is taking. */
-const STEPS = [
-  "Reading the purchase agreement…",
+/* A calm, real-estate-themed processing overlay shown while a document is read
+ * and the deal is assembled. The house blueprint draws itself while a scan line
+ * sweeps the document and the status advances through the real steps the backend
+ * is taking. The first step names the document being read (falls back to a
+ * generic "document" when the filename isn't known). */
+const REST_STEPS = [
   "Identifying buyers, sellers & agents…",
   "Extracting price, deposits & key dates…",
   "Computing California contingency deadlines…",
   "Assembling your deal workspace…",
 ];
 
-export function UploadOverlay({ show }: { show: boolean }) {
+// Trim a filename down to something readable for the status line.
+function docLabel(name?: string | null): string {
+  const raw = (name ?? "").trim().replace(/\.[a-z0-9]+$/i, "").replace(/[_-]+/g, " ").trim();
+  return raw || "document";
+}
+
+export function UploadOverlay({ show, docName }: { show: boolean; docName?: string | null }) {
   const [i, setI] = useState(0);
+  const steps = useMemo(() => [`Reading ${docLabel(docName)}…`, ...REST_STEPS], [docName]);
   useEffect(() => {
     if (!show) {
       setI(0);
       return;
     }
-    const t = setInterval(() => setI((x) => Math.min(x + 1, STEPS.length - 1)), 1600);
+    const t = setInterval(() => setI((x) => Math.min(x + 1, steps.length - 1)), 1600);
     return () => clearInterval(t);
-  }, [show]);
+  }, [show, steps.length]);
 
   if (!show) return null;
   return (
@@ -51,7 +58,7 @@ export function UploadOverlay({ show }: { show: boolean }) {
           </svg>
         </div>
         <div className="uplo-title">Processing your document</div>
-        <div className="uplo-step" key={i}>{STEPS[i]}</div>
+        <div className="uplo-step" key={i}>{steps[i]}</div>
         <div className="uplo-bar"><span /></div>
         <div className="uplo-foot">This usually takes a few seconds — no need to wait here.</div>
       </div>

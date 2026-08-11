@@ -17,6 +17,22 @@ def _state(fields) -> DealState:
     return DealState(transaction_id="txn-1", fields=fields)
 
 
+def test_removed_contingency_produces_no_deadline():
+    # A Contingency Removal form overrides the day-field to "removed"; the timeline
+    # skips it (like a waiver), so no deadline/task is created for it.
+    state = _state(
+        [
+            _field("acceptance_date", "2026-07-10"),
+            _field("inspection_contingency_days", "removed"),
+            _field("loan_contingency_days", "21 days"),
+        ]
+    )
+    deadlines, _ = compute_timeline(state, synthetic_ruleset())
+    keys = {d.key for d in deadlines}
+    assert "inspection_contingency" not in keys
+    assert "loan_contingency" in keys
+
+
 def test_contingency_deadlines_use_field_value_over_default():
     state = _state(
         [

@@ -106,8 +106,11 @@ export function ExtractionReview({
     );
   }
 
+  const eff = state.effective_fields ?? {};
   const byName = (n: string) => fields.find((f) => f.name === n);
-  const fv = (n: string) => byName(n)?.value ?? null;
+  // Prefer the effective (superseded) value so a counter offer's price/dates win.
+  const fv = (n: string) => eff[n]?.value ?? byName(n)?.value ?? null;
+  const supersededFrom = (n: string) => eff[n]?.superseded_from ?? null;
   const total = fields.length;
   const unconfirmed = fields.filter((f) => !f.confirmed).length;
   const verifiedCount = total - unconfirmed;
@@ -266,6 +269,9 @@ export function ExtractionReview({
         <div className="xr-stat hero">
           <div className="xr-k">Purchase price</div>
           <div className="xr-v tnum">{price ?? "—"}</div>
+          {supersededFrom("purchase_price") && (
+            <div className="xr-super">↑ Counter offer · was {supersededFrom("purchase_price")}</div>
+          )}
           <div className="xr-m">{fv("initial_deposit_amount") ? `Deposit ${fv("initial_deposit_amount")}` : " "}</div>
         </div>
         <div className="xr-stat">

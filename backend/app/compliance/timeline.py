@@ -8,7 +8,7 @@ field the deal doesn't have is simply skipped.
 from __future__ import annotations
 
 import re
-from datetime import date
+from datetime import date, datetime
 
 from app.compliance.ca_rules import RuleSet
 from app.compliance.date_engine import days_after, days_before
@@ -84,7 +84,8 @@ def _task_title(key: str, st: DealState, due: date | None) -> str:
 
 
 # Values that mean "this contingency does not apply" — no deadline is created.
-_WAIVED = {"waived", "n/a", "na", "none", "waive"}
+# "removed" is written by a Contingency Removal form superseding the PA's value.
+_WAIVED = {"waived", "n/a", "na", "none", "waive", "removed"}
 
 
 def _is_waived(value: str) -> bool:
@@ -100,18 +101,57 @@ def _parse_days(value: str) -> int | None:
         return None
 
 
-def _parse_iso_date(value: str) -> date | None:
-    try:
-        return date.fromisoformat(value.strip()[:10])
-    except ValueError:
+# Dates on a CA purchase agreement are written many ways ("08/04/2025",
+# "August 4, 2025", "8/4/25", ISO). The extraction keeps them as written, so the
+# timeline must parse all the common forms — otherwise a confirmed date fails to
+# anchor and NO deadlines build even though the gate reports "ready".
+_DATE_FORMATS = (
+    "%m/%d/%Y", "%m/%d/%y", "%m-%d-%Y", "%m-%d-%y",
+    "%B %d, %Y", "%b %d, %Y", "%B %d %Y", "%b %d %Y",
+    "%d %B %Y", "%d %b %Y", "%Y/%m/%d",
+)
+
+
+def _parse_date(value: str) -> date | None:
+    """Best-effort date parse across the formats seen on CA contracts. ISO first,
+    then US month/day/year (slash or dash), then written-out month names. Returns
+    None only when nothing matches."""
+    if not value:
         return None
+    v = re.sub(r"\s+", " ", value.strip())
+    # ISO (also tolerates a trailing time on an ISO datetime).
+    try:
+        return date.fromisoformat(v[:10])
+    except ValueError:
+        pass
+    for fmt in _DATE_FORMATS:
+        try:
+            return datetime.strptime(v, fmt).date()
+        except ValueError:
+            continue
+    # Pull a date token out of a longer phrase ("on 08/04/2025", "by Aug 4, 2025").
+    num = re.search(r"\b(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})\b", v)
+    if num:
+        for fmt in ("%m/%d/%Y", "%m/%d/%y", "%m-%d-%Y", "%m-%d-%y"):
+            try:
+                return datetime.strptime(num.group(1), fmt).date()
+            except ValueError:
+                continue
+    word = re.search(r"\b([A-Za-z]{3,9} \d{1,2},? \d{4})\b", v)
+    if word:
+        for fmt in ("%B %d, %Y", "%b %d, %Y", "%B %d %Y", "%b %d %Y"):
+            try:
+                return datetime.strptime(word.group(1), fmt).date()
+            except ValueError:
+                continue
+    return None
 
 
 def compute_timeline(
     state: DealState, rules: RuleSet
 ) -> tuple[list[ComputedDeadline], list[ComputedTask]]:
     acceptance = state.confirmed_value("acceptance_date")
-    acceptance_date = _parse_iso_date(acceptance) if acceptance else None
+    acceptance_date = _parse_date(acceptance) if acceptance else None
 
     deadlines: list[ComputedDeadline] = []
     tasks: list[ComputedTask] = []
@@ -142,7 +182,7 @@ def compute_timeline(
     coe_raw = state.confirmed_value("close_of_escrow")
     coe_date: date | None = None
     if coe_raw is not None:
-        coe_date = _parse_iso_date(coe_raw)
+        coe_date = _parse_date(coe_raw)
         if coe_date is None and acceptance_date is not None:
             n = _parse_days(coe_raw)
             if n is not None:
@@ -190,7 +230,7 @@ def compute_timeline(
     # an explicit date, or "at close of escrow" -> the COE date.
     possession_raw = state.confirmed_value("possession_date")
     if possession_raw is not None and not _is_waived(possession_raw):
-        possession_date = _parse_iso_date(possession_raw)
+        possession_date = _parse_date(possession_raw)
         if possession_date is None and _references_coe(possession_raw) and coe_date is not None:
             possession_date = coe_date
         if possession_date is not None:

@@ -52,6 +52,20 @@ export function DealsBoard({ onOpenDeal }: { onOpenDeal: (id: string) => void })
   const [dragId, setDragId] = useState<string | null>(null);
   const [overStage, setOverStage] = useState<string | null>(null);
   const [showArch, setShowArch] = useState(false);
+  const [sv, setSv] = useState<"all" | "closing" | "risk">("all");
+
+  const inClosingWk = (d: DealSummary) => {
+    const n = daysTo(d.coe_date);
+    return d.stage !== "closed" && n != null && n >= 0 && n <= 7;
+  };
+  const matchSv = (d: DealSummary) =>
+    sv === "all" ? true : sv === "closing" ? inClosingWk(d) : d.risk_count > 0;
+  const shown = deals.filter(matchSv);
+  const svCounts = {
+    all: deals.length,
+    closing: deals.filter(inClosingWk).length,
+    risk: deals.filter((d) => d.risk_count > 0).length,
+  };
 
   const refresh = useCallback(async () => {
     try {
@@ -130,6 +144,14 @@ export function DealsBoard({ onOpenDeal }: { onOpenDeal: (id: string) => void })
         </div>
       </div>
 
+      <div className="db-views">
+        {([["all", "All deals"], ["closing", "Closing this week"], ["risk", "At risk"]] as const).map(([k, label]) => (
+          <button key={k} className={`db-sv ${sv === k ? "on" : ""}`} onClick={() => setSv(k)}>
+            {label}<span className="db-sv-c">{svCounts[k]}</span>
+          </button>
+        ))}
+      </div>
+
       {deals.length === 0 && (
         <div className="card"><div className="empty"><span className="empty-ic"><Icon name="board" size={26} /></span>No active deals — confirm an inbound document to create one.</div></div>
       )}
@@ -138,7 +160,7 @@ export function DealsBoard({ onOpenDeal }: { onOpenDeal: (id: string) => void })
       {view === "board" && deals.length > 0 && (
         <div className="db-board">
           {DEAL_STAGES.map((st) => {
-            const inStage = deals.filter((d) => d.stage === st.id);
+            const inStage = shown.filter((d) => d.stage === st.id);
             return (
               <div
                 key={st.id}
@@ -169,7 +191,7 @@ export function DealsBoard({ onOpenDeal }: { onOpenDeal: (id: string) => void })
               <tr><th>Property</th><th>Close</th><th>Stage</th><th>Tasks</th><th>Risk</th><th>Price</th></tr>
             </thead>
             <tbody>
-              {[...deals]
+              {[...shown]
                 .sort((a, b) => (a.coe_date ?? "9999").localeCompare(b.coe_date ?? "9999"))
                 .map((d) => {
                   const u = urgency(d);

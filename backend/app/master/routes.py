@@ -983,14 +983,15 @@ def read_compliance_state(
         raise HTTPException(status_code=404, detail="Transaction not found")
     return {
         "transaction_id": transaction_id,
+        # Effective (superseded) values so a counter offer's price/dates win.
         "fields": [
             {
-                "name": f["name"],
-                "value": f["value"],
-                "confirmed": f["confirmed"],
-                "deadline_driving": f.get("deadline_driving", False),
+                "name": name,
+                "value": d["value"],
+                "confirmed": d["confirmed"],
+                "deadline_driving": d["deadline_driving"],
             }
-            for f in state.get("extracted_fields", [])
+            for name, d in state.get("effective_fields", {}).items()
         ],
         "parties": [
             {"role": p.get("role", ""), "name": p.get("name"), "email": p.get("email")}

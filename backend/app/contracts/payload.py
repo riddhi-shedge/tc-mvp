@@ -32,6 +32,22 @@ class ExtractedField(BaseModel):
     confirmed: bool = False
 
 
+class CounterMeta(BaseModel):
+    """Counter-offer chain + expiration facts (C.A.R. SCO/BCO), extracted from the
+    counter and evaluated by the master into risk flags. Dates are as written.
+
+    - `recipient_signed`/`signed_date`: did the party who must accept (buyer for a
+      seller counter; seller for a buyer counter) sign, and when.
+    - `expiration`: the deadline to accept — miss it and the deal falls through.
+    - `subject_to_further_counter`: the "subject to attached counter offer" box —
+      when set, the true current terms are in a further counter to be uploaded."""
+
+    expiration: str | None = None
+    recipient_signed: bool = False
+    signed_date: str | None = None
+    subject_to_further_counter: bool = False
+
+
 class Payload(BaseModel):
     """A validated package handed from ingestion to the master. Validated at the
     boundary — never trusted."""
@@ -45,6 +61,8 @@ class Payload(BaseModel):
     # ingestion-side storage reference. Optional — older payloads stay valid.
     document_type: DocType | None = None
     document_storage_ref: str | None = Field(default=None, min_length=1)
+    # Counter-offer facts (only on seller/buyer counter payloads).
+    counter_meta: CounterMeta | None = None
 
     @property
     def is_new_transaction(self) -> bool:
