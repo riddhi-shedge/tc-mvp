@@ -32,7 +32,7 @@ def _write(repo: InMemoryRepo, tid: str, doc_id: str, doc_type: str, value: str)
 
 def test_counter_offer_supersedes_pa_price():
     repo = InMemoryRepo()
-    tid = repo.create_transaction(property_address="21989 McClellan Rd", actor="tc")["id"]
+    tid = repo.create_transaction(property_address="1 Example St", actor="tc")["id"]
 
     _write(repo, tid, "pa", "purchase_agreement", "$1,800,000")
     _write(repo, tid, "sco", "seller_counter_offer", "$1,900,000")
