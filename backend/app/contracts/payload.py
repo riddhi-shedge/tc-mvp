@@ -48,6 +48,17 @@ class CounterMeta(BaseModel):
     subject_to_further_counter: bool = False
 
 
+class PreapprovalMeta(BaseModel):
+    """Facts from a mortgage preapproval / underwriter letter that the master
+    validates against the deal: the buyer(s) it approves, when it expires, and the
+    amount approved. A mismatch, an expiry before closing, or an approved amount
+    below the loan on the contract each raise a risk flag."""
+
+    buyer_names: str | None = None
+    expiration: str | None = None
+    loan_amount: str | None = None
+
+
 class Payload(BaseModel):
     """A validated package handed from ingestion to the master. Validated at the
     boundary — never trusted."""
@@ -63,6 +74,8 @@ class Payload(BaseModel):
     document_storage_ref: str | None = Field(default=None, min_length=1)
     # Counter-offer facts (only on seller/buyer counter payloads).
     counter_meta: CounterMeta | None = None
+    # Preapproval facts (only on preapproval payloads).
+    preapproval_meta: PreapprovalMeta | None = None
 
     @property
     def is_new_transaction(self) -> bool:

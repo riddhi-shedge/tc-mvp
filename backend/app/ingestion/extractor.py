@@ -58,12 +58,57 @@ class ContingencyRemoval:
     effective_date: str | None = None
 
 
+@dataclass(frozen=True)
+class Preapproval:
+    """A mortgage preapproval / underwriter letter: who it approves, its
+    expiration, the approved amount, and the loan officer's contact + NMLS id."""
+
+    buyer_names: str | None = None
+    expiration: str | None = None
+    loan_amount: str | None = None
+    officer_name: str | None = None
+    officer_nmls: str | None = None
+    officer_company: str | None = None
+    officer_email: str | None = None
+    officer_phone: str | None = None
+
+
 class Extractor(Protocol):
     def extract(self, *, pdf_bytes: bytes, doc_type: DocType) -> ExtractionResult: ...
 
     def extract_counter_meta(self, *, pdf_bytes: bytes) -> CounterMeta: ...
 
     def extract_contingency_removal(self, *, pdf_bytes: bytes) -> ContingencyRemoval: ...
+
+    def extract_preapproval(self, *, pdf_bytes: bytes) -> Preapproval: ...
+
+
+def _preapproval_schema() -> dict[str, Any]:
+    keys = (
+        "buyer_names", "expiration", "loan_amount",
+        "officer_name", "officer_nmls", "officer_company", "officer_email", "officer_phone",
+    )
+    return {
+        "type": "object",
+        "properties": {k: {"type": "string"} for k in keys},
+        "required": list(keys),
+        "additionalProperties": False,
+    }
+
+
+def _preapproval_prompt() -> str:
+    return (
+        "This is a mortgage preapproval / underwriter / credit-approval letter for "
+        "a home purchase. Report as JSON strings (empty string when absent):\n"
+        "- buyer_names: the approved borrower name(s), as written.\n"
+        "- expiration: the date the approval is valid until / expires, as written.\n"
+        "- loan_amount: the maximum loan amount approved (a dollar figure).\n"
+        "- officer_name: the loan officer / mortgage consultant's full name.\n"
+        "- officer_nmls: their NMLS / NMLSR ID number.\n"
+        "- officer_company: the lender / mortgage company name.\n"
+        "- officer_email and officer_phone: their contact details.\n"
+        "Never extract borrower SSNs, account numbers, or wiring details."
+    )
 
 
 def _cr_schema() -> dict[str, Any]:
@@ -152,6 +197,7 @@ def _output_schema() -> dict[str, Any]:
                     "seller_counter_offer",
                     "buyer_counter_offer",
                     "contingency_removal",
+                    "preapproval",
                     "proof_of_funds",
                     "disclosure",
                     "inspection_report",
@@ -255,6 +301,50 @@ class ClaudeExtractor:
             raise ExtractionFailed("extraction returned unparseable output") from exc
         return parse_extraction_output(data)
 
+    def _structured(self, pdf_bytes: bytes, schema: dict[str, Any], prompt: str) -> dict[str, Any]:
+        """Shared model call for the small single-document JSON extractors
+        (counter meta, contingency removal, preapproval, …)."""
+        check_zdr_gate()
+        import anthropic
+
+        client = anthropic.Anthropic(timeout=120.0, max_retries=1)
+        model = os.environ.get("EXTRACTION_MODEL", "claude-sonnet-5")
+        try:
+            response = client.messages.create(
+                model=model,
+                max_tokens=1000,
+                output_config={"format": {"type": "json_schema", "schema": schema}},
+                messages=[
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "document",
+                                "source": {
+                                    "type": "base64",
+                                    "media_type": "application/pdf",
+                                    "data": base64.standard_b64encode(pdf_bytes).decode(),
+                                },
+                            },
+                            {"type": "text", "text": prompt},
+                        ],
+                    }
+                ],
+            )
+        except anthropic.APIStatusError as exc:
+            raise ExtractionFailed(f"extraction service error (HTTP {exc.status_code})") from exc
+        except anthropic.APIConnectionError as exc:
+            raise ExtractionFailed("extraction service unreachable") from exc
+        if response.stop_reason == "refusal":
+            raise ExtractionFailed("extraction request was refused by the model")
+        text = next((b.text for b in response.content if b.type == "text"), None)
+        if text is None:
+            raise ExtractionFailed("extraction returned no output")
+        try:
+            return json.loads(text)
+        except ValueError as exc:
+            raise ExtractionFailed("extraction returned unparseable output") from exc
+
     def extract_counter_meta(self, *, pdf_bytes: bytes) -> CounterMeta:
         check_zdr_gate()
         import anthropic
@@ -353,6 +443,20 @@ class ClaudeExtractor:
             inspection_removed=bool(data.get("inspection_removed", False)),
             insurance_removed=bool(data.get("insurance_removed", False)),
             effective_date=(str(data.get("effective_date", "")).strip() or None),
+        )
+
+    def extract_preapproval(self, *, pdf_bytes: bytes) -> Preapproval:
+        data = self._structured(pdf_bytes, _preapproval_schema(), _preapproval_prompt())
+        s = lambda k: (str(data.get(k, "")).strip() or None)  # noqa: E731
+        return Preapproval(
+            buyer_names=s("buyer_names"),
+            expiration=s("expiration"),
+            loan_amount=s("loan_amount"),
+            officer_name=s("officer_name"),
+            officer_nmls=s("officer_nmls"),
+            officer_company=s("officer_company"),
+            officer_email=s("officer_email"),
+            officer_phone=s("officer_phone"),
         )
 
 

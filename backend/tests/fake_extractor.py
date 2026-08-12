@@ -14,6 +14,7 @@ from app.ingestion.extractor import (
     ExtractionBlocked,
     ExtractionFailed,
     ExtractionResult,
+    Preapproval,
 )
 
 # All 10 deadline-driving fields + two informational ones: the coverage gate
@@ -46,6 +47,7 @@ class FakeExtractor:
         raise_failed: bool = False,
         counter_meta: CounterMeta | None = None,
         contingency_removal: ContingencyRemoval | None = None,
+        preapproval: Preapproval | None = None,
     ) -> None:
         self.doc_looks_like = doc_looks_like
         self.signature_detected = signature_detected
@@ -53,6 +55,7 @@ class FakeExtractor:
             recipient_signed=True, signed_date="2026-07-10", expiration="2026-07-12"
         )
         self.contingency_removal = contingency_removal or ContingencyRemoval()
+        self.preapproval = preapproval or Preapproval()
         self.fields = (
             fields
             if fields is not None
@@ -89,3 +92,11 @@ class FakeExtractor:
         if self.raise_failed:
             raise ExtractionFailed("extraction service error (synthetic)")
         return self.contingency_removal
+
+    def extract_preapproval(self, *, pdf_bytes: bytes) -> Preapproval:
+        self.calls.append(len(pdf_bytes))
+        if self.raise_blocked:
+            raise ExtractionBlocked("Extraction is disabled (synthetic test gate)")
+        if self.raise_failed:
+            raise ExtractionFailed("extraction service error (synthetic)")
+        return self.preapproval

@@ -28,7 +28,13 @@ from app.contracts.documents import (
     DocType,
 )
 from app.contracts.fields import EXTRACTABLE_FIELD_NAMES
-from app.contracts.payload import NEW_TRANSACTION, CounterMeta, ExtractedField, Payload
+from app.contracts.payload import (
+    NEW_TRANSACTION,
+    CounterMeta,
+    ExtractedField,
+    Payload,
+    PreapprovalMeta,
+)
 from app.ingestion.detector import check_readability, detect_doc_type
 from app.ingestion.extractor import (
     ClaudeExtractor,
@@ -416,6 +422,55 @@ def _extract_contingency_removal_fields(
     return fields
 
 
+def _extract_preapproval(
+    item: dict[str, Any], inbox: InboxRepo, extractor: Extractor
+) -> tuple[list[ExtractedField], PreapprovalMeta]:
+    """Read a preapproval / underwriter letter. Produces the loan-officer contact
+    as §5 lender fields (so the master derives a lender party — NMLS folded into
+    the company), and returns the facts the master validates against the deal
+    (approved buyer, expiration, approved amount)."""
+    storage_path = item.get("storage_path")
+    if not storage_path:
+        raise _extraction_error(
+            "No stored document for this item", ["no attachment file is stored"]
+        )
+    try:
+        pdf_bytes = inbox.download_attachment(storage_path)
+    except StorageUnavailable:
+        raise HTTPException(
+            status_code=503, detail="Attachment store unavailable; try again shortly"
+        ) from None
+    readable = decrypt_pdf(pdf_bytes)
+    if readable is None:
+        raise _extraction_error(
+            "The document is password-protected",
+            ["the PDF requires a password to open — upload an unlocked copy"],
+        )
+    try:
+        pa = extractor.extract_preapproval(pdf_bytes=readable)
+    except ExtractionBlocked as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from None
+    except ExtractionFailed as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from None
+
+    fields: list[ExtractedField] = []
+    if pa.officer_name:
+        company = pa.officer_company or ""
+        if pa.officer_nmls:
+            company = f"{company} · NMLS {pa.officer_nmls}".strip(" ·")
+        # derive_parties splits "name, company" on the first comma.
+        contact = f"{pa.officer_name}, {company}" if company else pa.officer_name
+        fields.append(ExtractedField(name="lender_contact", value=contact, confidence=1.0, confirmed=True))
+        if pa.officer_email:
+            fields.append(ExtractedField(name="lender_contact_email", value=pa.officer_email, confidence=1.0, confirmed=True))
+        if pa.officer_phone:
+            fields.append(ExtractedField(name="lender_contact_phone", value=pa.officer_phone, confidence=1.0, confirmed=True))
+    meta = PreapprovalMeta(
+        buyer_names=pa.buyer_names, expiration=pa.expiration, loan_amount=pa.loan_amount
+    )
+    return fields, meta
+
+
 def _extract_pa_fields(
     item: dict[str, Any], inbox: InboxRepo, extractor: Extractor
 ) -> list[ExtractedField]:
@@ -528,6 +583,7 @@ def confirm_inbox_item(
                 ),
             )
         counter_meta: CounterMeta | None = None
+        preapproval_meta: PreapprovalMeta | None = None
         if doc_type == "purchase_agreement":
             fields: list[ExtractedField] = (
                 _manual_extracted_fields(body.manual_fields)
@@ -542,6 +598,10 @@ def confirm_inbox_item(
         elif doc_type == "contingency_removal":
             # Removed contingencies override the PA to 'removed' → drop off the timeline.
             fields = _extract_contingency_removal_fields(item, inbox, extractor)
+        elif doc_type == "preapproval":
+            # Creates the loan-officer party (via §5 lender fields) and carries the
+            # facts the master validates against the deal (name/expiry/amount).
+            fields, preapproval_meta = _extract_preapproval(item, inbox, extractor)
         else:
             fields = []
 
@@ -567,6 +627,7 @@ def confirm_inbox_item(
             document_type=doc_type,
             document_storage_ref=item.get("storage_path"),
             counter_meta=counter_meta,
+            preapproval_meta=preapproval_meta,
         )
         status, data = master.write_payload(
             token=token, transaction_id=transaction_id, payload=payload

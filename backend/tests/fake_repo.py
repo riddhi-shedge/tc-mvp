@@ -899,6 +899,40 @@ class InMemoryRepo:
                     entity_type="risk_flag", entity_id=None, details={"case": flag["case_key"]},
                 )
 
+        # A preapproval is validated against the deal (borrower, amount, expiry).
+        if payload.document_type == "preapproval" and payload.preapproval_meta:
+            from app.master.repo import _effective_fields, evaluate_preapproval_flags
+
+            eff = _effective_fields(
+                [f for f in self.extracted_fields if f["transaction_id"] == transaction_id]
+            )
+            coe = next(
+                (d["due_date"] for d in self.deadlines
+                 if d["transaction_id"] == transaction_id and "escrow" in d["name"].lower()),
+                None,
+            )
+            for flag in evaluate_preapproval_flags(
+                payload.preapproval_meta,
+                (eff.get("buyer_names") or {}).get("value"),
+                (eff.get("loan_amount") or {}).get("value"),
+                date.fromisoformat(coe) if coe else None,
+            ):
+                self.risk_flags.append(
+                    {
+                        "id": str(uuid.uuid4()),
+                        "transaction_id": transaction_id,
+                        "severity": flag["severity"],
+                        "description": flag["description"],
+                        "generated_by": "master",
+                        "case_key": flag["case_key"],
+                        "resolved": False,
+                    }
+                )
+                self._audit(
+                    transaction_id=transaction_id, actor=actor, action="risk_flag.preapproval",
+                    entity_type="risk_flag", entity_id=None, details={"case": flag["case_key"]},
+                )
+
         # A re-uploaded PA supersedes the prior one (cascade its payload+fields).
         if payload.document_type == "purchase_agreement":
             old_docs = [

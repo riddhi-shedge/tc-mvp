@@ -17,7 +17,7 @@ from app.common.db import ThreadLocalSupabase
 from app.contracts.compliance import ComplianceResult
 from app.contracts.documents import COUNTER_OFFER_TYPES
 from app.contracts.fields import DEADLINE_DRIVING
-from app.contracts.payload import CounterMeta, Payload
+from app.contracts.payload import CounterMeta, Payload, PreapprovalMeta
 from app.master.deal_tasks import derive_tasks
 from app.master.inconsistency import CRITICAL_FIELDS, MATERIAL_FIELDS, find_field_conflicts
 from app.master.parties import derive_parties, party_key, tier_for
@@ -172,6 +172,65 @@ def evaluate_counter_flags(doc_type: str, cm: CounterMeta) -> list[dict[str, str
             "description": (
                 f"This {label} is marked subject to a further counter — the current terms "
                 f"are in the {further}. Upload it to capture the latest price and terms."
+            ),
+        })
+    return flags
+
+
+def _parse_money(value: str | None) -> float | None:
+    m = re.search(r"[\d,]+(?:\.\d+)?", value or "")
+    if not m:
+        return None
+    try:
+        return float(m.group(0).replace(",", ""))
+    except ValueError:
+        return None
+
+
+def _name_set(value: str | None) -> set[str]:
+    if not value:
+        return set()
+    parts = re.split(r"\s*(?:,| and | & |;|/)\s*", value.strip(), flags=re.IGNORECASE)
+    return {re.sub(r"\s+", " ", p).strip().lower() for p in parts if p.strip()}
+
+
+def evaluate_preapproval_flags(
+    meta: "PreapprovalMeta",
+    pa_buyer_names: str | None,
+    pa_loan_amount: str | None,
+    coe_date: date | None,
+) -> list[dict[str, str]]:
+    """Validate a preapproval against the deal: same borrower, approved for at
+    least the contract loan, and valid through closing. Pure — inserted by each repo."""
+    flags: list[dict[str, str]] = []
+    pre_names, pa_names = _name_set(meta.buyer_names), _name_set(pa_buyer_names)
+    if pre_names and pa_names and pre_names.isdisjoint(pa_names):
+        flags.append({
+            "severity": "warning",
+            "case_key": "preapproval_name_mismatch",
+            "description": (
+                f'The preapproval names "{meta.buyer_names}", but the contract buyer is '
+                f'"{pa_buyer_names}". Verify it is the same borrower.'
+            ),
+        })
+    pre_amt, pa_amt = _parse_money(meta.loan_amount), _parse_money(pa_loan_amount)
+    if pre_amt is not None and pa_amt is not None and pre_amt < pa_amt:
+        flags.append({
+            "severity": "critical",
+            "case_key": "preapproval_insufficient",
+            "description": (
+                f"The preapproval is for {meta.loan_amount}, less than the {pa_loan_amount} loan "
+                "on the contract — the buyer may not be approved for enough to close."
+            ),
+        })
+    exp = _parse_loose_date(meta.expiration)
+    if exp and coe_date and exp < coe_date:
+        flags.append({
+            "severity": "warning",
+            "case_key": "preapproval_expired",
+            "description": (
+                f"The preapproval expires {meta.expiration}, before the close of escrow "
+                f"({coe_date.isoformat()}). Request an updated approval letter."
             ),
         })
     return flags
@@ -925,6 +984,49 @@ class SupabaseRepo:
                         transaction_id=transaction_id,
                         actor=actor,
                         action="risk_flag.counter",
+                        entity_type="risk_flag",
+                        entity_id=None,
+                        details={"case": flag["case_key"]},
+                    )
+
+            # A preapproval is validated against the deal (borrower, amount, expiry).
+            if payload.document_type == "preapproval" and payload.preapproval_meta:
+                eff = _effective_fields(
+                    self._db.table("extracted_fields")
+                    .select("name, value, confirmed, created_at")
+                    .eq("transaction_id", transaction_id)
+                    .execute()
+                    .data
+                )
+                coe_rows = (
+                    self._db.table("deadlines")
+                    .select("due_date")
+                    .eq("transaction_id", transaction_id)
+                    .ilike("name", "%escrow%")
+                    .execute()
+                    .data
+                )
+                coe_date = date.fromisoformat(coe_rows[0]["due_date"]) if coe_rows else None
+                for flag in evaluate_preapproval_flags(
+                    payload.preapproval_meta,
+                    (eff.get("buyer_names") or {}).get("value"),
+                    (eff.get("loan_amount") or {}).get("value"),
+                    coe_date,
+                ):
+                    self._db.table("risk_flags").insert(
+                        {
+                            "transaction_id": transaction_id,
+                            "severity": flag["severity"],
+                            "description": flag["description"],
+                            "generated_by": "master",
+                            "case_key": flag["case_key"],
+                            "resolved": False,
+                        }
+                    ).execute()
+                    self._audit(
+                        transaction_id=transaction_id,
+                        actor=actor,
+                        action="risk_flag.preapproval",
                         entity_type="risk_flag",
                         entity_id=None,
                         details={"case": flag["case_key"]},

@@ -14,6 +14,7 @@ DocType = Literal[
     "seller_counter_offer",
     "buyer_counter_offer",
     "contingency_removal",
+    "preapproval",
     "proof_of_funds",
     "disclosure",
     "inspection_report",

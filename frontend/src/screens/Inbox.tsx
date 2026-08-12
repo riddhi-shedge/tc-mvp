@@ -16,6 +16,7 @@ const DOC_TYPE_LABELS: Record<string, string> = {
   buyer_counter_offer: "Buyer counter offer",
   counter_offer: "Counter offer",
   contingency_removal: "Contingency removal",
+  preapproval: "Preapproval / underwriter",
   proof_of_funds: "Proof of funds",
   disclosure: "Disclosure",
   inspection_report: "Inspection report",

@@ -29,6 +29,16 @@ _CONTINGENCY_FIELDS: dict[str, tuple[str, str]] = {
     "verification_of_funds_days": ("verification_of_funds", "Verification of funds due"),
 }
 
+# A contingency with a *_present flag applies only when that flag isn't "false".
+# This is how an all-cash offer (no loan contingency) and an appraisal that the
+# buyer chose to keep/waive are honored regardless of any stray day-count value.
+_CONTINGENCY_PRESENT_FLAG: dict[str, str] = {
+    "loan_contingency_days": "loan_contingency_present",
+    "appraisal_contingency_days": "appraisal_contingency_present",
+    "inspection_contingency_days": "inspection_contingency_present",
+    "insurance_contingency_days": "insurance_contingency_present",
+}
+
 _MONTHS = ["", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 
 
@@ -152,6 +162,7 @@ def compute_timeline(
 ) -> tuple[list[ComputedDeadline], list[ComputedTask]]:
     acceptance = state.confirmed_value("acceptance_date")
     acceptance_date = _parse_date(acceptance) if acceptance else None
+    all_cash = (state.confirmed_value("all_cash") or "").strip().lower() == "true"
 
     deadlines: list[ComputedDeadline] = []
     tasks: list[ComputedTask] = []
@@ -162,6 +173,13 @@ def compute_timeline(
             raw = state.confirmed_value(field_name)
             if raw is None or _is_waived(raw):
                 continue  # absent or waived -> no deadline
+            # All-cash offers have no loan contingency; a contingency whose
+            # *_present flag is "false" doesn't apply even if a day value exists.
+            if field_name == "loan_contingency_days" and all_cash:
+                continue
+            flag = _CONTINGENCY_PRESENT_FLAG.get(field_name)
+            if flag and (state.confirmed_value(flag) or "").strip().lower() == "false":
+                continue
             default = rules.period_for(field_name)
             n = _parse_days(raw)
             if n is None:

@@ -17,6 +17,43 @@ def _state(fields) -> DealState:
     return DealState(transaction_id="txn-1", fields=fields)
 
 
+def test_all_cash_offer_has_no_loan_contingency():
+    # Full cash -> no loan contingency deadline, even if a day value is present.
+    state = _state(
+        [
+            _field("acceptance_date", "2026-07-10"),
+            _field("all_cash", "true", dd=False),
+            _field("loan_contingency_days", "21"),
+            _field("inspection_contingency_days", "17"),
+        ]
+    )
+    deadlines, _ = compute_timeline(state, synthetic_ruleset())
+    keys = {d.key for d in deadlines}
+    assert "loan_contingency" not in keys
+    assert "inspection_contingency" in keys  # other contingencies unaffected
+
+
+def test_contingency_marked_not_present_is_skipped():
+    # An appraisal contingency the buyer waived (present=false) -> no deadline,
+    # even with a stray day value; a present appraisal still computes.
+    waived = _state(
+        [
+            _field("acceptance_date", "2026-07-10"),
+            _field("appraisal_contingency_present", "false", dd=False),
+            _field("appraisal_contingency_days", "17"),
+        ]
+    )
+    present = _state(
+        [
+            _field("acceptance_date", "2026-07-10"),
+            _field("appraisal_contingency_present", "true", dd=False),
+            _field("appraisal_contingency_days", "17"),
+        ]
+    )
+    assert "appraisal_contingency" not in {d.key for d in compute_timeline(waived, synthetic_ruleset())[0]}
+    assert "appraisal_contingency" in {d.key for d in compute_timeline(present, synthetic_ruleset())[0]}
+
+
 def test_removed_contingency_produces_no_deadline():
     # A Contingency Removal form overrides the day-field to "removed"; the timeline
     # skips it (like a waiver), so no deadline/task is created for it.

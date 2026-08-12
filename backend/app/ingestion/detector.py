@@ -41,6 +41,13 @@ _DOC_TYPE_PATTERNS: list[tuple[DocType, re.Pattern[str]]] = [
         "contingency_removal",
         re.compile(r"conting\w*\s*removal|removal\s*of\s*conting|\bcr[\s\-_]?[bs]\b", re.IGNORECASE),
     ),
+    (
+        "preapproval",
+        re.compile(
+            r"pre[\s\-_]?approv|preapproval|approval\s+letter|underwrit|credit\s+approval",
+            re.IGNORECASE,
+        ),
+    ),
     ("proof_of_funds", re.compile(r"proof\s+of\s+funds|\bpof\b", re.IGNORECASE)),
     ("disclosure", re.compile(r"disclosure", re.IGNORECASE)),
     (
