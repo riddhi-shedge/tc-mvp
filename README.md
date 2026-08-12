@@ -1,92 +1,211 @@
-# tc-mvp
+# Terra — AI Transaction Coordinator for California Real Estate
 
-System of record (SOR) for California residential real-estate transaction
-coordination. See `CLAUDE.md` for the five hard rules and architecture;
-`docs/TC-Build-Requirements.md` is the authoritative build plan.
+Terra is an AI-powered workspace that helps a real-estate **transaction
+coordinator** run a residential deal from contract to close. It reads the deal's
+signed documents, extracts the terms, computes the California contingency
+timeline, tracks every party and task, and drafts the follow-ups — while keeping
+a human in control of every consequential action.
 
-## Backend (Phase 1 — SOR core)
+The guiding principle: **don't just organize the transaction — help execute it.**
+Instead of another folder-and-checklist tool, Terra identifies what needs to
+happen next, prepares the work, and asks the coordinator to review and approve.
+
+> Status: working MVP on synthetic data. Full-stack (FastAPI · React/TypeScript ·
+> Supabase/Postgres), real document extraction via Claude, and **387 passing
+> backend tests**. California residential only.
+
+<!--
+  SCREENSHOTS — highly recommended for a portfolio README.
+  Add 2–3 images or a short GIF of: the Today command-center, a deal workspace
+  (Deal Map + timeline), and the extraction-review screen. Then reference them:
+    ![Today](docs/screenshots/today.png)
+-->
+
+---
+
+## Why it's interesting (engineering highlights)
+
+- **Decoupled "payloads-only" architecture.** Three parts — ingestion, the
+  system-of-record, and the compliance/timeline engine — communicate *only*
+  through a validated `Payload` contract. No part reads another's database or
+  imports its internals. Cross-component access is a stop-the-line violation.
+- **Real document understanding, human-verified.** Signed PDFs are read with
+  Claude (structured JSON output, per-field confidence, a strict field
+  whitelist). Nothing enters the record until the coordinator confirms it (HITL).
+- **A multi-document pipeline that reconciles itself.** Purchase agreements,
+  **counter offers**, and **contingency-removal** forms are cross-checked and can
+  *supersede* each other: a seller counter's price overrides the PA (with
+  provenance — "$1.9M, was $1.8M"), and a contingency-removal form drops the
+  corresponding deadlines off the timeline.
+- **A compliance engine that refuses to guess.** California contingency
+  deadlines are computed from a **human-verified** ruleset; the service
+  hard-stops until a person verifies the numbers. Weekend/holiday date math,
+  seven risk-flag cases, and draft reminders are all covered by tests against a
+  synthetic ruleset.
+- **Security & auditability built in.** Supabase row-level security with scoped
+  party access tokens, TC sessions gated on TOTP MFA (`aal2`), an append-only
+  audit log enforced by a DB trigger, and a zero-data-retention gate on every AI
+  call.
+- **Safety guardrails as first-class code** (see the five hard rules below) — no
+  auto-send, no wiring/payment data, and a copyrighted-forms boundary.
+
+---
+
+## Architecture
+
+```mermaid
+flowchart LR
+    subgraph A["(a) Ingestion agent"]
+      EM["Inbound email / manual upload"] --> DET["Detect type · read PDF · Claude extraction (confidence + whitelist)"]
+    end
+    DET -- "validated Payload" --> B
+    subgraph B["(b) Master · System of Record (Supabase/Postgres)"]
+      SOR["Transactions · Parties · Documents · Deadlines · Tasks · Messages · Audit log"]
+      SUP["Field supersession (counter offers / contingency removal)"]
+    end
+    B -- "confirmed fields (API only)" --> C
+    subgraph C["(c) Compliance / timeline engine"]
+      RULES["Human-verified CA rules → deadlines · tasks · risk flags"]
+    end
+    C -- "computed results (API only)" --> B
+    B <--> UI["React workspace — HITL review & approve"]
+```
+
+**(a) Ingestion** watches a dedicated inbound email address (Postmark) and a
+manual-upload fallback, detects document type and readability, extracts fields,
+and emits a validated Payload. It never writes the record directly.
+
+**(b) Master / System of Record** is the Supabase-backed source of truth. It
+consumes Payloads *after* the coordinator confirms them, enforces RLS and the
+append-only audit log, resolves cross-document supersession, derives parties, and
+gates the timeline until every deadline-driving field is confirmed.
+
+**(c) Compliance / timeline engine** runs on an interval, reads confirmed fields
+through the master's API, and computes deadlines, tasks, and risk flags from
+verified CA rules — never touching the master's tables directly.
+
+More detail: [`rules/architecture.md`](rules/architecture.md),
+[`rules/data-model.md`](rules/data-model.md), [`rules/security.md`](rules/security.md).
+
+---
+
+## The five hard rules (safety by design)
+
+These are enforced in code, not just documented:
+
+1. **Only ingest the customer's own signed contract** — never generate, host, or
+   pre-fill blank copyrighted C.A.R. forms.
+2. **Never touch money movement or wiring instructions** — wire fraud is the top
+   loss vector in closings; a field whitelist keeps payment data out entirely.
+3. **A human approves every outbound message — no auto-send, ever.**
+4. **California residential only** — one jurisdiction's forms and deadline rules,
+   done correctly, first.
+5. **Any AI model that sees the documents runs no-train / no-retain** — enforced
+   by a zero-data-retention gate that blocks extraction unless confirmed.
+
+---
+
+## What it does, end to end
+
+1. A signed document arrives (email or upload). Ingestion detects its type and,
+   for a purchase agreement, extracts the §5 fields with confidence scores.
+2. The coordinator reviews the extraction and confirms it (HITL). The deal is
+   created; the California **contingency timeline** is computed.
+3. Follow-on documents refine the deal:
+   - **Counter offers** supersede terms (e.g. a new purchase price) and raise
+     flags when the accepting party didn't sign in time, or when a further
+     counter is pending.
+   - **Contingency-removal (CR-B)** forms remove contingencies — the matching
+     deadlines drop off the timeline.
+4. The workspace surfaces what needs attention: a daily command center, a
+   multi-lane deal map, parties and tasks, and AI-drafted messages that always
+   require a human **Approve & Send**.
+
+---
+
+## Tech stack
+
+| Layer | Choices |
+|---|---|
+| Backend | Python · FastAPI · Pydantic · Uvicorn |
+| Data | Supabase (Postgres + Auth + Storage), row-level security, SQL migrations |
+| AI | Anthropic Claude (structured JSON extraction, per-field confidence) |
+| Docs | `pypdf` pre-check + decryption |
+| Frontend | React 18 · TypeScript · Vite · framer-motion |
+| Auth | Supabase JWT (JWKS/HS256), TOTP MFA (`aal2`), scoped party tokens |
+| Testing | pytest (387 tests) · ruff · `tsc` + `vite build` |
+
+---
+
+## Repository layout
+
+```
+backend/
+  app/
+    ingestion/    # (a) inbound email + upload, detection, Claude extraction
+    master/       # (b) system of record: repo, routes, supersession, audit
+    compliance/   # (c) CA timeline/deadline/risk-flag engine (verified rules)
+    contracts/    # the Payload + shared field/document taxonomy
+    common/       # auth (JWT/MFA), DB client, ZDR gate
+  tests/          # 387 tests — unit (synthetic) + DB-integration (skipped w/o env)
+frontend/
+  src/screens/    # workspace: Home, Deal, Inbox, Calendar, Guide, Admin, …
+  src/lib/        # api client, icons, UI primitives, error boundary
+supabase/migrations/   # SOR schema, RLS, storage
+rules/  docs/     # architecture, security, data-model, CA-rules verification
+```
+
+---
+
+## Getting started
+
+Prerequisites: Python 3.11+, Node 18+, a Supabase project, and an Anthropic API key.
+
+**Backend**
 
 ```bash
 cd backend
 python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
-.venv/bin/python -m pytest            # unit tests (no network, synthetic only)
-set -a; source ../.env; set +a
-.venv/bin/python -m pytest            # + DB-integration tests against the dev project
-.venv/bin/uvicorn app.main:app --reload
+.venv/bin/python -m pytest                     # unit tests — no network, synthetic only
+
+# to run the API, provide env (see .env.example): SUPABASE_URL / keys, ANTHROPIC_API_KEY,
+# and the safety flags (SYNTHETIC_ONLY=true keeps you on synthetic data).
+.venv/bin/uvicorn app.main:app --reload        # http://localhost:8000
 ```
 
-API (all routes except the webhook require a Supabase TC session JWT with MFA/aal2):
-
-- `POST /transactions` — TC creates a deal (HITL act). `GET /transactions` lists deals.
-- `POST /transactions/{id}/payloads` — the only deal-data write path (validated Payload).
-- `GET /transactions/{id}` — full deal state, including the audit trail.
-- `POST /transactions/{id}/fields/confirm` — extraction-review confirm.
-- `POST /transactions/{id}/timeline/stub` — hardcoded Phase 2 timeline (real CA rules: Phase 5).
-- `POST /transactions/{id}/messages/draft-stub` — stub lender draft (real drafting: Phase 6).
-- `POST /transactions/{id}/parties` — add a party (e.g. the lender contact).
-- `POST /transactions/{id}/messages/draft-lender` — real Claude draft of a lender
-  status request with a WHY (gated by the ZDR/synthetic gate); 409 if no lender
-  contact. `/messages/draft-stub` remains as the Phase 2 skeleton demo.
-- `POST /transactions/{id}/messages/{mid}/approve-and-send` — the **only** path
-  that sends. Records the human Approval first (Rule 3), applies the TC's optional
-  subject/body edits, then sends via the **guarded** mailer (real send off unless
-  `SEND_ENABLED=true` + recipient on `SEND_ALLOWLIST`), and sets a follow-up
-  reminder. On a guarded/failed send the message stays `approved` (retryable).
-- `POST /ingestion/webhooks/postmark` — inbound parse (dedicated deal address only;
-  token via `X-Webhook-Token` header or `?token=`). Detects doc type, stores the
-  attachment in the private `ingestion-attachments` bucket; unreadable → `needs_manual`.
-- `GET /ingestion/inbox` — the queue (pending + needs-manual) with routing
-  *suggestions* (transaction id in subject → sender history → address match).
-- `POST /ingestion/inbox/{id}/confirm` — HITL "new deal or which existing?"
-  (optional `doc_type` correction). For purchase agreements this runs the real
-  extraction pipeline: pypdf pre-check → Claude (§5 fields with per-field
-  confidence, whitelist-enforced). Pre-check/type/signature failures return a
-  structured 422 (`manual_fields_required`) — pass `manual_fields` to enter
-  values by hand (they land confirmed). `/dismiss` closes an item.
-  **ZDR gate:** extraction refuses to run unless `SYNTHETIC_ONLY=true` or
-  `ZDR_CONFIRMED=true` — no real client document until ZDR is confirmed.
-- The timeline is BLOCKED (409, with the field names) until every
-  deadline-driving §5 field on the deal is TC-confirmed.
-- `POST /transactions/{id}/compliance-result` — the compliance service (part c)
-  persists computed deadlines/tasks/risk-flags/draft-reminders. Service-token
-  auth (`X-Compliance-Token`); idempotent per deal; drafts land `draft` (Rule 3).
-
-## Compliance / timeline service (Phase 5 — structure)
-
-Part (c) computes deadlines/tasks/risk-flags from **human-verified** CA rules.
-The mechanics (calendar/roll date math, the seven §6 risk flags, draft
-reminders) are complete and tested against a **synthetic** ruleset; the real CA
-rule VALUES are walled off in `backend/app/compliance/ca_rules.py` and the
-service **hard-stops (`RulesNotVerified`)** until a human verifies
-`docs/ca-rules-verification.md`, fills `VERIFIED_RULESET`, and sets
-`CA_RULES_VERIFIED=true`. No unverified CA number lives in the code.
-
-Scheduling (MVP): call `app.compliance.service.run_for_transaction(txn_id,
-client)` per open deal on an interval (cron / APScheduler — no Kafka, §13). The
-runner reads state and writes results only through the master API.
-- `POST /ingestion/manual-upload` — TC-authed fallback for unreadable emails/scans.
-
-## Frontend (Phase 2 — walking-skeleton screens)
+**Frontend**
 
 ```bash
 cd frontend
-cp .env.example .env    # fill VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY (anon only!)
+cp .env.example .env        # set VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY (anon key only)
 npm install
-npm run dev             # http://localhost:5173 (backend on :8000)
+npm run dev                 # http://localhost:5173
 ```
 
-Screens: TC login (password + TOTP MFA enroll/challenge to reach aal2) → Inbox
-(HITL confirm) → Deal (extraction review → confirm → stub timeline → AI panel →
-Approve & Send, which fakes the send and writes the audit trail).
+Environment variables and one-time Supabase auth setup (TC user + TOTP MFA) are
+documented in `.env.example` and `docs/`.
 
-Schema lives in `supabase/migrations/` (applied to the dev project;
-`supabase_migrations.schema_migrations` tracks versions).
+---
 
-## TC auth setup (one-time, Supabase dashboard)
+## Testing
 
-1. Authentication → Sign In / Up: create the TC user (email + password).
-2. Authentication → Multi-Factor: enable TOTP.
-3. Enroll the TC in TOTP (frontend arrives in Phase 2; until then use the
-   Supabase JS/Python client `mfa.enroll()` + `mfa.challenge()`/`verify()` from
-   a scratch script) — the API rejects any session below `aal2`.
-4. Put the project's legacy JWT secret in `.env` as `SUPABASE_JWT_SECRET`.
+```bash
+cd backend && .venv/bin/python -m pytest        # 387 tests (DB-integration tests skip without env)
+cd frontend && npm run build                     # tsc typecheck + production build
+```
+
+The project is test-driven: the compliance math, extraction/whitelist behavior,
+document supersession, and the safety guardrails all have dedicated tests.
+
+---
+
+## Scope & status
+
+This is a **portfolio MVP** running on **synthetic data** against a development
+Supabase project. The real California rule *values* are intentionally walled off
+behind a human-verification gate, and live sending is disabled by default. It is
+not a production or legal-advice tool.
+
+## License
+
+See [`LICENSE`](LICENSE). Source is published for demonstration and review.
