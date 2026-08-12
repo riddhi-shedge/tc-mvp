@@ -34,6 +34,7 @@ from app.contracts.payload import (
     ExtractedField,
     Payload,
     PreapprovalMeta,
+    PreliminaryMeta,
 )
 from app.ingestion.detector import check_readability, detect_doc_type
 from app.ingestion.extractor import (
@@ -471,6 +472,38 @@ def _extract_preapproval(
     return fields, meta
 
 
+def _extract_preliminary(
+    item: dict[str, Any], inbox: InboxRepo, extractor: Extractor
+) -> PreliminaryMeta:
+    """Read a preliminary ('title') report — validation-only (no field overrides,
+    no party). Returns the facts the master cross-checks against the deal: the
+    effective date (recency), the vested owner (should be the seller), and the APN."""
+    storage_path = item.get("storage_path")
+    if not storage_path:
+        raise _extraction_error(
+            "No stored document for this item", ["no attachment file is stored"]
+        )
+    try:
+        pdf_bytes = inbox.download_attachment(storage_path)
+    except StorageUnavailable:
+        raise HTTPException(
+            status_code=503, detail="Attachment store unavailable; try again shortly"
+        ) from None
+    readable = decrypt_pdf(pdf_bytes)
+    if readable is None:
+        raise _extraction_error(
+            "The document is password-protected",
+            ["the PDF requires a password to open — upload an unlocked copy"],
+        )
+    try:
+        pr = extractor.extract_preliminary(pdf_bytes=readable)
+    except ExtractionBlocked as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from None
+    except ExtractionFailed as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from None
+    return PreliminaryMeta(effective_date=pr.effective_date, vestee=pr.vestee, apn=pr.apn)
+
+
 def _extract_pa_fields(
     item: dict[str, Any], inbox: InboxRepo, extractor: Extractor
 ) -> list[ExtractedField]:
@@ -584,6 +617,7 @@ def confirm_inbox_item(
             )
         counter_meta: CounterMeta | None = None
         preapproval_meta: PreapprovalMeta | None = None
+        preliminary_meta: PreliminaryMeta | None = None
         if doc_type == "purchase_agreement":
             fields: list[ExtractedField] = (
                 _manual_extracted_fields(body.manual_fields)
@@ -602,6 +636,10 @@ def confirm_inbox_item(
             # Creates the loan-officer party (via §5 lender fields) and carries the
             # facts the master validates against the deal (name/expiry/amount).
             fields, preapproval_meta = _extract_preapproval(item, inbox, extractor)
+        elif doc_type == "preliminary_report":
+            # Validation-only: APN / vested-owner / recency cross-checks in the master.
+            preliminary_meta = _extract_preliminary(item, inbox, extractor)
+            fields = []
         else:
             fields = []
 
@@ -628,6 +666,7 @@ def confirm_inbox_item(
             document_storage_ref=item.get("storage_path"),
             counter_meta=counter_meta,
             preapproval_meta=preapproval_meta,
+            preliminary_meta=preliminary_meta,
         )
         status, data = master.write_payload(
             token=token, transaction_id=transaction_id, payload=payload

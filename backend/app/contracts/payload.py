@@ -59,6 +59,16 @@ class PreapprovalMeta(BaseModel):
     loan_amount: str | None = None
 
 
+class PreliminaryMeta(BaseModel):
+    """Facts from a preliminary ("title") report that the master validates against
+    the deal: the effective date (should be recent), the vested owner (should be
+    the seller), and the APN (should match the contract)."""
+
+    effective_date: str | None = None
+    vestee: str | None = None
+    apn: str | None = None
+
+
 class Payload(BaseModel):
     """A validated package handed from ingestion to the master. Validated at the
     boundary — never trusted."""
@@ -76,6 +86,8 @@ class Payload(BaseModel):
     counter_meta: CounterMeta | None = None
     # Preapproval facts (only on preapproval payloads).
     preapproval_meta: PreapprovalMeta | None = None
+    # Preliminary-report facts (only on preliminary_report payloads).
+    preliminary_meta: PreliminaryMeta | None = None
 
     @property
     def is_new_transaction(self) -> bool:

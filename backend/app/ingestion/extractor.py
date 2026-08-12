@@ -73,6 +73,17 @@ class Preapproval:
     officer_phone: str | None = None
 
 
+@dataclass(frozen=True)
+class PreliminaryReport:
+    """A preliminary ("title") report: its effective date, the vested owner
+    ("title to said estate or interest at the date hereof is vested in ..."), and
+    the APN of the property."""
+
+    effective_date: str | None = None
+    vestee: str | None = None
+    apn: str | None = None
+
+
 class Extractor(Protocol):
     def extract(self, *, pdf_bytes: bytes, doc_type: DocType) -> ExtractionResult: ...
 
@@ -81,6 +92,30 @@ class Extractor(Protocol):
     def extract_contingency_removal(self, *, pdf_bytes: bytes) -> ContingencyRemoval: ...
 
     def extract_preapproval(self, *, pdf_bytes: bytes) -> Preapproval: ...
+
+    def extract_preliminary(self, *, pdf_bytes: bytes) -> PreliminaryReport: ...
+
+
+def _preliminary_schema() -> dict[str, Any]:
+    keys = ("effective_date", "vestee", "apn")
+    return {
+        "type": "object",
+        "properties": {k: {"type": "string"} for k in keys},
+        "required": list(keys),
+        "additionalProperties": False,
+    }
+
+
+def _preliminary_prompt() -> str:
+    return (
+        "This is a California preliminary ('title') report. Report as JSON strings "
+        "(empty string when absent):\n"
+        "- effective_date: the report's effective / dated-as-of date, as written.\n"
+        "- vestee: the current owner of record — the party named in 'Title to said "
+        "estate or interest at the date hereof is vested in ...'.\n"
+        "- apn: the Assessor's Parcel Number of the property.\n"
+        "Never extract owner SSNs, account numbers, or payment details."
+    )
 
 
 def _preapproval_schema() -> dict[str, Any]:
@@ -198,6 +233,7 @@ def _output_schema() -> dict[str, Any]:
                     "buyer_counter_offer",
                     "contingency_removal",
                     "preapproval",
+                    "preliminary_report",
                     "proof_of_funds",
                     "disclosure",
                     "inspection_report",
@@ -457,6 +493,13 @@ class ClaudeExtractor:
             officer_company=s("officer_company"),
             officer_email=s("officer_email"),
             officer_phone=s("officer_phone"),
+        )
+
+    def extract_preliminary(self, *, pdf_bytes: bytes) -> PreliminaryReport:
+        data = self._structured(pdf_bytes, _preliminary_schema(), _preliminary_prompt())
+        s = lambda k: (str(data.get(k, "")).strip() or None)  # noqa: E731
+        return PreliminaryReport(
+            effective_date=s("effective_date"), vestee=s("vestee"), apn=s("apn")
         )
 
 

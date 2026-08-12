@@ -17,7 +17,7 @@ from app.common.db import ThreadLocalSupabase
 from app.contracts.compliance import ComplianceResult
 from app.contracts.documents import COUNTER_OFFER_TYPES
 from app.contracts.fields import DEADLINE_DRIVING
-from app.contracts.payload import CounterMeta, Payload, PreapprovalMeta
+from app.contracts.payload import CounterMeta, Payload, PreapprovalMeta, PreliminaryMeta
 from app.master.deal_tasks import derive_tasks
 from app.master.inconsistency import CRITICAL_FIELDS, MATERIAL_FIELDS, find_field_conflicts
 from app.master.parties import derive_parties, party_key, tier_for
@@ -194,6 +194,12 @@ def _name_set(value: str | None) -> set[str]:
     return {re.sub(r"\s+", " ", p).strip().lower() for p in parts if p.strip()}
 
 
+def _norm_apn(value: str | None) -> str:
+    """APNs are written with varied separators (357-13-003, 357 13 003, 35713003);
+    compare on digits/letters only."""
+    return re.sub(r"[^0-9a-z]", "", (value or "").lower())
+
+
 def evaluate_preapproval_flags(
     meta: "PreapprovalMeta",
     pa_buyer_names: str | None,
@@ -231,6 +237,48 @@ def evaluate_preapproval_flags(
             "description": (
                 f"The preapproval expires {meta.expiration}, before the close of escrow "
                 f"({coe_date.isoformat()}). Request an updated approval letter."
+            ),
+        })
+    return flags
+
+
+def evaluate_preliminary_flags(
+    meta: "PreliminaryMeta",
+    pa_seller_names: str | None,
+    pa_apn: str | None,
+    acceptance_date: date | None,
+) -> list[dict[str, str]]:
+    """Validate a preliminary ('title') report against the deal: the vested owner
+    is the seller, the APN matches the contract, and the report is recent (within
+    ~30 days of acceptance). Pure — inserted by each repo."""
+    flags: list[dict[str, str]] = []
+    ves, sel = _name_set(meta.vestee), _name_set(pa_seller_names)
+    if ves and sel and ves.isdisjoint(sel):
+        flags.append({
+            "severity": "warning",
+            "case_key": "prelim_vestee_mismatch",
+            "description": (
+                f'The title report vests ownership in "{meta.vestee}", but the contract seller '
+                f'is "{pa_seller_names}". Confirm the seller is the owner of record.'
+            ),
+        })
+    if meta.apn and pa_apn and _norm_apn(meta.apn) != _norm_apn(pa_apn):
+        flags.append({
+            "severity": "warning",
+            "case_key": "prelim_apn_mismatch",
+            "description": (
+                f"The title report APN ({meta.apn}) does not match the contract APN ({pa_apn}) — "
+                "reconcile them; the APN on the purchase agreement may need correcting."
+            ),
+        })
+    eff = _parse_loose_date(meta.effective_date)
+    if eff and acceptance_date and abs((acceptance_date - eff).days) > 30:
+        flags.append({
+            "severity": "warning",
+            "case_key": "prelim_stale",
+            "description": (
+                f"The title report is dated {meta.effective_date}, more than 30 days from "
+                f"acceptance ({acceptance_date.isoformat()}). Request a current report."
             ),
         })
     return flags
@@ -1027,6 +1075,41 @@ class SupabaseRepo:
                         transaction_id=transaction_id,
                         actor=actor,
                         action="risk_flag.preapproval",
+                        entity_type="risk_flag",
+                        entity_id=None,
+                        details={"case": flag["case_key"]},
+                    )
+
+            # A preliminary ('title') report is validated against the deal.
+            if payload.document_type == "preliminary_report" and payload.preliminary_meta:
+                eff = _effective_fields(
+                    self._db.table("extracted_fields")
+                    .select("name, value, confirmed, created_at")
+                    .eq("transaction_id", transaction_id)
+                    .execute()
+                    .data
+                )
+                acc = _parse_loose_date((eff.get("acceptance_date") or {}).get("value"))
+                for flag in evaluate_preliminary_flags(
+                    payload.preliminary_meta,
+                    (eff.get("seller_names") or {}).get("value"),
+                    (eff.get("apn") or {}).get("value"),
+                    acc,
+                ):
+                    self._db.table("risk_flags").insert(
+                        {
+                            "transaction_id": transaction_id,
+                            "severity": flag["severity"],
+                            "description": flag["description"],
+                            "generated_by": "master",
+                            "case_key": flag["case_key"],
+                            "resolved": False,
+                        }
+                    ).execute()
+                    self._audit(
+                        transaction_id=transaction_id,
+                        actor=actor,
+                        action="risk_flag.preliminary",
                         entity_type="risk_flag",
                         entity_id=None,
                         details={"case": flag["case_key"]},

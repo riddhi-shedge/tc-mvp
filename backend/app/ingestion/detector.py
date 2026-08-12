@@ -48,6 +48,10 @@ _DOC_TYPE_PATTERNS: list[tuple[DocType, re.Pattern[str]]] = [
             re.IGNORECASE,
         ),
     ),
+    (
+        "preliminary_report",
+        re.compile(r"prelim\w*\s*(?:title\s*)?report|preliminary\s+report|\btitle\s+report\b", re.IGNORECASE),
+    ),
     ("proof_of_funds", re.compile(r"proof\s+of\s+funds|\bpof\b", re.IGNORECASE)),
     ("disclosure", re.compile(r"disclosure", re.IGNORECASE)),
     (

@@ -933,6 +933,39 @@ class InMemoryRepo:
                     entity_type="risk_flag", entity_id=None, details={"case": flag["case_key"]},
                 )
 
+        # A preliminary ('title') report is validated against the deal.
+        if payload.document_type == "preliminary_report" and payload.preliminary_meta:
+            from app.master.repo import (
+                _effective_fields,
+                _parse_loose_date,
+                evaluate_preliminary_flags,
+            )
+
+            eff = _effective_fields(
+                [f for f in self.extracted_fields if f["transaction_id"] == transaction_id]
+            )
+            for flag in evaluate_preliminary_flags(
+                payload.preliminary_meta,
+                (eff.get("seller_names") or {}).get("value"),
+                (eff.get("apn") or {}).get("value"),
+                _parse_loose_date((eff.get("acceptance_date") or {}).get("value")),
+            ):
+                self.risk_flags.append(
+                    {
+                        "id": str(uuid.uuid4()),
+                        "transaction_id": transaction_id,
+                        "severity": flag["severity"],
+                        "description": flag["description"],
+                        "generated_by": "master",
+                        "case_key": flag["case_key"],
+                        "resolved": False,
+                    }
+                )
+                self._audit(
+                    transaction_id=transaction_id, actor=actor, action="risk_flag.preliminary",
+                    entity_type="risk_flag", entity_id=None, details={"case": flag["case_key"]},
+                )
+
         # A re-uploaded PA supersedes the prior one (cascade its payload+fields).
         if payload.document_type == "purchase_agreement":
             old_docs = [
