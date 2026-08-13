@@ -17,7 +17,13 @@ from app.common.db import ThreadLocalSupabase
 from app.contracts.compliance import ComplianceResult
 from app.contracts.documents import COUNTER_OFFER_TYPES
 from app.contracts.fields import DEADLINE_DRIVING
-from app.contracts.payload import CounterMeta, Payload, PreapprovalMeta, PreliminaryMeta
+from app.contracts.payload import (
+    CounterMeta,
+    InspectionMeta,
+    Payload,
+    PreapprovalMeta,
+    PreliminaryMeta,
+)
 from app.master.deal_tasks import derive_tasks
 from app.master.inconsistency import CRITICAL_FIELDS, MATERIAL_FIELDS, find_field_conflicts
 from app.master.parties import derive_parties, party_key, tier_for
@@ -279,6 +285,50 @@ def evaluate_preliminary_flags(
             "description": (
                 f"The title report is dated {meta.effective_date}, more than 30 days from "
                 f"acceptance ({acceptance_date.isoformat()}). Request a current report."
+            ),
+        })
+    return flags
+
+
+_STREET_SUFFIXES = {
+    "rd", "road", "st", "street", "ave", "avenue", "dr", "drive", "ln", "lane",
+    "ct", "court", "blvd", "boulevard", "way", "pl", "place", "cir", "circle",
+    "ter", "terrace", "hwy", "highway", "pkwy", "parkway",
+}
+
+
+def _addr_core(value: str | None) -> str:
+    """The house number + street name of an address, minus the street-type suffix,
+    so '21989 McClellan Rd' and '21989 McClellan Road, Cupertino' compare equal."""
+    seg = re.sub(r"[^a-z0-9 ]", " ", (value or "").split(",")[0].lower())
+    tokens = [t for t in seg.split() if t not in _STREET_SUFFIXES]
+    return " ".join(tokens).strip()
+
+
+def evaluate_inspection_flags(
+    meta: "InspectionMeta", pa_property_address: str | None, acceptance_date: date | None
+) -> list[dict[str, str]]:
+    """Validate an inspection report against the deal: the inspected address is the
+    property, and the inspection is recent. Pure — inserted by each repo."""
+    flags: list[dict[str, str]] = []
+    a, b = _addr_core(meta.property_address), _addr_core(pa_property_address)
+    if a and b and a != b:
+        flags.append({
+            "severity": "warning",
+            "case_key": "inspection_address_mismatch",
+            "description": (
+                f'The inspection is for "{meta.property_address}", which does not match the '
+                f'property "{pa_property_address}". Confirm it is the right property.'
+            ),
+        })
+    d = _parse_loose_date(meta.inspection_date)
+    if d and acceptance_date and abs((acceptance_date - d).days) > 30:
+        flags.append({
+            "severity": "warning",
+            "case_key": "inspection_stale",
+            "description": (
+                f"The inspection is dated {meta.inspection_date}, more than 30 days from "
+                f"acceptance ({acceptance_date.isoformat()}). It may need to be re-run."
             ),
         })
     return flags
@@ -1110,6 +1160,58 @@ class SupabaseRepo:
                         transaction_id=transaction_id,
                         actor=actor,
                         action="risk_flag.preliminary",
+                        entity_type="risk_flag",
+                        entity_id=None,
+                        details={"case": flag["case_key"]},
+                    )
+
+            # Parties carried on the payload (e.g. an inspector) — created if new.
+            if payload.parties:
+                existing = {
+                    party_key(p["role"], p["name"])
+                    for p in self._db.table("parties")
+                    .select("role, name")
+                    .eq("transaction_id", transaction_id)
+                    .execute()
+                    .data
+                }
+                for pref in payload.parties:
+                    if party_key(pref.role, pref.name) in existing:
+                        continue
+                    self.create_party(
+                        transaction_id=transaction_id, name=pref.name, role=pref.role,
+                        email=pref.email, permission_tier=tier_for(pref.role), actor=actor,
+                        phone=pref.phone, company=pref.company,
+                    )
+
+            # An inspection report is validated against the deal (address, recency).
+            if payload.document_type in ("property_inspection", "termite_inspection") and payload.inspection_meta:
+                eff = _effective_fields(
+                    self._db.table("extracted_fields")
+                    .select("name, value, confirmed, created_at")
+                    .eq("transaction_id", transaction_id)
+                    .execute()
+                    .data
+                )
+                for flag in evaluate_inspection_flags(
+                    payload.inspection_meta,
+                    (eff.get("property_address") or {}).get("value"),
+                    _parse_loose_date((eff.get("acceptance_date") or {}).get("value")),
+                ):
+                    self._db.table("risk_flags").insert(
+                        {
+                            "transaction_id": transaction_id,
+                            "severity": flag["severity"],
+                            "description": flag["description"],
+                            "generated_by": "master",
+                            "case_key": flag["case_key"],
+                            "resolved": False,
+                        }
+                    ).execute()
+                    self._audit(
+                        transaction_id=transaction_id,
+                        actor=actor,
+                        action="risk_flag.inspection",
                         entity_type="risk_flag",
                         entity_id=None,
                         details={"case": flag["case_key"]},

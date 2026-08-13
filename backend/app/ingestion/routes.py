@@ -32,7 +32,9 @@ from app.contracts.payload import (
     NEW_TRANSACTION,
     CounterMeta,
     ExtractedField,
+    InspectionMeta,
     Payload,
+    PartyRef,
     PreapprovalMeta,
     PreliminaryMeta,
 )
@@ -504,6 +506,54 @@ def _extract_preliminary(
     return PreliminaryMeta(effective_date=pr.effective_date, vestee=pr.vestee, apn=pr.apn)
 
 
+def _extract_inspection(
+    item: dict[str, Any], inbox: InboxRepo, extractor: Extractor, role: str
+) -> tuple[list[PartyRef], InspectionMeta]:
+    """Read a property or termite inspection report: creates the inspector party
+    (the individual if named, else the company) and returns the facts the master
+    validates (inspected address matches the property; inspection is recent)."""
+    storage_path = item.get("storage_path")
+    if not storage_path:
+        raise _extraction_error(
+            "No stored document for this item", ["no attachment file is stored"]
+        )
+    try:
+        pdf_bytes = inbox.download_attachment(storage_path)
+    except StorageUnavailable:
+        raise HTTPException(
+            status_code=503, detail="Attachment store unavailable; try again shortly"
+        ) from None
+    readable = decrypt_pdf(pdf_bytes)
+    if readable is None:
+        raise _extraction_error(
+            "The document is password-protected",
+            ["the PDF requires a password to open — upload an unlocked copy"],
+        )
+    try:
+        insp = extractor.extract_inspection(pdf_bytes=readable)
+    except ExtractionBlocked as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from None
+    except ExtractionFailed as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from None
+
+    parties: list[PartyRef] = []
+    party_name = insp.inspector_name or insp.inspector_company
+    if party_name:
+        parties.append(
+            PartyRef(
+                role=role,
+                name=party_name,
+                company=insp.inspector_company,
+                email=insp.inspector_email,
+                phone=insp.inspector_phone,
+            )
+        )
+    meta = InspectionMeta(
+        property_address=insp.property_address, inspection_date=insp.inspection_date
+    )
+    return parties, meta
+
+
 def _extract_pa_fields(
     item: dict[str, Any], inbox: InboxRepo, extractor: Extractor
 ) -> list[ExtractedField]:
@@ -618,6 +668,8 @@ def confirm_inbox_item(
         counter_meta: CounterMeta | None = None
         preapproval_meta: PreapprovalMeta | None = None
         preliminary_meta: PreliminaryMeta | None = None
+        inspection_meta: InspectionMeta | None = None
+        new_parties: list[PartyRef] = []
         if doc_type == "purchase_agreement":
             fields: list[ExtractedField] = (
                 _manual_extracted_fields(body.manual_fields)
@@ -639,6 +691,10 @@ def confirm_inbox_item(
         elif doc_type == "preliminary_report":
             # Validation-only: APN / vested-owner / recency cross-checks in the master.
             preliminary_meta = _extract_preliminary(item, inbox, extractor)
+            fields = []
+        elif doc_type in ("property_inspection", "termite_inspection"):
+            role = "inspector_general" if doc_type == "property_inspection" else "inspector_termite"
+            new_parties, inspection_meta = _extract_inspection(item, inbox, extractor, role)
             fields = []
         else:
             fields = []
@@ -667,6 +723,8 @@ def confirm_inbox_item(
             counter_meta=counter_meta,
             preapproval_meta=preapproval_meta,
             preliminary_meta=preliminary_meta,
+            inspection_meta=inspection_meta,
+            parties=new_parties,
         )
         status, data = master.write_payload(
             token=token, transaction_id=transaction_id, payload=payload

@@ -14,6 +14,7 @@ from app.ingestion.extractor import (
     ExtractionBlocked,
     ExtractionFailed,
     ExtractionResult,
+    InspectionReport,
     Preapproval,
     PreliminaryReport,
 )
@@ -50,6 +51,7 @@ class FakeExtractor:
         contingency_removal: ContingencyRemoval | None = None,
         preapproval: Preapproval | None = None,
         preliminary: PreliminaryReport | None = None,
+        inspection: InspectionReport | None = None,
     ) -> None:
         self.doc_looks_like = doc_looks_like
         self.signature_detected = signature_detected
@@ -59,6 +61,7 @@ class FakeExtractor:
         self.contingency_removal = contingency_removal or ContingencyRemoval()
         self.preapproval = preapproval or Preapproval()
         self.preliminary = preliminary or PreliminaryReport()
+        self.inspection = inspection or InspectionReport()
         self.fields = (
             fields
             if fields is not None
@@ -111,3 +114,11 @@ class FakeExtractor:
         if self.raise_failed:
             raise ExtractionFailed("extraction service error (synthetic)")
         return self.preliminary
+
+    def extract_inspection(self, *, pdf_bytes: bytes) -> InspectionReport:
+        self.calls.append(len(pdf_bytes))
+        if self.raise_blocked:
+            raise ExtractionBlocked("Extraction is disabled (synthetic test gate)")
+        if self.raise_failed:
+            raise ExtractionFailed("extraction service error (synthetic)")
+        return self.inspection

@@ -55,8 +55,16 @@ _DOC_TYPE_PATTERNS: list[tuple[DocType, re.Pattern[str]]] = [
     ("proof_of_funds", re.compile(r"proof\s+of\s+funds|\bpof\b", re.IGNORECASE)),
     ("disclosure", re.compile(r"disclosure", re.IGNORECASE)),
     (
+        "termite_inspection",
+        re.compile(r"termite|\bpest\b|wood[\s-]*destroying|\bwdo\b", re.IGNORECASE),
+    ),
+    (
+        "property_inspection",
+        re.compile(r"property\s+inspection|home\s+inspection|general\s+inspection", re.IGNORECASE),
+    ),
+    (
         "inspection_report",
-        re.compile(r"inspection\s+report|termite|pest\s+report|roof\s+report|sewer", re.IGNORECASE),
+        re.compile(r"inspection\s+report|roof\s+report|sewer", re.IGNORECASE),
     ),
 ]
 

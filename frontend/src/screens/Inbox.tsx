@@ -20,6 +20,8 @@ const DOC_TYPE_LABELS: Record<string, string> = {
   preliminary_report: "Preliminary (title) report",
   proof_of_funds: "Proof of funds",
   disclosure: "Disclosure",
+  property_inspection: "Property inspection",
+  termite_inspection: "Termite inspection",
   inspection_report: "Inspection report",
   other: "Other — let Terra identify it",
   unknown: "Unknown — pick a type",

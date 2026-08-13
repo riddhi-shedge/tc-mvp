@@ -69,6 +69,25 @@ class PreliminaryMeta(BaseModel):
     apn: str | None = None
 
 
+class PartyRef(BaseModel):
+    """A party to create on the deal from a document (e.g. an inspector), for doc
+    types with no §5 contact field to derive from. Deduped by role + name."""
+
+    role: str = Field(min_length=1)
+    name: str = Field(min_length=1)
+    company: str | None = None
+    email: str | None = None
+    phone: str | None = None
+
+
+class InspectionMeta(BaseModel):
+    """Facts from an inspection report the master validates: the inspected address
+    (should match the property) and the inspection date (should be recent)."""
+
+    property_address: str | None = None
+    inspection_date: str | None = None
+
+
 class Payload(BaseModel):
     """A validated package handed from ingestion to the master. Validated at the
     boundary — never trusted."""
@@ -88,6 +107,9 @@ class Payload(BaseModel):
     preapproval_meta: PreapprovalMeta | None = None
     # Preliminary-report facts (only on preliminary_report payloads).
     preliminary_meta: PreliminaryMeta | None = None
+    # Inspection facts + the inspector to create (inspection report payloads).
+    inspection_meta: InspectionMeta | None = None
+    parties: list[PartyRef] = Field(default_factory=list)
 
     @property
     def is_new_transaction(self) -> bool:

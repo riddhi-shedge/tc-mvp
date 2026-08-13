@@ -18,6 +18,8 @@ DocType = Literal[
     "preliminary_report",
     "proof_of_funds",
     "disclosure",
+    "property_inspection",
+    "termite_inspection",
     "inspection_report",
     "other",
     "unknown",

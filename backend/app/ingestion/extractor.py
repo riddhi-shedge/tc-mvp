@@ -84,6 +84,19 @@ class PreliminaryReport:
     apn: str | None = None
 
 
+@dataclass(frozen=True)
+class InspectionReport:
+    """A property or termite/pest inspection report: the inspected address, the
+    inspection date, and the inspector (individual and/or company) with contact."""
+
+    property_address: str | None = None
+    inspection_date: str | None = None
+    inspector_name: str | None = None
+    inspector_company: str | None = None
+    inspector_email: str | None = None
+    inspector_phone: str | None = None
+
+
 class Extractor(Protocol):
     def extract(self, *, pdf_bytes: bytes, doc_type: DocType) -> ExtractionResult: ...
 
@@ -94,6 +107,34 @@ class Extractor(Protocol):
     def extract_preapproval(self, *, pdf_bytes: bytes) -> Preapproval: ...
 
     def extract_preliminary(self, *, pdf_bytes: bytes) -> PreliminaryReport: ...
+
+    def extract_inspection(self, *, pdf_bytes: bytes) -> InspectionReport: ...
+
+
+def _inspection_schema() -> dict[str, Any]:
+    keys = (
+        "property_address", "inspection_date",
+        "inspector_name", "inspector_company", "inspector_email", "inspector_phone",
+    )
+    return {
+        "type": "object",
+        "properties": {k: {"type": "string"} for k in keys},
+        "required": list(keys),
+        "additionalProperties": False,
+    }
+
+
+def _inspection_prompt() -> str:
+    return (
+        "This is a property or termite/pest (wood-destroying-organisms) inspection "
+        "report for a home. Report as JSON strings (empty string when absent):\n"
+        "- property_address: the address of the inspected property, as written.\n"
+        "- inspection_date: the date the inspection was performed, as written.\n"
+        "- inspector_name: the individual inspector's full name, if given.\n"
+        "- inspector_company: the inspection company's name.\n"
+        "- inspector_email and inspector_phone: the inspector/company contact.\n"
+        "Never extract payment, bank, or wiring details."
+    )
 
 
 def _preliminary_schema() -> dict[str, Any]:
@@ -236,6 +277,8 @@ def _output_schema() -> dict[str, Any]:
                     "preliminary_report",
                     "proof_of_funds",
                     "disclosure",
+                    "property_inspection",
+                    "termite_inspection",
                     "inspection_report",
                     "other",
                 ],
@@ -500,6 +543,18 @@ class ClaudeExtractor:
         s = lambda k: (str(data.get(k, "")).strip() or None)  # noqa: E731
         return PreliminaryReport(
             effective_date=s("effective_date"), vestee=s("vestee"), apn=s("apn")
+        )
+
+    def extract_inspection(self, *, pdf_bytes: bytes) -> InspectionReport:
+        data = self._structured(pdf_bytes, _inspection_schema(), _inspection_prompt())
+        s = lambda k: (str(data.get(k, "")).strip() or None)  # noqa: E731
+        return InspectionReport(
+            property_address=s("property_address"),
+            inspection_date=s("inspection_date"),
+            inspector_name=s("inspector_name"),
+            inspector_company=s("inspector_company"),
+            inspector_email=s("inspector_email"),
+            inspector_phone=s("inspector_phone"),
         )
 
 

@@ -966,6 +966,54 @@ class InMemoryRepo:
                     entity_type="risk_flag", entity_id=None, details={"case": flag["case_key"]},
                 )
 
+        # Parties carried on the payload (e.g. an inspector) — created if new.
+        if payload.parties:
+            existing = {
+                party_key(p["role"], p["name"])
+                for p in self.parties.values()
+                if p["transaction_id"] == transaction_id
+            }
+            for pref in payload.parties:
+                if party_key(pref.role, pref.name) in existing:
+                    continue
+                self.create_party(
+                    transaction_id=transaction_id, name=pref.name, role=pref.role,
+                    email=pref.email, permission_tier=tier_for(pref.role), actor=actor,
+                    phone=pref.phone, company=pref.company,
+                )
+
+        # An inspection report is validated against the deal (address, recency).
+        if payload.document_type in ("property_inspection", "termite_inspection") and payload.inspection_meta:
+            from app.master.repo import (
+                _effective_fields,
+                _parse_loose_date,
+                evaluate_inspection_flags,
+            )
+
+            eff = _effective_fields(
+                [f for f in self.extracted_fields if f["transaction_id"] == transaction_id]
+            )
+            for flag in evaluate_inspection_flags(
+                payload.inspection_meta,
+                (eff.get("property_address") or {}).get("value"),
+                _parse_loose_date((eff.get("acceptance_date") or {}).get("value")),
+            ):
+                self.risk_flags.append(
+                    {
+                        "id": str(uuid.uuid4()),
+                        "transaction_id": transaction_id,
+                        "severity": flag["severity"],
+                        "description": flag["description"],
+                        "generated_by": "master",
+                        "case_key": flag["case_key"],
+                        "resolved": False,
+                    }
+                )
+                self._audit(
+                    transaction_id=transaction_id, actor=actor, action="risk_flag.inspection",
+                    entity_type="risk_flag", entity_id=None, details={"case": flag["case_key"]},
+                )
+
         # A re-uploaded PA supersedes the prior one (cascade its payload+fields).
         if payload.document_type == "purchase_agreement":
             old_docs = [
