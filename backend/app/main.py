@@ -6,7 +6,10 @@ extraction review, approval/send) are added in later Stage C phases.
 
 import logging
 import os
+import sys
+from pathlib import Path
 
+from dotenv import load_dotenv
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -14,6 +17,13 @@ from postgrest.exceptions import APIError
 
 from app.ingestion.routes import router as ingestion_router
 from app.master.routes import router as master_router
+
+# Load the project .env for local runs (so the key/creds live in one gitignored
+# place, not passed inline). override=False: an explicitly-set env var — e.g. a
+# production or inline value — always wins. Skipped under pytest so tests use only
+# their own fixtures' environment (never real DB creds from .env).
+if "pytest" not in sys.modules:
+    load_dotenv(Path(__file__).resolve().parents[2] / ".env", override=False)
 
 logger = logging.getLogger("tc_mvp")
 

@@ -6,5 +6,6 @@ pyjwt
 httpx
 anthropic
 pypdf
+python-dotenv
 pytest
 ruff
