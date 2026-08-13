@@ -116,6 +116,58 @@ def test_contingency_removal_supersedes_day_field():
     assert eff["superseded_from"] == "17"
 
 
+def test_pa_subject_to_counter_flags_when_no_counter_uploaded():
+    repo = InMemoryRepo()
+    tid = repo.create_transaction(property_address="1 Example St", actor="tc")["id"]
+    repo.write_payload(
+        transaction_id=tid,
+        payload=Payload(
+            document_id="pa", transaction_id=tid, extracted_fields=[_price_field("$1,800,000")],
+            document_type="purchase_agreement", pa_subject_to_counter=True,
+        ),
+        actor="tc",
+    )
+    assert "counter_pending" in {r["case_key"] for r in repo.get_full_state(tid)["risk_flags"]}
+
+
+def test_pa_not_subject_to_counter_raises_no_prompt():
+    repo = InMemoryRepo()
+    tid = repo.create_transaction(property_address="1 Example St", actor="tc")["id"]
+    repo.write_payload(
+        transaction_id=tid,
+        payload=Payload(
+            document_id="pa", transaction_id=tid, extracted_fields=[_price_field("$1,800,000")],
+            document_type="purchase_agreement",
+        ),
+        actor="tc",
+    )
+    assert "counter_pending" not in {r["case_key"] for r in repo.get_full_state(tid)["risk_flags"]}
+
+
+def test_uploading_the_counter_resolves_the_pending_prompt():
+    repo = InMemoryRepo()
+    tid = repo.create_transaction(property_address="1 Example St", actor="tc")["id"]
+    _write(repo, tid, "pa", "purchase_agreement", "$1,800,000")
+    repo.write_payload(  # re-write PA flagged subject-to-counter
+        transaction_id=tid,
+        payload=Payload(
+            document_id="pa2", transaction_id=tid, extracted_fields=[_price_field("$1,800,000")],
+            document_type="purchase_agreement", pa_subject_to_counter=True,
+        ),
+        actor="tc",
+    )
+    repo.write_payload(
+        transaction_id=tid,
+        payload=Payload(
+            document_id="sco", transaction_id=tid, extracted_fields=[_price_field("$1,900,000")],
+            document_type="seller_counter_offer", counter_meta=CounterMeta(recipient_signed=True),
+        ),
+        actor="tc",
+    )
+    pending = [r for r in repo.get_full_state(tid)["risk_flags"] if r["case_key"] == "counter_pending"]
+    assert pending and all(r["resolved"] for r in pending)
+
+
 def test_counter_flags_land_via_write_payload():
     repo = InMemoryRepo()
     tid = repo.create_transaction(property_address="1 Chain St", actor="tc")["id"]

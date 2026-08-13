@@ -41,6 +41,9 @@ class ExtractionResult:
     fields: list[ExtractedField]
     doc_looks_like: str
     signature_detected: bool
+    # True when the PA indicates acceptance is subject to a counter offer (so the
+    # PA's terms may not be final until that counter is uploaded).
+    subject_to_counter_offer: bool = False
 
 
 @dataclass(frozen=True)
@@ -284,6 +287,7 @@ def _output_schema() -> dict[str, Any]:
                 ],
             },
             "signature_indicators": {"type": "boolean"},
+            "subject_to_counter_offer": {"type": "boolean"},
             "fields": {
                 "type": "array",
                 "items": {
@@ -301,7 +305,7 @@ def _output_schema() -> dict[str, Any]:
                 },
             },
         },
-        "required": ["doc_looks_like", "signature_indicators", "fields"],
+        "required": ["doc_looks_like", "signature_indicators", "subject_to_counter_offer", "fields"],
         "additionalProperties": False,
     }
 
@@ -325,7 +329,11 @@ def _prompt() -> str:
         "inferred, ambiguous, or partially legible.\n"
         "4. Report doc_looks_like: what kind of document this actually is.\n"
         "5. Report signature_indicators: true only if the document shows "
-        "signature blocks that appear executed (names/marks/dates in them).\n\n"
+        "signature blocks that appear executed (names/marks/dates in them).\n"
+        "6. Report subject_to_counter_offer: true if the agreement indicates "
+        "acceptance is subject to a counter offer — e.g. a 'Seller Counter Offer' "
+        "or 'Buyer Counter Offer' checkbox is checked, or it references an attached "
+        "counter offer (SCO/BCO). This means the printed terms may not be final.\n\n"
         f"Fields to extract:\n{field_lines}"
     )
 
@@ -602,4 +610,5 @@ def parse_extraction_output(data: dict[str, Any]) -> ExtractionResult:
         fields=[best[name] for name in order],
         doc_looks_like=doc_looks_like,
         signature_detected=bool(data.get("signature_indicators", False)),
+        subject_to_counter_offer=bool(data.get("subject_to_counter_offer", False)),
     )

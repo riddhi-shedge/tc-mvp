@@ -47,6 +47,7 @@ class FakeExtractor:
         fields: list[ExtractedField] | None = None,
         raise_blocked: bool = False,
         raise_failed: bool = False,
+        subject_to_counter_offer: bool = False,
         counter_meta: CounterMeta | None = None,
         contingency_removal: ContingencyRemoval | None = None,
         preapproval: Preapproval | None = None,
@@ -55,6 +56,7 @@ class FakeExtractor:
     ) -> None:
         self.doc_looks_like = doc_looks_like
         self.signature_detected = signature_detected
+        self.subject_to_counter_offer = subject_to_counter_offer
         self.counter_meta = counter_meta or CounterMeta(
             recipient_signed=True, signed_date="2026-07-10", expiration="2026-07-12"
         )
@@ -81,6 +83,7 @@ class FakeExtractor:
             fields=list(self.fields),
             doc_looks_like=self.doc_looks_like,
             signature_detected=self.signature_detected,
+            subject_to_counter_offer=self.subject_to_counter_offer,
         )
 
     def extract_counter_meta(self, *, pdf_bytes: bytes) -> CounterMeta:

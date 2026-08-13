@@ -3,6 +3,7 @@ import { api, AuditRow, FullState, Message } from "../lib/api";
 import { fmtDate, fmtDateTime } from "../lib/format";
 import { ExtractionReview } from "./ExtractionReview";
 import { DealDashboard } from "./DealDashboard";
+import { DocumentChecks } from "./DocumentChecks";
 import { DealNotes } from "./DealNotes";
 import { DealMap } from "./DealMap";
 import { DealTimeline } from "./DealTimeline";
@@ -547,6 +548,8 @@ export function Deal({ id, onBack }: { id: string; onBack: () => void }) {
           </div>
         )}
       </div>
+
+      <DocumentChecks state={state} />
 
       <ExtractionReview
         state={state}

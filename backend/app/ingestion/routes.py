@@ -556,9 +556,10 @@ def _extract_inspection(
 
 def _extract_pa_fields(
     item: dict[str, Any], inbox: InboxRepo, extractor: Extractor
-) -> list[ExtractedField]:
+) -> tuple[list[ExtractedField], bool]:
     """Run pre-check + real extraction for a purchase agreement. Raises the
-    structured 422 for every §4 error state; never guesses."""
+    structured 422 for every §4 error state; never guesses. Returns the fields and
+    whether the PA is subject to a (not-yet-uploaded) counter offer."""
     storage_path = item.get("storage_path")
     if not storage_path:
         raise _extraction_error(
@@ -607,7 +608,7 @@ def _extract_pa_fields(
                 "executed; to proceed deliberately, enter the fields manually"
             ],
         )
-    return result.fields
+    return result.fields, result.subject_to_counter_offer
 
 
 @router.post("/inbox/{item_id}/confirm")
@@ -670,12 +671,12 @@ def confirm_inbox_item(
         preliminary_meta: PreliminaryMeta | None = None
         inspection_meta: InspectionMeta | None = None
         new_parties: list[PartyRef] = []
+        pa_subject_to_counter = False
         if doc_type == "purchase_agreement":
-            fields: list[ExtractedField] = (
-                _manual_extracted_fields(body.manual_fields)
-                if body.manual_fields
-                else _extract_pa_fields(item, inbox, extractor)
-            )
+            if body.manual_fields:
+                fields: list[ExtractedField] = _manual_extracted_fields(body.manual_fields)
+            else:
+                fields, pa_subject_to_counter = _extract_pa_fields(item, inbox, extractor)
         elif doc_type in COUNTER_OFFER_TYPES:
             # A counter offer restates the changed terms (e.g. a new price); its
             # fields supersede the PA's via the master's latest-confirmed rule, and
@@ -725,6 +726,7 @@ def confirm_inbox_item(
             preliminary_meta=preliminary_meta,
             inspection_meta=inspection_meta,
             parties=new_parties,
+            pa_subject_to_counter=pa_subject_to_counter,
         )
         status, data = master.write_payload(
             token=token, transaction_id=transaction_id, payload=payload

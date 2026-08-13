@@ -1014,6 +1014,48 @@ class InMemoryRepo:
                     entity_type="risk_flag", entity_id=None, details={"case": flag["case_key"]},
                 )
 
+        # PA subject-to-counter with no counter uploaded yet → prompt for it.
+        if payload.document_type == "purchase_agreement" and payload.pa_subject_to_counter:
+            has_counter = any(
+                d["transaction_id"] == transaction_id and d.get("doc_type") in COUNTER_OFFER_TYPES
+                for d in self.documents.values()
+            )
+            has_pending = any(
+                r["transaction_id"] == transaction_id and r.get("case_key") == "counter_pending"
+                and not r.get("resolved")
+                for r in self.risk_flags
+            )
+            if not has_counter and not has_pending:
+                self.risk_flags.append(
+                    {
+                        "id": str(uuid.uuid4()),
+                        "transaction_id": transaction_id,
+                        "severity": "warning",
+                        "description": (
+                            "This purchase agreement is subject to a counter offer that hasn't "
+                            "been uploaded — the price and other terms may not be final. Upload "
+                            "the seller/buyer counter offer to reconcile."
+                        ),
+                        "generated_by": "master",
+                        "case_key": "counter_pending",
+                        "resolved": False,
+                    }
+                )
+                self._audit(
+                    transaction_id=transaction_id, actor=actor, action="risk_flag.counter_pending",
+                    entity_type="risk_flag", entity_id=None, details={"case": "counter_pending"},
+                )
+
+        # A counter offer uploaded resolves the "counter pending" prompt.
+        if payload.document_type in COUNTER_OFFER_TYPES:
+            for r in self.risk_flags:
+                if (
+                    r["transaction_id"] == transaction_id
+                    and r.get("case_key") == "counter_pending"
+                    and not r.get("resolved")
+                ):
+                    r["resolved"] = True
+
         # A re-uploaded PA supersedes the prior one (cascade its payload+fields).
         if payload.document_type == "purchase_agreement":
             old_docs = [

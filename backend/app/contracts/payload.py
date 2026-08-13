@@ -110,6 +110,8 @@ class Payload(BaseModel):
     # Inspection facts + the inspector to create (inspection report payloads).
     inspection_meta: InspectionMeta | None = None
     parties: list[PartyRef] = Field(default_factory=list)
+    # PA only: the agreement is subject to a counter offer (terms may not be final).
+    pa_subject_to_counter: bool = False
 
     @property
     def is_new_transaction(self) -> bool:

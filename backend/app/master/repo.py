@@ -1064,6 +1064,46 @@ class SupabaseRepo:
                     "transaction_id", transaction_id
                 ).eq("doc_type", "purchase_agreement").neq("id", doc["id"]).execute()
 
+            # PA marked subject-to-counter, but no counter uploaded yet → prompt for
+            # it: the printed price/terms may not be final.
+            if payload.document_type == "purchase_agreement" and payload.pa_subject_to_counter:
+                counters = (
+                    self._db.table("documents").select("id")
+                    .eq("transaction_id", transaction_id)
+                    .in_("doc_type", sorted(COUNTER_OFFER_TYPES))
+                    .execute().data
+                )
+                pending = (
+                    self._db.table("risk_flags").select("id")
+                    .eq("transaction_id", transaction_id).eq("case_key", "counter_pending")
+                    .eq("resolved", False).execute().data
+                )
+                if not counters and not pending:
+                    self._db.table("risk_flags").insert(
+                        {
+                            "transaction_id": transaction_id,
+                            "severity": "warning",
+                            "description": (
+                                "This purchase agreement is subject to a counter offer that hasn't "
+                                "been uploaded — the price and other terms may not be final. Upload "
+                                "the seller/buyer counter offer to reconcile."
+                            ),
+                            "generated_by": "master",
+                            "case_key": "counter_pending",
+                            "resolved": False,
+                        }
+                    ).execute()
+                    self._audit(
+                        transaction_id=transaction_id, actor=actor, action="risk_flag.counter_pending",
+                        entity_type="risk_flag", entity_id=None, details={"case": "counter_pending"},
+                    )
+
+            # A counter offer uploaded resolves the "counter pending" prompt.
+            if payload.document_type in COUNTER_OFFER_TYPES:
+                self._db.table("risk_flags").update({"resolved": True}).eq(
+                    "transaction_id", transaction_id
+                ).eq("case_key", "counter_pending").eq("resolved", False).execute()
+
             # A counter offer's chain/expiration facts → risk flags (fell-through
             # if unaccepted; "upload the further counter" if subject-to-counter).
             if payload.document_type in COUNTER_OFFER_TYPES and payload.counter_meta:
