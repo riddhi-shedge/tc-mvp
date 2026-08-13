@@ -107,7 +107,14 @@ export function ExtractionReview({
   }
 
   const eff = state.effective_fields ?? {};
-  const byName = (n: string) => fields.find((f) => f.name === n);
+  // Prefer the effective field (e.g. a counter offer's price over the PA's) so the
+  // term rows show the superseding value, not a stale duplicate.
+  const byName = (n: string) => {
+    const matches = fields.filter((f) => f.name === n);
+    if (matches.length <= 1) return matches[0];
+    const v = eff[n]?.value;
+    return matches.find((f) => f.value === v) ?? matches[matches.length - 1];
+  };
   // Prefer the effective (superseded) value so a counter offer's price/dates win.
   const fv = (n: string) => eff[n]?.value ?? byName(n)?.value ?? null;
   const supersededFrom = (n: string) => eff[n]?.superseded_from ?? null;
@@ -169,6 +176,7 @@ export function ExtractionReview({
         </span>
         <span className="xr-val">
           {f.value}
+          {supersededFrom(f.name) && <span className="xr-super"> · was {supersededFrom(f.name)}</span>}
           {date && <span className="xr-datechip"><Icon name="calendar" size={12} /> {date}</span>}
         </span>
       </div>
