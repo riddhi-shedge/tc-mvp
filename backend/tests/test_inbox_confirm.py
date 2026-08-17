@@ -21,6 +21,33 @@ def test_inbox_lists_pending_items(client, tc_headers):
     assert [i["id"] for i in r.json()] == [item_id]
 
 
+def test_duplicate_postmark_delivery_is_idempotent(client, tc_headers):
+    """BUG-10: Postmark inbound is at-least-once; a redelivered webhook must return
+    the EXISTING queue item, not spawn a second identical one the TC could confirm
+    into a duplicate deal."""
+    body = postmark_inbound()
+    first = client.post(WEBHOOK_URL, json=body).json()
+    second = client.post(WEBHOOK_URL, json=body).json()
+
+    assert second["id"] == first["id"]
+    assert second.get("duplicate") is True
+    open_items = client.get("/ingestion/inbox", headers=tc_headers).json()
+    assert [i["id"] for i in open_items] == [first["id"]]
+
+
+def test_a_distinct_email_is_not_deduped(client, tc_headers):
+    """The dedup must be tight: a genuinely different document (different filename)
+    from the same sender still gets its own queue item."""
+    first = client.post(WEBHOOK_URL, json=postmark_inbound()).json()
+    other = client.post(
+        WEBHOOK_URL, json=postmark_inbound(attachment_name="second-doc.pdf")
+    ).json()
+    assert other["id"] != first["id"]
+    assert other.get("duplicate") is not True
+    open_ids = {i["id"] for i in client.get("/ingestion/inbox", headers=tc_headers).json()}
+    assert open_ids == {first["id"], other["id"]}
+
+
 def test_confirm_requires_auth(client):
     item_id = _inbound_item(client)
     r = client.post(f"/ingestion/inbox/{item_id}/confirm", json={"decision": "new"})

@@ -41,6 +41,27 @@ class InMemoryInboxRepo:
         self.files[path] = content
         return path
 
+    def find_open_duplicate(
+        self,
+        *,
+        from_email: str,
+        subject: str | None,
+        attachment_name: str | None,
+        attachment_size: int | None,
+        attachment_count: int,
+    ) -> dict[str, Any] | None:
+        matches = [
+            i
+            for i in self.items.values()
+            if i["status"] in ("pending", "needs_manual", "processing")
+            and i["from_email"] == from_email
+            and i["subject"] == subject
+            and i["attachment_name"] == attachment_name
+            and i["attachment_size"] == attachment_size
+            and i["attachment_count"] == attachment_count
+        ]
+        return max(matches, key=lambda i: i["created_at"] or "") if matches else None
+
     def download_attachment(self, path: str) -> bytes:
         if self.fail_storage or path not in self.files:
             raise StorageUnavailable("attachment store failed (SyntheticOutage)")

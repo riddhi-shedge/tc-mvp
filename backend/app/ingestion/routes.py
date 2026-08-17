@@ -140,6 +140,20 @@ def postmark_inbound_webhook(
     first = body.Attachments[0] if body.Attachments else PostmarkAttachment()
     from_email = (body.FromFull.Email if body.FromFull else "") or body.From
 
+    # Postmark inbound is at-least-once and retries a slow/errored endpoint, so a
+    # redelivery of the same email must not create a second queue item. Absorb it
+    # by returning the existing un-handled item (idempotent) before we store or
+    # insert anything — a distinct document virtually never shares this exact key.
+    duplicate = inbox.find_open_duplicate(
+        from_email=from_email,
+        subject=body.Subject,
+        attachment_name=first.Name,
+        attachment_size=first.ContentLength,
+        attachment_count=len(body.Attachments),
+    )
+    if duplicate is not None:
+        return {"ignored": False, "id": duplicate["id"], "status": duplicate["status"], "duplicate": True}
+
     unreadable_reason = check_readability(
         attachment_name=first.Name,
         content_type=first.ContentType,

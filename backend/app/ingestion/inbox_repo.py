@@ -52,6 +52,20 @@ class InboxRepo(Protocol):
         needs_manual_reason: str | None = None,
     ) -> dict[str, Any]: ...
 
+    def find_open_duplicate(
+        self,
+        *,
+        from_email: str,
+        subject: str | None,
+        attachment_name: str | None,
+        attachment_size: int | None,
+        attachment_count: int,
+    ) -> dict[str, Any] | None:
+        """An UN-handled inbox item (pending/needs_manual/processing) identical to
+        an incoming delivery — used to absorb Postmark at-least-once redelivery so
+        a retried webhook does not create a duplicate queue item. None if none."""
+        ...
+
     def download_attachment(self, path: str) -> bytes:
         """Fetch stored attachment bytes for extraction (part a internal only —
         content never crosses to the master or the frontend). Raises
@@ -152,6 +166,37 @@ class SupabaseInboxRepo:
             .execute()
             .data[0]
         )
+
+    def find_open_duplicate(
+        self,
+        *,
+        from_email: str,
+        subject: str | None,
+        attachment_name: str | None,
+        attachment_size: int | None,
+        attachment_count: int,
+    ) -> dict[str, Any] | None:
+        q = (
+            self._db.table("ingestion_inbox")
+            .select("*")
+            .in_("status", ["pending", "needs_manual", "processing"])
+            .eq("from_email", from_email)
+            .eq("attachment_count", attachment_count)
+        )
+        # PostgREST needs is-null vs eq handled explicitly for nullable columns.
+        q = q.is_("subject", "null") if subject is None else q.eq("subject", subject)
+        q = (
+            q.is_("attachment_name", "null")
+            if attachment_name is None
+            else q.eq("attachment_name", attachment_name)
+        )
+        q = (
+            q.is_("attachment_size", "null")
+            if attachment_size is None
+            else q.eq("attachment_size", attachment_size)
+        )
+        rows = q.order("created_at", desc=True).limit(1).execute().data
+        return rows[0] if rows else None
 
     def download_attachment(self, path: str) -> bytes:
         try:
