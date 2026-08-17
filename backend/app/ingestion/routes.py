@@ -11,6 +11,7 @@ never in rows, logs, or responses.
 
 from __future__ import annotations
 
+import logging
 import os
 import secrets
 from functools import lru_cache
@@ -51,6 +52,7 @@ from app.ingestion.precheck import decrypt_pdf, precheck_pdf
 from app.ingestion.routing import suggest_transaction
 
 router = APIRouter(prefix="/ingestion")
+_log = logging.getLogger(__name__)
 
 
 @lru_cache(maxsize=1)
@@ -139,20 +141,7 @@ def postmark_inbound_webhook(
 
     first = body.Attachments[0] if body.Attachments else PostmarkAttachment()
     from_email = (body.FromFull.Email if body.FromFull else "") or body.From
-
-    # Postmark inbound is at-least-once and retries a slow/errored endpoint, so a
-    # redelivery of the same email must not create a second queue item. Absorb it
-    # by returning the existing un-handled item (idempotent) before we store or
-    # insert anything — a distinct document virtually never shares this exact key.
-    duplicate = inbox.find_open_duplicate(
-        from_email=from_email,
-        subject=body.Subject,
-        attachment_name=first.Name,
-        attachment_size=first.ContentLength,
-        attachment_count=len(body.Attachments),
-    )
-    if duplicate is not None:
-        return {"ignored": False, "id": duplicate["id"], "status": duplicate["status"], "duplicate": True}
+    attachment_count = len(body.Attachments)
 
     unreadable_reason = check_readability(
         attachment_name=first.Name,
@@ -176,6 +165,25 @@ def postmark_inbound_webhook(
                 status_code=503, detail="Attachment store unavailable; retry delivery"
             ) from None
 
+    # Postmark inbound is at-least-once and retries a slow/errored endpoint. The
+    # storage path is content-addressed, so a redelivery of the SAME bytes maps to
+    # the same path: absorb it as the existing item instead of queuing a duplicate
+    # (which could be confirmed into a second deal). Exact-content match, so a
+    # genuinely different document is never dropped. Readable attachments only —
+    # a no-attachment / unreadable email has no content key and is left to queue.
+    if storage_path is not None:
+        duplicate = inbox.find_duplicate_by_storage_path(
+            storage_path=storage_path, attachment_count=attachment_count
+        )
+        if duplicate is not None:
+            _log.info("ingestion.webhook.duplicate_absorbed item=%s", duplicate["id"])
+            return {
+                "ignored": False,
+                "id": duplicate["id"],
+                "status": duplicate["status"],
+                "duplicate": True,
+            }
+
     item = inbox.add_item(
         from_email=from_email,
         to_email=deal_address,
@@ -183,7 +191,7 @@ def postmark_inbound_webhook(
         attachment_name=first.Name,
         attachment_content_type=first.ContentType,
         attachment_size=first.ContentLength,
-        attachment_count=len(body.Attachments),
+        attachment_count=attachment_count,
         detected_doc_type=detect_doc_type(first.Name, body.Subject),
         storage_path=storage_path,
         source="email",

@@ -7,9 +7,9 @@ from __future__ import annotations
 
 import base64
 import binascii
+import hashlib
 import os
 import re
-import uuid
 from datetime import datetime, timezone
 from typing import Any, Protocol
 
@@ -22,6 +22,15 @@ _SAFE_NAME = re.compile(r"[^A-Za-z0-9._-]")
 
 def safe_filename(filename: str) -> str:
     return _SAFE_NAME.sub("_", filename)[-100:] or "attachment.pdf"
+
+
+def content_addressed_path(source: str, filename: str, content: bytes) -> str:
+    """A deterministic, content-addressed storage path: identical bytes always map
+    to the SAME path. This is what makes duplicate-delivery detection exact — a
+    Postmark redelivery re-derives this path, while a genuinely different document
+    (even same filename/size) hashes elsewhere and is NEVER mistaken for it."""
+    digest = hashlib.sha256(content).hexdigest()
+    return f"{source}/{digest}/{safe_filename(filename)}"
 
 
 class StorageUnavailable(Exception):
@@ -52,18 +61,14 @@ class InboxRepo(Protocol):
         needs_manual_reason: str | None = None,
     ) -> dict[str, Any]: ...
 
-    def find_open_duplicate(
-        self,
-        *,
-        from_email: str,
-        subject: str | None,
-        attachment_name: str | None,
-        attachment_size: int | None,
-        attachment_count: int,
+    def find_duplicate_by_storage_path(
+        self, *, storage_path: str, attachment_count: int
     ) -> dict[str, Any] | None:
-        """An UN-handled inbox item (pending/needs_manual/processing) identical to
-        an incoming delivery — used to absorb Postmark at-least-once redelivery so
-        a retried webhook does not create a duplicate queue item. None if none."""
+        """An existing inbox item for the EXACT same stored bytes (content-addressed
+        storage_path) — used to absorb Postmark at-least-once redelivery without
+        creating a duplicate queue item. Matches by exact content, so a genuinely
+        different document is never mistaken for a duplicate (no silent data loss).
+        None if none."""
         ...
 
     def download_attachment(self, path: str) -> bytes:
@@ -119,10 +124,12 @@ class SupabaseInboxRepo:
             content = base64.b64decode(content_base64, validate=True)
         except (binascii.Error, ValueError) as exc:
             raise ValueError("attachment content is not valid base64") from exc
-        path = f"{source}/{uuid.uuid4()}/{safe_filename(filename)}"
+        path = content_addressed_path(source, filename, content)
         try:
+            # upsert: a duplicate delivery re-derives the same path; overwriting
+            # identical bytes is harmless and avoids a conflict error → retry loop.
             self._db.storage.from_(BUCKET).upload(
-                path, content, {"content-type": "application/pdf"}
+                path, content, {"content-type": "application/pdf", "upsert": "true"}
             )
         except Exception as exc:
             # Generic on purpose: no document content in the message (Rule 5).
@@ -167,35 +174,19 @@ class SupabaseInboxRepo:
             .data[0]
         )
 
-    def find_open_duplicate(
-        self,
-        *,
-        from_email: str,
-        subject: str | None,
-        attachment_name: str | None,
-        attachment_size: int | None,
-        attachment_count: int,
+    def find_duplicate_by_storage_path(
+        self, *, storage_path: str, attachment_count: int
     ) -> dict[str, Any] | None:
-        q = (
+        rows = (
             self._db.table("ingestion_inbox")
-            .select("*")
-            .in_("status", ["pending", "needs_manual", "processing"])
-            .eq("from_email", from_email)
+            .select("id, status")
+            .eq("storage_path", storage_path)
             .eq("attachment_count", attachment_count)
+            .order("created_at", desc=True)
+            .limit(1)
+            .execute()
+            .data
         )
-        # PostgREST needs is-null vs eq handled explicitly for nullable columns.
-        q = q.is_("subject", "null") if subject is None else q.eq("subject", subject)
-        q = (
-            q.is_("attachment_name", "null")
-            if attachment_name is None
-            else q.eq("attachment_name", attachment_name)
-        )
-        q = (
-            q.is_("attachment_size", "null")
-            if attachment_size is None
-            else q.eq("attachment_size", attachment_size)
-        )
-        rows = q.order("created_at", desc=True).limit(1).execute().data
         return rows[0] if rows else None
 
     def download_attachment(self, path: str) -> bytes:

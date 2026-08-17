@@ -15,7 +15,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from app.contracts.payload import Payload
-from app.ingestion.inbox_repo import StorageUnavailable
+from app.ingestion.inbox_repo import StorageUnavailable, content_addressed_path
 from app.master.routes import _MONEY_FIELD_NAME
 from tests.fake_repo import InMemoryRepo
 
@@ -37,28 +37,17 @@ class InMemoryInboxRepo:
             content = base64.b64decode(content_base64, validate=True)
         except (binascii.Error, ValueError) as exc:
             raise ValueError("attachment content is not valid base64") from exc
-        path = f"{source}/{uuid.uuid4()}/{filename}"
+        path = content_addressed_path(source, filename, content)
         self.files[path] = content
         return path
 
-    def find_open_duplicate(
-        self,
-        *,
-        from_email: str,
-        subject: str | None,
-        attachment_name: str | None,
-        attachment_size: int | None,
-        attachment_count: int,
+    def find_duplicate_by_storage_path(
+        self, *, storage_path: str, attachment_count: int
     ) -> dict[str, Any] | None:
         matches = [
             i
             for i in self.items.values()
-            if i["status"] in ("pending", "needs_manual", "processing")
-            and i["from_email"] == from_email
-            and i["subject"] == subject
-            and i["attachment_name"] == attachment_name
-            and i["attachment_size"] == attachment_size
-            and i["attachment_count"] == attachment_count
+            if i["storage_path"] == storage_path and i["attachment_count"] == attachment_count
         ]
         return max(matches, key=lambda i: i["created_at"] or "") if matches else None
 

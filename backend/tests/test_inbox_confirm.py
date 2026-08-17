@@ -48,6 +48,19 @@ def test_a_distinct_email_is_not_deduped(client, tc_headers):
     assert open_ids == {first["id"], other["id"]}
 
 
+def test_dedup_key_is_content_addressed_so_distinct_docs_never_collide():
+    """The safety invariant behind the dedup: DIFFERENT bytes hash to a DIFFERENT
+    path, so a genuinely different document is never absorbed as a duplicate (no
+    silent data loss) — while identical bytes are deterministic (a true redelivery
+    always matches). This is what makes the storage-path match safe."""
+    from app.ingestion.inbox_repo import content_addressed_path
+
+    p_a = content_addressed_path("email", "doc.pdf", b"document-A-bytes")
+    p_b = content_addressed_path("email", "doc.pdf", b"document-B-bytes")
+    assert p_a != p_b
+    assert content_addressed_path("email", "doc.pdf", b"document-A-bytes") == p_a
+
+
 def test_confirm_requires_auth(client):
     item_id = _inbound_item(client)
     r = client.post(f"/ingestion/inbox/{item_id}/confirm", json={"decision": "new"})

@@ -59,10 +59,20 @@ each be confirmed → **two deals / two payloads for one email**.
 **Fix (no-DDL):** before insert, dedup against an existing un-handled item
 (pending/needs_manual/processing) with the same (from_email, subject,
 attachment_name, attachment_size, attachment_count); return it idempotently.
-**Status:** ✅ FIXED — `find_open_duplicate` (natural-key, no schema change) short-circuits
-the webhook on redelivery; regression tests `test_duplicate_postmark_delivery_is_idempotent`
-+ `test_a_distinct_email_is_not_deduped`. (Residual: a true simultaneous double-delivery
-race before either insert — acceptable for the MVP; a MessageID unique index would close it.)
+**Status:** ✅ FIXED — **content-addressed** dedup (no schema change). The attachment is
+stored at `email/{sha256(bytes)}/{filename}`, and the webhook absorbs a redelivery only
+when the EXACT stored bytes already have an item (`find_duplicate_by_storage_path`).
+Regression tests: `test_duplicate_postmark_delivery_is_idempotent`,
+`test_a_distinct_email_is_not_deduped`, `test_dedup_key_is_content_addressed_...`.
+**Reviewer-driven rework:** the code-reviewer flagged that my first (natural-key) attempt
+could *silently drop* a genuinely different document (no-attachment emails, generic
+scanner filenames on the shared inbound address) — worse than the duplicate it prevented.
+Content-addressing eliminates that: different bytes → different path → always a new item.
+An `info` log fires on every absorb (auditable). Also closes the quick-confirm reopening
+(match is not status-scoped). **Residual (documented, MVP-acceptable):** a truly
+simultaneous double-delivery TOCTOU race, and same-bytes/different-filename → two items
+(errs safe: a recoverable duplicate, never a drop). A `source_message_id` unique index
+(needs a migration) would close the race exactly.
 
 ### Hotspot #4 — Timeline reconciliation — CLEARED ✅
 Re-running compliance with FEWER deadlines DELETES the now-stale deadline/task/flag
