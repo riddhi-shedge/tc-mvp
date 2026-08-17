@@ -159,6 +159,45 @@ def test_rerun_replaces_not_duplicates(client, tc_headers, repo):
     assert len([m for m in state["messages"] if m["status"] == "draft"]) == 1
 
 
+def test_rerun_removes_a_deadline_no_longer_computed(client, tc_headers, repo):
+    """Hotspot #4: a re-run with FEWER deadlines (e.g. a contingency removed, or
+    the deal went all-cash) must DELETE the now-stale deadline/task/flag — not
+    leave the TC chasing a deadline that no longer exists."""
+    txn_id = _confirmed_deal(client, tc_headers, repo)
+    # Run 1: two deadlines (inspection + COE), a task, a flag, a draft.
+    client.post(
+        f"/transactions/{txn_id}/compliance-result",
+        json=_result(txn_id, extra_deadline=True),
+        headers=_headers(),
+    )
+    state = client.get(f"/transactions/{txn_id}", headers=tc_headers).json()
+    assert {d["name"] for d in state["deadlines"]} == {
+        "Inspection contingency ends",
+        "Close of escrow",
+    }
+
+    # Run 2: only the COE remains (inspection contingency dropped).
+    from app.contracts.compliance import ComplianceResult, ComputedDeadline
+
+    shrunk = ComplianceResult(
+        transaction_id=txn_id,
+        deadlines=[
+            ComputedDeadline(
+                key="coe", name="Close of escrow", due_date="2026-08-10",
+                source_field="close_of_escrow",
+            )
+        ],
+        tasks=[], risk_flags=[], draft_reminders=[],
+    ).model_dump(mode="json")
+    client.post(f"/transactions/{txn_id}/compliance-result", json=shrunk, headers=_headers())
+
+    state = client.get(f"/transactions/{txn_id}", headers=tc_headers).json()
+    names = {d["name"] for d in state["deadlines"]}
+    assert names == {"Close of escrow"}, f"stale deadline lingered: {names}"
+    assert all(t["compute_key"] != "task_inspection" for t in state["tasks"] if t.get("compute_key"))
+    assert not [f for f in state["risk_flags"] if f.get("case_key") == "missing_escrow_contact"]
+
+
 def test_transaction_id_mismatch_is_409(client, tc_headers, repo):
     txn_id = _confirmed_deal(client, tc_headers, repo)
     r = client.post(

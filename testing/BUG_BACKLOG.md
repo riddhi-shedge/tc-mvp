@@ -47,6 +47,29 @@ and the incomplete call-site threading — all addressed before commit.
 
 ---
 
+## Sweep #2 findings (state / idempotency / reconciliation)
+
+### BUG-10 — Duplicate Postmark inbound creates a duplicate inbox item (P2, Must-fix)
+**Evidence:** `postmark_inbound_webhook` (routes.py) calls `inbox.add_item` on every
+delivery with NO idempotency key — `PostmarkInbound` doesn't even model `MessageID`.
+Postmark inbound is at-least-once and retries on slow/errored endpoints, so a
+redelivery makes a SECOND identical pending item. The downstream `claim()` guard
+only stops re-confirming the SAME item — two items from duplicate deliveries can
+each be confirmed → **two deals / two payloads for one email**.
+**Fix (no-DDL):** before insert, dedup against an existing un-handled item
+(pending/needs_manual/processing) with the same (from_email, subject,
+attachment_name, attachment_size, attachment_count); return it idempotently.
+**Status:** fix + regression test — next focused commit.
+
+### Hotspot #4 — Timeline reconciliation — CLEARED ✅
+Re-running compliance with FEWER deadlines DELETES the now-stale deadline/task/flag
+(apply_compliance_result lands the new run, then deletes prior-run compliance rows).
+Locked in by new `test_rerun_removes_a_deadline_no_longer_computed`.
+
+### Hotspot #3 — Counter-chain termination — CLEARED (no infinite loop)
+`evaluate_counter_flags` raises an ADVISORY `counter_chain` warning ("upload the
+further counter") — there is no code loop; the TC drives each upload. Not a defect.
+
 ## Reviewer follow-ups (low severity — triaged, not yet built)
 - **BUG-06 (Accept):** `_parse_money` treats `-$1,800,000` / `($1,800,000)` as positive. Domain amounts are non-negative; accept.
 - **BUG-07 (Consider):** `.5M` (leading-dot, no integer) mis-scales to 5,000,000. Rare OCR shape; low priority.
