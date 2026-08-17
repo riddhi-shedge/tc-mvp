@@ -51,6 +51,41 @@ def test_counter_offer_supersedes_pa_price():
     assert board[tid]["purchase_price"] == "$1,900,000"
 
 
+def test_reuploading_the_pa_does_not_revert_a_counter():
+    """Regression (BUG-01): a counter is a LATER agreement; re-uploading (or
+    correcting) the purchase agreement afterward — which carries a newer
+    created_at — must NOT drag the effective price back to the PA's figure."""
+    repo = InMemoryRepo()
+    tid = repo.create_transaction(property_address="1 Revert St", actor="tc")["id"]
+
+    _write(repo, tid, "pa", "purchase_agreement", "$1,800,000")
+    _write(repo, tid, "sco", "seller_counter_offer", "$1,900,000")
+    _write(repo, tid, "pa2", "purchase_agreement", "$1,800,000")  # re-upload, newest row
+
+    state = repo.get_full_state(tid)
+    assert state["effective_fields"]["purchase_price"]["value"] == "$1,900,000"
+    board = {d["id"]: d for d in repo.list_deal_summaries()}
+    assert board[tid]["purchase_price"] == "$1,900,000"
+
+
+def test_unconfirmed_counter_never_supersedes_the_confirmed_pa():
+    """A confirmed value beats an unconfirmed one even when the unconfirmed row is
+    from a higher-precedence document — precedence only breaks ties among confirmed."""
+    repo = InMemoryRepo()
+    tid = repo.create_transaction(property_address="1 Pending St", actor="tc")["id"]
+    _write(repo, tid, "pa", "purchase_agreement", "$1,800,000")
+    repo.write_payload(
+        transaction_id=tid,
+        payload=Payload(
+            document_id="sco", transaction_id=tid,
+            extracted_fields=[ExtractedField(name="purchase_price", value="$1,900,000", confidence=1.0, confirmed=False)],
+            document_type="seller_counter_offer",
+        ),
+        actor="tc",
+    )
+    assert repo.get_full_state(tid)["effective_fields"]["purchase_price"]["value"] == "$1,800,000"
+
+
 def test_no_counter_leaves_pa_value_effective():
     repo = InMemoryRepo()
     tid = repo.create_transaction(property_address="1 Solo St", actor="tc")["id"]

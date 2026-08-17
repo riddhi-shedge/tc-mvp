@@ -23,6 +23,26 @@ def test_address_match_ignores_suffix_and_city():
     assert evaluate_inspection_flags(meta, "21989 McClellan Road, Cupertino, CA", date(2025, 4, 28)) == []
 
 
+def test_address_match_ignores_unit_prefix():
+    """Regression (BUG-04): a unit/apt prefix must not shove the house number out
+    of the compared segment, else every condo raises a false address mismatch."""
+    meta = InspectionMeta(property_address="Unit 5, 21989 McClellan Rd", inspection_date="April 20, 2025")
+    assert evaluate_inspection_flags(meta, "21989 McClellan Road, Cupertino, CA", date(2025, 4, 28)) == []
+
+
+def test_addr_core_does_not_swallow_streets_starting_like_unit_words():
+    """Reviewer regression: 'Stevens'/'North' begin with 'ste'/'no' but are whole
+    street names, not unit designators — the keyword match must be word-bounded."""
+    from app.master.repo import _addr_core
+
+    assert _addr_core("100 Stevens Creek Blvd") == "100 stevens creek"
+    assert _addr_core("42 North Main St") == "42 north main"
+    # '#12 Main St' — the '#'-number IS the house number, so it must survive.
+    assert _addr_core("#12 Main St") == _addr_core("12 Main Street")
+    # '#12, 350 Main St' — here #12 is a unit; the street line (350) wins.
+    assert _addr_core("#12, 350 Main St") == "350 main"
+
+
 def test_address_mismatch_flags():
     flags = evaluate_inspection_flags(InspectionMeta(property_address="1 Other St"), "21989 McClellan Road", None)
     assert "inspection_address_mismatch" in _cases(flags)

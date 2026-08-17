@@ -93,5 +93,7 @@ def derive_parties(confirmed: dict[str, str]) -> list[DerivedParty]:
 
 def party_key(role: str, name: str) -> tuple[str, str]:
     """Idempotency key so re-confirming (or attaching a 2nd doc) never duplicates
-    a party: role + case/space-normalized name."""
-    return (role, re.sub(r"\s+", " ", name).strip().lower())
+    a party: role + case/space/punctuation-normalized name, so 'Belana A' and
+    'Belana A.' collapse to one contact."""
+    normalized = re.sub(r"\s+", " ", re.sub(r"[.,]", "", name)).strip().lower()
+    return (role, normalized)

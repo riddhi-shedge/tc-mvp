@@ -85,23 +85,58 @@ def _normalize_stage(stage: str | None) -> str:
     return _LEGACY_STAGE.get(stage, stage if stage in DEAL_STAGES else "new")
 
 
-def _effective_fields(rows: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+# Documents that RE-STATE the deal's terms and must outrank the purchase agreement
+# in field resolution no matter when they were uploaded (see `_effective_fields`).
+_SUPERSEDING_DOC_TYPES = frozenset(COUNTER_OFFER_TYPES | {"contingency_removal"})
+
+
+def _source_rank_map(
+    payloads: list[dict[str, Any]], documents: list[dict[str, Any]]
+) -> dict[str, int]:
+    """payload_id -> precedence rank for `_effective_fields`. A counter offer or a
+    contingency removal is a LATER agreement that changed the deal's terms, so it
+    must outrank the purchase agreement REGARDLESS of upload order — otherwise
+    re-uploading (or correcting) the PA after a counter would silently revert the
+    counter's price. Everything else ranks equal (resolved by recency)."""
+    doc_type = {d["id"]: d.get("doc_type") for d in documents}
+    ranks: dict[str, int] = {}
+    for p in payloads:
+        ranks[p["id"]] = 2 if doc_type.get(p.get("document_id")) in _SUPERSEDING_DOC_TYPES else 1
+    return ranks
+
+
+def _effective_fields(
+    rows: list[dict[str, Any]], source_rank: dict[str, int] | None = None
+) -> dict[str, dict[str, Any]]:
     """Resolve extracted-field rows to ONE effective value per field name so a
     later confirmed value supersedes an earlier one — this is how a counter
     offer's price overrides the purchase agreement's. Rule: among rows sharing a
-    name, the latest CONFIRMED by created_at wins; if none is confirmed, the
-    latest row wins. `superseded_from` carries the prior confirmed value it
-    replaced, for provenance in the UI ("$1.9M — was $1.8M")."""
+    name, a CONFIRMED value beats an unconfirmed one; then a superseding document
+    (counter / contingency removal, via `source_rank`) beats the PA regardless of
+    upload order; then the latest by created_at wins. `superseded_from` carries the
+    prior confirmed value it replaced, for provenance in the UI ("$1.9M — was $1.8M")."""
+    sr = source_rank or {}
+
+    def sort_key(r: dict[str, Any]) -> tuple[int, int, str]:
+        return (
+            1 if r.get("confirmed") else 0,
+            sr.get(r.get("payload_id"), 1),
+            r.get("created_at") or "",
+        )
+
     by_name: dict[str, list[dict[str, Any]]] = {}
     for r in rows:
         by_name.setdefault(r["name"], []).append(r)
     out: dict[str, dict[str, Any]] = {}
     for name, group in by_name.items():
-        ordered = sorted(group, key=lambda r: r.get("created_at") or "")
-        confirmed = [r for r in ordered if r.get("confirmed")]
-        chosen = (confirmed or ordered)[-1]
+        ordered = sorted(group, key=sort_key)
+        chosen = ordered[-1]
         prior = next(
-            (r["value"] for r in reversed(confirmed) if r is not chosen and r["value"] != chosen["value"]),
+            (
+                r["value"]
+                for r in reversed(ordered[:-1])
+                if r.get("confirmed") and r["value"] != chosen["value"]
+            ),
             None,
         )
         out[name] = {
@@ -183,14 +218,20 @@ def evaluate_counter_flags(doc_type: str, cm: CounterMeta) -> list[dict[str, str
     return flags
 
 
+_MONEY_SUFFIX = {"k": 1_000, "m": 1_000_000, "b": 1_000_000_000}
+
+
 def _parse_money(value: str | None) -> float | None:
-    m = re.search(r"[\d,]+(?:\.\d+)?", value or "")
-    if not m:
+    # A k/m/b suffix is only honored when ATTACHED to the number (no space), so
+    # "$1.8M" -> 1,800,000 but "$1,800,000 mortgage" is never multiplied by "m".
+    m = re.search(r"([\d,]+(?:\.\d+)?)([kmb])?", value or "", re.IGNORECASE)
+    if not m or not m.group(1).strip(","):
         return None
     try:
-        return float(m.group(0).replace(",", ""))
+        amount = float(m.group(1).replace(",", ""))
     except ValueError:
         return None
+    return amount * _MONEY_SUFFIX.get((m.group(2) or "").lower(), 1)
 
 
 def _name_set(value: str | None) -> set[str]:
@@ -296,11 +337,24 @@ _STREET_SUFFIXES = {
     "ter", "terrace", "hwy", "highway", "pkwy", "parkway",
 }
 
+# A comma-segment that opens with one of these whole words (or '#') is a unit/apt
+# designator, not the street line. `\b` keeps 'Stevens'/'North' (ste.../no...) safe.
+_UNIT_LEAD = re.compile(r"^\s*(?:(?:unit|apt|apartment|suite|ste|no)\b|#)", re.IGNORECASE)
+
 
 def _addr_core(value: str | None) -> str:
     """The house number + street name of an address, minus the street-type suffix,
-    so '21989 McClellan Rd' and '21989 McClellan Road, Cupertino' compare equal."""
-    seg = re.sub(r"[^a-z0-9 ]", " ", (value or "").split(",")[0].lower())
+    so '21989 McClellan Rd' and '21989 McClellan Road, Cupertino' compare equal.
+    A comma-segment that is purely a unit/apt designator ('Unit 5', '#12') is
+    dropped so 'Unit 5, 21989 McClellan Rd' still matches — but a street whose name
+    merely starts with those letters ('Stevens Creek', 'North Main') is untouched
+    (the keyword must be a whole word)."""
+    parts = (value or "").split(",")
+    # Prefer segments that are NOT just a unit designator; if that drops
+    # everything (the unit IS the house number, e.g. '#12 Main St'), keep all.
+    candidates = [p for p in parts if not _UNIT_LEAD.match(p.strip())] or parts
+    segment = next((p for p in candidates if re.search(r"\d", p)), candidates[0])
+    seg = re.sub(r"[^a-z0-9 ]", " ", segment.lower())
     tokens = [t for t in seg.split() if t not in _STREET_SUFFIXES]
     return " ".join(tokens).strip()
 
@@ -825,15 +879,23 @@ class SupabaseRepo:
         raw_fields: dict[str, list[dict[str, Any]]] = {}
         for f in (
             self._db.table("extracted_fields")
-            .select("transaction_id, name, value, confirmed, created_at")
+            .select("transaction_id, payload_id, name, value, confirmed, created_at")
             .in_("transaction_id", ids).in_("name", ["purchase_price", "all_cash"])
             .execute().data
         ):
             raw_fields.setdefault(f["transaction_id"], []).append(f)
+        # Rank each source payload so a counter offer / contingency removal outranks
+        # the PA (else re-uploading the PA reverts a counter's price on the board).
+        rank_map = _source_rank_map(
+            self._db.table("payloads").select("id, document_id")
+            .in_("transaction_id", ids).execute().data,
+            self._db.table("documents").select("id, doc_type")
+            .in_("transaction_id", ids).execute().data,
+        )
         # Resolve each field to its effective value so a counter offer's price
         # supersedes the PA's on the board.
         fields: dict[str, dict[str, str]] = {
-            tid: {n: v["value"] for n, v in _effective_fields(rows).items()}
+            tid: {n: v["value"] for n, v in _effective_fields(rows, rank_map).items()}
             for tid, rows in raw_fields.items()
         }
         return [_deal_summary(t, props, coe, tasks, risks, fields) for t in txns]
@@ -952,6 +1014,25 @@ class SupabaseRepo:
             entity_type="party",
             entity_id=party_id,
         )
+
+    def _effective_for_txn(self, transaction_id: str) -> dict[str, dict[str, Any]]:
+        """Effective (superseded-resolved) fields for a deal, WITH source
+        precedence so counter/CR values win over the PA regardless of upload order
+        — used by the per-document validators (preapproval, prelim, inspection)."""
+        fields = (
+            self._db.table("extracted_fields")
+            .select("payload_id, name, value, confirmed, created_at")
+            .eq("transaction_id", transaction_id)
+            .execute()
+            .data
+        )
+        rank = _source_rank_map(
+            self._db.table("payloads").select("id, document_id")
+            .eq("transaction_id", transaction_id).execute().data,
+            self._db.table("documents").select("id, doc_type")
+            .eq("transaction_id", transaction_id).execute().data,
+        )
+        return _effective_fields(fields, rank)
 
     def write_payload(self, *, transaction_id: str, payload: Payload, actor: str) -> dict[str, Any]:
         # Compensated like create_transaction: deleting the document cascades
@@ -1129,13 +1210,7 @@ class SupabaseRepo:
 
             # A preapproval is validated against the deal (borrower, amount, expiry).
             if payload.document_type == "preapproval" and payload.preapproval_meta:
-                eff = _effective_fields(
-                    self._db.table("extracted_fields")
-                    .select("name, value, confirmed, created_at")
-                    .eq("transaction_id", transaction_id)
-                    .execute()
-                    .data
-                )
+                eff = self._effective_for_txn(transaction_id)
                 coe_rows = (
                     self._db.table("deadlines")
                     .select("due_date")
@@ -1172,13 +1247,7 @@ class SupabaseRepo:
 
             # A preliminary ('title') report is validated against the deal.
             if payload.document_type == "preliminary_report" and payload.preliminary_meta:
-                eff = _effective_fields(
-                    self._db.table("extracted_fields")
-                    .select("name, value, confirmed, created_at")
-                    .eq("transaction_id", transaction_id)
-                    .execute()
-                    .data
-                )
+                eff = self._effective_for_txn(transaction_id)
                 acc = _parse_loose_date((eff.get("acceptance_date") or {}).get("value"))
                 for flag in evaluate_preliminary_flags(
                     payload.preliminary_meta,
@@ -1226,13 +1295,7 @@ class SupabaseRepo:
 
             # An inspection report is validated against the deal (address, recency).
             if payload.document_type in ("property_inspection", "termite_inspection") and payload.inspection_meta:
-                eff = _effective_fields(
-                    self._db.table("extracted_fields")
-                    .select("name, value, confirmed, created_at")
-                    .eq("transaction_id", transaction_id)
-                    .execute()
-                    .data
-                )
+                eff = self._effective_for_txn(transaction_id)
                 for flag in evaluate_inspection_flags(
                     payload.inspection_meta,
                     (eff.get("property_address") or {}).get("value"),
@@ -2185,5 +2248,8 @@ class SupabaseRepo:
                 .data
             )
         state["timeline_gate"] = _deadline_gate_state(state["extracted_fields"])
-        state["effective_fields"] = _effective_fields(state["extracted_fields"])
+        state["effective_fields"] = _effective_fields(
+            state["extracted_fields"],
+            _source_rank_map(state["payloads"], state["documents"]),
+        )
         return state

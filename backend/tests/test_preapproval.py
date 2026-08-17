@@ -9,11 +9,28 @@ from __future__ import annotations
 from datetime import date
 
 from app.contracts.payload import PreapprovalMeta
-from app.master.repo import evaluate_preapproval_flags
+from app.master.repo import _parse_money, evaluate_preapproval_flags
 
 
 def _cases(flags) -> set[str]:
     return {f["case_key"] for f in flags}
+
+
+def test_parse_money_handles_k_m_suffixes():
+    """Regression (BUG-02): a letter stating '$1.8M' must parse as 1,800,000 — not
+    1.8 — else it looks smaller than the loan and raises a FALSE 'insufficient' flag."""
+    assert _parse_money("$1.8M") == 1_800_000
+    assert _parse_money("$900k") == 900_000
+    assert _parse_money("$2,600,000") == 2_600_000
+    # A word that merely starts with m/k after the amount must NOT be a multiplier.
+    assert _parse_money("$1,800,000 mortgage") == 1_800_000
+    assert _parse_money("n/a") is None
+
+
+def test_suffixed_preapproval_is_sufficient():
+    """Full path: an underwriter letter for '$1.8M' covers a $1.7M contract loan."""
+    flags = evaluate_preapproval_flags(PreapprovalMeta(loan_amount="$1.8M"), None, "$1,700,000", None)
+    assert "preapproval_insufficient" not in _cases(flags)
 
 
 def test_valid_preapproval_raises_no_flags():

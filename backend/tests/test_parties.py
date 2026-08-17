@@ -81,6 +81,13 @@ def test_party_key_normalizes_case_and_space():
     assert party_key("buyer", "  Jane   Doe ") == party_key("buyer", "jane doe")
 
 
+def test_party_key_ignores_punctuation():
+    """Regression (BUG-03): a middle initial written 'A' in one doc and 'A.' in
+    another is the same person — punctuation must not spawn a duplicate party."""
+    assert party_key("lender", "Belana A. Chechelnitsky") == party_key("lender", "Belana A Chechelnitsky")
+    assert party_key("buyer", "Jane Doe, Jr.") == party_key("buyer", "Jane Doe Jr")
+
+
 def test_tier_defaults():
     assert tier_for("buyer_agent") == "collaborator"
     assert tier_for("inspector_termite") == "receiving_end"

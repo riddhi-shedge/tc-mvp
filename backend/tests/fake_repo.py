@@ -176,7 +176,7 @@ class InMemoryRepo:
         return f
 
     def list_deal_summaries(self) -> list[dict[str, Any]]:
-        from app.master.repo import _deal_summary, _effective_fields
+        from app.master.repo import _deal_summary, _effective_fields, _source_rank_map
 
         txns = [t for t in self.transactions.values() if t.get("status") != "archived"]
         ids = {t["id"] for t in txns}
@@ -202,8 +202,12 @@ class InMemoryRepo:
         for f in self.extracted_fields:
             if f["transaction_id"] in ids and f["name"] in ("purchase_price", "all_cash"):
                 raw_fields.setdefault(f["transaction_id"], []).append(f)
+        rank_map = _source_rank_map(
+            [p for p in self.payloads.values() if p["transaction_id"] in ids],
+            [d for d in self.documents.values() if d["transaction_id"] in ids],
+        )
         fields: dict[str, dict[str, str]] = {
-            tid: {n: v["value"] for n, v in _effective_fields(rows).items()}
+            tid: {n: v["value"] for n, v in _effective_fields(rows, rank_map).items()}
             for tid, rows in raw_fields.items()
         }
         return [_deal_summary(t, props, coe, tasks, risks, fields) for t in txns]
@@ -901,11 +905,9 @@ class InMemoryRepo:
 
         # A preapproval is validated against the deal (borrower, amount, expiry).
         if payload.document_type == "preapproval" and payload.preapproval_meta:
-            from app.master.repo import _effective_fields, evaluate_preapproval_flags
+            from app.master.repo import evaluate_preapproval_flags
 
-            eff = _effective_fields(
-                [f for f in self.extracted_fields if f["transaction_id"] == transaction_id]
-            )
+            eff = self._effective_for_txn(transaction_id)
             coe = next(
                 (d["due_date"] for d in self.deadlines
                  if d["transaction_id"] == transaction_id and "escrow" in d["name"].lower()),
@@ -935,15 +937,9 @@ class InMemoryRepo:
 
         # A preliminary ('title') report is validated against the deal.
         if payload.document_type == "preliminary_report" and payload.preliminary_meta:
-            from app.master.repo import (
-                _effective_fields,
-                _parse_loose_date,
-                evaluate_preliminary_flags,
-            )
+            from app.master.repo import _parse_loose_date, evaluate_preliminary_flags
 
-            eff = _effective_fields(
-                [f for f in self.extracted_fields if f["transaction_id"] == transaction_id]
-            )
+            eff = self._effective_for_txn(transaction_id)
             for flag in evaluate_preliminary_flags(
                 payload.preliminary_meta,
                 (eff.get("seller_names") or {}).get("value"),
@@ -984,15 +980,9 @@ class InMemoryRepo:
 
         # An inspection report is validated against the deal (address, recency).
         if payload.document_type in ("property_inspection", "termite_inspection") and payload.inspection_meta:
-            from app.master.repo import (
-                _effective_fields,
-                _parse_loose_date,
-                evaluate_inspection_flags,
-            )
+            from app.master.repo import _parse_loose_date, evaluate_inspection_flags
 
-            eff = _effective_fields(
-                [f for f in self.extracted_fields if f["transaction_id"] == transaction_id]
-            )
+            eff = self._effective_for_txn(transaction_id)
             for flag in evaluate_inspection_flags(
                 payload.inspection_meta,
                 (eff.get("property_address") or {}).get("value"),
@@ -1205,18 +1195,33 @@ class InMemoryRepo:
         )
         return summary
 
+    def _effective_for_txn(self, transaction_id: str) -> dict[str, dict[str, Any]]:
+        from app.master.repo import _effective_fields, _source_rank_map
+
+        rank = _source_rank_map(
+            [p for p in self.payloads.values() if p["transaction_id"] == transaction_id],
+            [d for d in self.documents.values() if d["transaction_id"] == transaction_id],
+        )
+        return _effective_fields(
+            [f for f in self.extracted_fields if f["transaction_id"] == transaction_id], rank
+        )
+
     def get_full_state(self, transaction_id: str) -> dict[str, Any] | None:
         txn = self.transactions.get(transaction_id)
         if txn is None:
             return None
-        from app.master.repo import _effective_fields
+        from app.master.repo import _effective_fields, _source_rank_map
 
         fields = [f for f in self.extracted_fields if f["transaction_id"] == transaction_id]
+        rank_map = _source_rank_map(
+            [p for p in self.payloads.values() if p["transaction_id"] == transaction_id],
+            [d for d in self.documents.values() if d["transaction_id"] == transaction_id],
+        )
         return {
             "transaction": txn,
             "property": self.properties.get(transaction_id),
             "timeline_gate": _deadline_gate_state(fields),
-            "effective_fields": _effective_fields(fields),
+            "effective_fields": _effective_fields(fields, rank_map),
             "parties": [p for p in self.parties.values() if p["transaction_id"] == transaction_id],
             "documents": [
                 d for d in self.documents.values() if d["transaction_id"] == transaction_id
