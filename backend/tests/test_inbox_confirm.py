@@ -61,6 +61,25 @@ def test_dedup_key_is_content_addressed_so_distinct_docs_never_collide():
     assert content_addressed_path("email", "doc.pdf", b"document-A-bytes") == p_a
 
 
+def test_multi_attachment_email_queues_every_attachment(client, tc_headers):
+    """BUG-19 (P1 data loss): an email carrying several documents (e.g. a PA plus a
+    counter) must queue ONE inbox item per attachment — not silently keep only the
+    first and drop the rest."""
+    body = postmark_inbound()
+    extra = dict(body["Attachments"][0])
+    extra["Name"] = "seller-counter.pdf"  # distinct filename -> distinct item
+    body["Attachments"].append(extra)
+
+    resp = client.post(WEBHOOK_URL, json=body).json()
+    assert len(resp["items"]) == 2
+
+    open_items = client.get("/ingestion/inbox", headers=tc_headers).json()
+    assert sorted(i["attachment_name"] for i in open_items) == [
+        "seller-counter.pdf",
+        "synthetic-signed-rpa.pdf",
+    ]
+
+
 def test_stale_processing_item_is_reclaimed_into_the_queue(client, tc_headers, inbox):
     """BUG-17: a confirm that crashed after claim() strands an item in 'processing',
     invisible to the TC. list_open reclaims a stale claim so it resurfaces."""

@@ -114,6 +114,58 @@ class PostmarkInbound(BaseModel):
     Attachments: list[PostmarkAttachment] = Field(default_factory=list)
 
 
+def _ingest_email_attachment(
+    inbox: InboxRepo,
+    att: "PostmarkAttachment",
+    *,
+    from_email: str,
+    to_email: str,
+    subject: str | None,
+) -> dict[str, Any]:
+    """Store + queue ONE inbound attachment as its own inbox item. Content-addressed
+    so a Postmark redelivery of the same bytes is absorbed (idempotent) rather than
+    duplicated. Raises StorageUnavailable so the caller can 5xx and let Postmark
+    redeliver — the attachment is never lost."""
+    unreadable_reason = check_readability(
+        attachment_name=att.Name,
+        content_type=att.ContentType,
+        size=att.ContentLength,
+        has_content=bool(att.Content),
+    )
+    storage_path: str | None = None
+    if unreadable_reason is None:
+        try:
+            storage_path = inbox.store_attachment(
+                source="email", filename=att.Name or "attachment.pdf", content_base64=att.Content or ""
+            )
+        except ValueError:
+            unreadable_reason = "attachment content could not be decoded"
+
+    if storage_path is not None:
+        duplicate = inbox.find_duplicate_by_storage_path(
+            storage_path=storage_path, attachment_count=1
+        )
+        if duplicate is not None:
+            _log.info("ingestion.webhook.duplicate_absorbed item=%s", duplicate["id"])
+            return {"id": duplicate["id"], "status": duplicate["status"], "duplicate": True}
+
+    item = inbox.add_item(
+        from_email=from_email,
+        to_email=to_email,
+        subject=subject,
+        attachment_name=att.Name,
+        attachment_content_type=att.ContentType,
+        attachment_size=att.ContentLength,
+        attachment_count=1,
+        detected_doc_type=detect_doc_type(att.Name, subject),
+        storage_path=storage_path,
+        source="email",
+        status="pending" if unreadable_reason is None else "needs_manual",
+        needs_manual_reason=unreadable_reason,
+    )
+    return {"id": item["id"], "status": item["status"]}
+
+
 @router.post("/webhooks/postmark")
 def postmark_inbound_webhook(
     body: PostmarkInbound,
@@ -139,66 +191,32 @@ def postmark_inbound_webhook(
     if deal_address.lower() not in recipients:
         return {"ignored": True}
 
-    first = body.Attachments[0] if body.Attachments else PostmarkAttachment()
     from_email = (body.FromFull.Email if body.FromFull else "") or body.From
-    attachment_count = len(body.Attachments)
-
-    unreadable_reason = check_readability(
-        attachment_name=first.Name,
-        content_type=first.ContentType,
-        size=first.ContentLength,
-        has_content=bool(first.Content),
-    )
-    storage_path: str | None = None
-    if unreadable_reason is None:
-        try:
-            storage_path = inbox.store_attachment(
-                source="email",
-                filename=first.Name or "attachment.pdf",
-                content_base64=first.Content or "",
+    # One inbox item PER attachment — an email with a PA + counter + disclosure must
+    # not silently lose all but the first (BUG-19). A no-attachment email still
+    # queues one (needs_manual) item so it's visible.
+    attachments = body.Attachments or [PostmarkAttachment()]
+    try:
+        items = [
+            _ingest_email_attachment(
+                inbox, att, from_email=from_email, to_email=deal_address, subject=body.Subject
             )
-        except ValueError:
-            unreadable_reason = "attachment content could not be decoded"
-        except StorageUnavailable:
-            # 5xx so Postmark redelivers later — the attachment is not lost.
-            raise HTTPException(
-                status_code=503, detail="Attachment store unavailable; retry delivery"
-            ) from None
-
-    # Postmark inbound is at-least-once and retries a slow/errored endpoint. The
-    # storage path is content-addressed, so a redelivery of the SAME bytes maps to
-    # the same path: absorb it as the existing item instead of queuing a duplicate
-    # (which could be confirmed into a second deal). Exact-content match, so a
-    # genuinely different document is never dropped. Readable attachments only —
-    # a no-attachment / unreadable email has no content key and is left to queue.
-    if storage_path is not None:
-        duplicate = inbox.find_duplicate_by_storage_path(
-            storage_path=storage_path, attachment_count=attachment_count
-        )
-        if duplicate is not None:
-            _log.info("ingestion.webhook.duplicate_absorbed item=%s", duplicate["id"])
-            return {
-                "ignored": False,
-                "id": duplicate["id"],
-                "status": duplicate["status"],
-                "duplicate": True,
-            }
-
-    item = inbox.add_item(
-        from_email=from_email,
-        to_email=deal_address,
-        subject=body.Subject,
-        attachment_name=first.Name,
-        attachment_content_type=first.ContentType,
-        attachment_size=first.ContentLength,
-        attachment_count=attachment_count,
-        detected_doc_type=detect_doc_type(first.Name, body.Subject),
-        storage_path=storage_path,
-        source="email",
-        status="pending" if unreadable_reason is None else "needs_manual",
-        needs_manual_reason=unreadable_reason,
-    )
-    return {"ignored": False, "id": item["id"], "status": item["status"]}
+            for att in attachments
+        ]
+    except StorageUnavailable:
+        # 5xx so Postmark redelivers later — content-addressed dedup makes the
+        # re-processing of already-stored attachments idempotent, so nothing is lost.
+        raise HTTPException(
+            status_code=503, detail="Attachment store unavailable; retry delivery"
+        ) from None
+    first = items[0]
+    return {
+        "ignored": False,
+        "id": first["id"],
+        "status": first["status"],
+        "items": items,
+        **({"duplicate": True} if first.get("duplicate") else {}),
+    }
 
 
 # ---- Manual-upload fallback (the only other ingestion entry) ----------------

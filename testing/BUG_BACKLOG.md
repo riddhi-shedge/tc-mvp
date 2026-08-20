@@ -167,6 +167,40 @@ Full detail in `ADVERSARIAL_FINDINGS.md`, `RLS_FINDINGS.md`, `CONCURRENCY_FINDIN
   DB-integration tests (CI gap); invite tokens lack revocation (P3); shared compliance token is
   URL-enumerable (P3); dependency failures raise clean 5xx before any SOR write (handled well).
 
+## C probe findings (UX silent-success / messy-PDF) — see `UX_ROBUSTNESS_FINDINGS.md`
+
+### Fixed
+- **BUG-19 (P1, A1) — silent multi-attachment data loss** ✅ FIXED. The webhook processed only
+  `Attachments[0]`; a PA+counter+disclosure in one email kept the first and dropped the rest.
+  Now queues ONE content-addressed, deduped inbox item PER attachment (`_ingest_email_attachment`).
+  Test: `test_multi_attachment_email_queues_every_attachment` (+ `test_every_attachment_is_queued`).
+- **BUG-24 (P2, B6) — no size ceiling before the model call** ✅ FIXED. `check_readability` now
+  routes an attachment > 25 MB to `needs_manual` instead of decoding + base64ing it into a request
+  (cost/memory/DoS). Test added to the readability parametrize.
+
+### Open (triaged)
+- **BUG-23 (P2, B1) — pre-check is purchase-agreement-ONLY.** `precheck_pdf` runs only in
+  `_extract_pa_fields`; the counter/CR/preapproval/prelim/inspection paths skip it and hit the
+  model directly, so a scanned/no-text inspection or title report (a common real case) isn't
+  routed to `needs_manual`. _Fix: run the precheck for every doc type before extraction._
+- **BUG-22 (P2, A4) — zero-field PA creates a hollow deal.** No empty-list guard in
+  `_extract_pa_fields`; a text-bearing PA that yields no §5 fields makes a real deal with a
+  placeholder address and only the generic empty state — never a "couldn't read this" message.
+- **BUG-20 (P2, A2) — "Build timeline" success toast on an empty build (frontend).** The UI always
+  toasts "Timeline built" and ignores the returned `deadlines` count; a zero-deadline build shows
+  green success with no timeline. _Fix: branch on the count._
+- **BUG-21 (P2, A3) — "Confirm all" bypasses low-confidence review (frontend).** Both bulk-confirm
+  buttons POST every unconfirmed id with no confidence gate; a TC can one-tap-confirm a
+  low-confidence deadline-driving date without opening the verify panel. _Fix: warn/flag on bulk-confirm._
+- **BUG-25 (P2 theoretical, B8) — concatenated documents silently mis-extract.** Nothing detects a
+  PA+counter merged into one PDF; a blended field set confirms into the SOR unflagged.
+- **BUG-26 (P3, A5/A6) — prototype-data labels (frontend).** "My Quarter" shows all-time figures
+  under a hardcoded "Q3 2025" label; the Admin KPI row is unmarked synthetic (screen is PROTOTYPE-tagged).
+
+### Gracefully handled (no bug)
+0-byte attachments, encrypted/owner-password PDFs (`decrypt_pdf` safe on a bad password), the
+truncated-PA case, and non-PDF on the PA path all route cleanly to `needs_manual`.
+
 ## Reviewer follow-ups (low severity — triaged, not yet built)
 - **BUG-06 (Accept):** `_parse_money` treats `-$1,800,000` / `($1,800,000)` as positive. Domain amounts are non-negative; accept.
 - **BUG-07 (Consider):** `.5M` (leading-dot, no integer) mis-scales to 5,000,000. Rare OCR shape; low priority.

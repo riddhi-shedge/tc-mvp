@@ -78,6 +78,11 @@ def detect_doc_type(filename: str | None, subject: str | None) -> DocType:
     return UNKNOWN_DOC_TYPE
 
 
+# Upper size ceiling before an attachment is stored and base64'd into a model
+# request (cost / memory / DoS). A residential contract PDF is a few MB.
+_MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024
+
+
 def check_readability(
     *,
     attachment_name: str | None,
@@ -93,4 +98,9 @@ def check_readability(
         return "attachment is not a PDF"
     if not size or size <= 0:
         return "attachment is empty"
+    if size > _MAX_ATTACHMENT_BYTES:
+        # Route oversized files to manual handling instead of decoding + base64ing
+        # them into a model request (cost / memory / DoS ceiling). A residential
+        # contract PDF is a few MB; 25 MB is a generous ceiling (BUG-24).
+        return "attachment is too large to process automatically"
     return None

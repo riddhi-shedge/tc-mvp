@@ -76,6 +76,15 @@ def test_readable_pdf_passes():
             },
             "no readable attachment",
         ),
+        (
+            {
+                "attachment_name": "huge.pdf",
+                "content_type": "application/pdf",
+                "size": 40 * 1024 * 1024,  # 40 MB — over the 25 MB ceiling (BUG-24)
+                "has_content": True,
+            },
+            "too large",
+        ),
     ],
 )
 def test_unreadable_routes_to_manual(kwargs, reason_fragment):

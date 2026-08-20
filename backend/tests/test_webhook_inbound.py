@@ -73,17 +73,20 @@ def test_token_accepted_via_header(client, inbox):
     assert r.json()["ignored"] is False
 
 
-def test_attachment_count_recorded(client, inbox):
+def test_every_attachment_is_queued(client, inbox):
     body = postmark_inbound()
     body["Attachments"].append(
         {"Name": "second-synthetic.pdf", "ContentType": "application/pdf", "ContentLength": 10}
     )
     r = client.post(URL, json=body)
-    item = inbox.items[r.json()["id"]]
-    # Only the first attachment's metadata is captured in Phase 2; the count
-    # marks that more existed rather than dropping them silently.
-    assert item["attachment_count"] == 2
-    assert item["attachment_name"] == "synthetic-signed-rpa.pdf"
+    # BUG-19: each attachment becomes its OWN inbox item (count=1) — none dropped.
+    items = [inbox.items[i["id"]] for i in r.json()["items"]]
+    assert len(items) == 2
+    assert all(it["attachment_count"] == 1 for it in items)
+    assert {it["attachment_name"] for it in items} == {
+        "synthetic-signed-rpa.pdf",
+        "second-synthetic.pdf",
+    }
 
 
 def test_attachment_file_is_stored_in_ingestion_storage(client, inbox):
