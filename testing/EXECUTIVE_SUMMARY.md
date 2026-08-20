@@ -1,0 +1,92 @@
+# Executive Summary — Adversarial Testing & Hardening of the Terra TC Tool
+
+_A California residential Transaction-Coordinator system (FastAPI + React/TS + Supabase +
+Claude document extraction). This summarizes a focused hardening pass: automated logic
+sweeps + a multi-agent security/reliability probe, with fixes shipped as they were found._
+
+## Readiness verdict
+
+**Meaningfully hardened; core guarantees verified; a few reliability items need an owner
+decision before this carries real client documents.** The extraction→confirm→SOR→timeline
+pipeline is sound and its safety controls are real (not just prompt-level). No cross-tenant
+data leak and no auto-send path exist. The remaining open items are concurrency/reliability
+edges — two of which need a small DB migration to close exactly — plus the AI-quality
+evaluation (P3), which has not yet been run against a live model on a ground-truth corpus.
+
+## What was done
+- **P1 — automated logic sweep** (deterministic, no API cost): a probe harness
+  (`probes/logic_probes.py`) against `InMemoryRepo` + the pure functions.
+- **P2 — multi-agent probes**: three parallel adversarial/security agents (prompt-injection,
+  authorization/RLS, concurrency/reliability), each verified against the code and reproduced.
+- **Every fix** landed with a failing→green regression test; the two SOR-integrity changes
+  and both webhook-dedup attempts went through an independent `code-reviewer` pass whose
+  findings were folded back in. **426 backend tests pass; ruff clean.** 11 commits shipped.
+
+## Bugs found & FIXED (9)
+| ID | Sev | What | 
+|----|-----|------|
+| BUG-01 | **P1** | Re-uploading the PA silently reverted a counter's price → doc-type precedence in supersession |
+| BUG-11 | **P1** | A failed PA re-write could leave a deal with ZERO purchase agreements → supersede moved out of the compensated try + guarded |
+| BUG-02 | P2 | `$1.8M`/`$900k` misparsed → false "insufficient loan" critical flag |
+| BUG-04 | P2 | Unit-prefixed address → false "address mismatch" flag |
+| BUG-10 | P2 | Duplicate Postmark delivery → duplicate deal → content-addressed idempotency (data-loss-safe) |
+| BUG-12 | P2 | `lender_contact_email/phone` off-whitelist → preapproval payloads 422'd |
+| BUG-14 | P2 | Wiring/SSN could be smuggled into a field VALUE → targeted Rule-2 value guard |
+| BUG-03 | P3 | Party dedup missed punctuation variants → duplicate parties |
+| #4 / #3 | — | Timeline reconciliation & counter-chain termination verified correct + locked with tests |
+
+## Verified SOLID (the important negatives)
+- **§5 field whitelist** is enforced in three layers (enum-constrained output → post-filter →
+  master 422). No money/wiring/SSN field *name* reaches the SOR — and now no such *value* either.
+- **No auto-send.** No mailer in the extract/confirm path; drafts are `status=draft`; the only
+  send is the human-authenticated `approve_and_send` behind a fail-closed, allowlisted mailer.
+- **Cross-party / cross-deal isolation** is enforced in app code (party_id/transaction_id come
+  from the signed admin-set JWT, never client input; the repo double-scopes). No IDOR found —
+  important because the backend uses the service-role key that *bypasses* Postgres RLS.
+- **Dependency failures** (Anthropic 429/500/timeout/refusal, storage 503) raise clean 5xx
+  *before* any SOR write; the confirmation gate blocks the scheduler from building on unconfirmed state.
+
+## Open — needs an OWNER DECISION
+1. **BUG-13 (P1) — concurrent compliance runs delete each other's rows.** Two overlapping
+   `apply_compliance_result` runs (a cron sweep vs. a manual "Build timeline" tap) mutually
+   delete → a torn/near-empty timeline. **Clean fix needs a DB migration** (a `pg_advisory_xact_lock`
+   RPC keyed on the transaction, or a `unique(transaction_id, compute_key)` + upsert). Decision:
+   approve the migration, or (interim, no migration) ensure the cron never overlaps a manual run.
+   _Reachability note: if the cron sweep isn't deployed, the only trigger is the one-at-a-time
+   manual tap, making this latent rather than active — worth confirming._
+2. **BUG-15 (product call) — should a read-only `collaborator` be able to `POST /party/documents`?**
+   Reclassified from a bug: receiving-end vendors must upload reports, and TC HITL gates any
+   party upload. Only restrict if the spec means collaborators are strictly read-only.
+
+## Queued P2 (real, mostly need a migration or a small design)
+- **BUG-16** compensation deletes only the document → orphan flags/parties; and the write path's
+  `write_payload + derive_parties + derive_tasks` are un-compensated → a retry re-inserts (no
+  `unique` on `documents.external_ref`). _Fix: unique constraint (migration) + idempotent tail._
+- **BUG-17** a crash between `claim()` and `release()` strands an inbox item in `processing`
+  forever. _Fix: a reaper/timeout (likely needs a `claimed_at` column)._ (claim() itself is a
+  correct atomic CAS — no TOCTOU.)
+- **BUG-18** a compliance re-run can revert a party's just-marked-`done` task (read→delete→re-insert
+  window). _Fix: carry status via upsert keyed on compute_key rather than delete+recreate._
+
+## Not yet tested — and how to test later
+- **P3 AI-quality evals (biggest gap):** extraction accuracy vs. a synthetic ground-truth corpus,
+  cross-run consistency, confidence calibration, and the doc-type/signature **injection** case
+  (adversarial #2 — the §4 guard trusts the model's self-report; the TC HITL confirm is the
+  backstop). Needs bounded, cost-capped live-model runs on ~8–12 synthetic CA documents.
+- **Messy-PDF robustness (#17):** 0-byte / non-PDF / password / scanned / multi-doc / huge files.
+- **Live RLS:** proven today only by 22 skipped DB-integration tests (a CI gap — the RLS policies
+  aren't exercised because the backend bypasses them). Run that suite against a Supabase test env.
+- **True concurrency/load:** simulated only here; needs a real multi-worker load test.
+- **Regex/heuristic limits:** the BUG-14 value guard and BUG-02 money parser are heuristics
+  (won't catch every wiring format / "1.8 million" written out) — a dedicated compliance audit
+  of `_WIRING_VALUE` is a recommended follow-up.
+
+## Sprint recommendation
+- **NOW:** decide BUG-13 (approve the migration or confirm the cron is inactive); run the P3
+  extraction-accuracy + injection evals on the synthetic corpus.
+- **NEXT:** BUG-16/17/18 as a single "make the write/queue paths crash-safe" migration + change;
+  the messy-PDF robustness pass.
+- **LATER:** wire the skipped RLS DB-integration suite into CI against a test project; a real
+  load test; invite-token revocation (RLS-F3) and a per-transaction compliance token (RLS-F4).
+- **DON'T BUILD YET:** a bespoke PII/wiring ML classifier — the targeted regex + HITL + no-send
+  cover the realistic risk; revisit only if real documents show novel smuggling.
