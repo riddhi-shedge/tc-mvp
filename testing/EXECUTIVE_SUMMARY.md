@@ -23,11 +23,15 @@ DB migrations (`20260820000010/11`) that must be applied to the hosted DB before
   and both webhook-dedup attempts went through an independent `code-reviewer` pass whose
   findings were folded back in. **426 backend tests pass; ruff clean.** 11 commits shipped.
 
-## Bugs found & FIXED (9)
+## Bugs found & FIXED (14 — including 4 P1s)
 | ID | Sev | What | 
 |----|-----|------|
 | BUG-01 | **P1** | Re-uploading the PA silently reverted a counter's price → doc-type precedence in supersession |
 | BUG-11 | **P1** | A failed PA re-write could leave a deal with ZERO purchase agreements → supersede moved out of the compensated try + guarded |
+| BUG-13 | **P1** | Concurrent compliance runs deleted each other's rows (torn timeline) → per-deal fenced mutex + stale reclaim |
+| BUG-19 | **P1** | A multi-document email silently dropped all attachments but the first → one queued item per attachment |
+| BUG-17 | P2 | A crashed confirm stranded an inbox item in `processing` → `claimed_at` + self-healing reaper |
+| BUG-24 | P2 | No size ceiling before the model call → >25 MB routes to needs_manual (cost/DoS) |
 | BUG-02 | P2 | `$1.8M`/`$900k` misparsed → false "insufficient loan" critical flag |
 | BUG-04 | P2 | Unit-prefixed address → false "address mismatch" flag |
 | BUG-10 | P2 | Duplicate Postmark delivery → duplicate deal → content-addressed idempotency (data-loss-safe) |
@@ -86,12 +90,20 @@ DB migrations (`20260820000010/11`) that must be applied to the hosted DB before
   (won't catch every wiring format / "1.8 million" written out) — a dedicated compliance audit
   of `_WIRING_VALUE` is a recommended follow-up.
 
+## Robustness pass (C probe) — DONE — see `UX_ROBUSTNESS_FINDINGS.md`
+Fixed the P1 (BUG-19 multi-attachment loss) + BUG-24 (size cap). Open, triaged: precheck runs
+for PAs only (BUG-23), a zero-field PA makes a hollow deal (BUG-22), a success toast on an empty
+timeline build (BUG-20, frontend), "Confirm all" can bypass low-confidence review (BUG-21,
+frontend), concatenated-doc mis-extract (BUG-25), prototype-data labels (BUG-26). Gracefully
+handled already: 0-byte / encrypted / truncated / non-PDF all route to needs_manual.
+
 ## Sprint recommendation
-- **NOW:** decide BUG-13 (approve the migration or confirm the cron is inactive); run the P3
-  extraction-accuracy + injection evals on the synthetic corpus.
-- **NEXT:** BUG-16/17/18 as a single "make the write/queue paths crash-safe" migration + change;
-  the messy-PDF robustness pass.
+- **NOW:** apply the two shipped migrations (`20260820000010/11`) to the hosted DB before the
+  next deploy; decide BUG-15 (collaborator upload — product call).
+- **NEXT:** run the precheck for ALL doc types (BUG-23) + the zero-field guard (BUG-22); the
+  frontend honesty fixes (BUG-20/21); BUG-16/18 crash-safety (unique `external_ref` + task upsert).
 - **LATER:** wire the skipped RLS DB-integration suite into CI against a test project; a real
-  load test; invite-token revocation (RLS-F3) and a per-transaction compliance token (RLS-F4).
+  load test; broaden the AI-eval ground-truth corpus to the other doc types + calibration;
+  invite-token revocation (RLS-F3) and a per-transaction compliance token (RLS-F4).
 - **DON'T BUILD YET:** a bespoke PII/wiring ML classifier — the targeted regex + HITL + no-send
   cover the realistic risk; revisit only if real documents show novel smuggling.
