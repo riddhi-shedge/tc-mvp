@@ -107,14 +107,21 @@ Full detail in `ADVERSARIAL_FINDINGS.md`, `RLS_FINDINGS.md`, `CONCURRENCY_FINDIN
   `apply_compliance_result` inserts run_id then deletes `!= run_id`; two overlapping runs
   (cron sweep vs. the "Build timeline" tap) mutually delete → torn/empty timeline. No lock.
   Fix options: a `pg_advisory_xact_lock` on the transaction_id, or serialize runs per deal.
-- **BUG-14 (P2, adversarial #3) — wiring/PII smuggled into a whitelisted field VALUE.**
-  The payload route checks the money regex on `f.name` only, not `f.value` (a naive value
-  scan would false-reject "Wells Fargo **Bank**" / an APN / a phone). Needs a TARGETED value
-  guard (SSN pattern + routing/IBAN/SWIFT/ABA-label-near-digits) with false-positive tests.
-  Low exfil risk (no auto-send; TC-review; at-rest only) but a Rule-5 hardening.
-- **BUG-15 (P2, RLS F2) — tier confusion:** `require_party` ignores tier, so a read-only
-  `collaborator` can WRITE via `POST /party/documents` (scoped to their own deal → integrity
-  gap, not cross-tenant leak). Add a tier gate on party write routes.
+- **BUG-14 (P2, adversarial #3) — wiring/PII smuggled into a whitelisted field VALUE** ✅ FIXED.
+  The payload route now runs a TARGETED `_WIRING_VALUE` check on VALUES (SSN pattern +
+  routing/IBAN/SWIFT/ABA-label-near-digits + "account number: N") in addition to the name
+  check. Deliberately tight so "Wells Fargo Bank, NMLS 357881", an APN "357-13-003", a phone
+  "415-555-1234", and a benign "wire the EMD to escrow" note are all ACCEPTED. Tests:
+  `test_wiring_or_ssn_smuggled_into_a_field_value_is_rejected`,
+  `test_legitimate_bank_apn_phone_values_are_not_rejected`. (Minor follow-up: the manual
+  `add_field` route still uses the broader name-regex on values — a latent false-positive on
+  a hand-entered "…Bank" value; unify with `_WIRING_VALUE` later.)
+- **BUG-15 (RLS F2) — RECLASSIFIED to a product decision, not a bug.** `POST /party/documents`
+  lets any scoped party upload a document to their OWN deal. Receiving-end vendors MUST upload
+  reports, and an agent/collaborator uploading a doc that the TC still gates via HITL confirm is
+  a normal real-estate workflow — not a data-integrity violation. Only restrict if the spec
+  truly means "collaborators are strictly read-only, no uploads." Needs an owner decision before
+  changing behavior (a wrong restriction breaks a legitimate flow).
 - **BUG-16 (P2, concurrency #4/#5) — orphans + retry-dup:** compensation deletes only the
   document, leaving spurious risk_flags/parties; and the route's write_payload + derive_parties
   + derive_tasks are un-compensated, so a retry re-inserts (no unique on `documents.external_ref`).

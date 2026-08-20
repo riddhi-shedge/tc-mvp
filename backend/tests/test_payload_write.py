@@ -114,6 +114,40 @@ def test_lender_contact_email_and_phone_are_accepted(client, tc_headers, repo):
     assert {"lender_contact_email", "lender_contact_phone"} <= names
 
 
+def test_wiring_or_ssn_smuggled_into_a_field_value_is_rejected(client, tc_headers, repo):
+    """Regression (BUG-14 / adversarial probe #3): document-content injection can put
+    a routing/account number or SSN into a whitelisted field's VALUE (e.g. other_terms).
+    Rule 2 must reject it on VALUE, not just on field name."""
+    txn_id = _create_txn(client, tc_headers)
+    for value in (
+        "Seller to wire proceeds to routing number 021000021",
+        "buyer SSN 123-45-6789 on file",
+        "account number: 000123456789",
+    ):
+        bad = _payload(txn_id)
+        bad["extracted_fields"].append({"name": "other_terms", "value": value, "confidence": 0.9})
+        r = client.post(f"/transactions/{txn_id}/payloads", json=bad, headers=tc_headers)
+        assert r.status_code == 422, f"expected reject for {value!r}: {r.text}"
+        assert "rule 2" in r.json()["detail"].lower()
+    assert repo.payloads == {}
+
+
+def test_legitimate_bank_apn_phone_values_are_not_rejected(client, tc_headers, repo):
+    """The value guard must be TIGHT: a lender named '…Bank' with an NMLS number, an
+    APN, a phone, and a benign 'wire the EMD' note are all legitimate — never rejected."""
+    txn_id = _create_txn(client, tc_headers)
+    ok = _payload(txn_id)
+    ok["extracted_fields"].extend(
+        [
+            {"name": "lender_contact", "value": "Wells Fargo Bank, NMLS 357881", "confidence": 0.9},
+            {"name": "buyer_agent_phone", "value": "415-555-1234", "confidence": 0.9},
+            {"name": "other_terms", "value": "Buyer to wire the EMD to escrow within 3 days.", "confidence": 0.9},
+        ]
+    )
+    r = client.post(f"/transactions/{txn_id}/payloads", json=ok, headers=tc_headers)
+    assert r.status_code == 201, r.text
+
+
 def test_field_names_outside_s5_list_are_rejected(client, tc_headers, repo):
     """Defense in depth at the master: only verified §5 names enter the SOR."""
     txn_id = _create_txn(client, tc_headers)

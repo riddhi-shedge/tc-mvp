@@ -125,6 +125,17 @@ _MONEY_FIELD_NAME = re.compile(
     re.IGNORECASE,
 )
 
+# Wiring/PII smuggled into a whitelisted field's VALUE (e.g. a routing/account
+# number or SSN pasted into other_terms). Deliberately TARGETED — a bank/account
+# LABEL adjacent to digits, or an SSN — so it does NOT reject legitimate values
+# like "Wells Fargo Bank", an APN "357-13-003", or a phone "415-555-1234".
+_WIRING_VALUE = re.compile(
+    r"\b\d{3}-\d{2}-\d{4}\b"                                   # SSN
+    r"|(?:routing|iban|swift|\baba\b)\D{0,15}\d"               # routing/IBAN/SWIFT/ABA label near digits
+    r"|account\s*(?:number|no\.?|#)\D{0,10}\d",                # "account number: 12345"
+    re.IGNORECASE,
+)
+
 
 @lru_cache(maxsize=1)
 def _default_repo() -> SupabaseRepo:
@@ -1253,6 +1264,20 @@ def write_payload(
             detail=(
                 "Rule 2: money-movement/wiring fields are never extracted or "
                 f"stored. Rejected field name(s): {', '.join(money_fields)}"
+            ),
+        )
+    # Rule 2 also on VALUES: a routing/account number or SSN smuggled into a
+    # whitelisted field (e.g. other_terms) via document-content injection must not
+    # reach the SOR. Targeted so legitimate values ("…Bank", an APN) are unaffected.
+    wiring_values = sorted(
+        {f.name for f in payload.extracted_fields if _WIRING_VALUE.search(f.value or "")}
+    )
+    if wiring_values:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "Rule 2: wiring/account/SSN data is never stored. Rejected value(s) "
+                f"in field(s): {', '.join(wiring_values)}"
             ),
         )
     # Defense in depth: only names from the human-verified §5 list may enter
