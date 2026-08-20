@@ -110,9 +110,16 @@ Full detail in `ADVERSARIAL_FINDINGS.md`, `RLS_FINDINGS.md`, `CONCURRENCY_FINDIN
   stale lock (crashed apply, >5 min) is reclaimed so a deal can't wedge. The proven run_id
   reconciliation is untouched (atomicity preserved) — the lock just guarantees one-at-a-time.
   Tests: `test_concurrent_compliance_apply_is_rejected`, `test_stale_compliance_lock_is_reclaimed`,
-  `test_compliance_lock_is_released_after_apply`. **Migration must be applied to the hosted DB
-  before deploying this code.** (Real DB path is CI-untested like the rest of SupabaseRepo;
-  logic is covered via the InMemoryRepo mirror.)
+  `test_compliance_lock_is_released_after_apply`, `test_release_is_fenced_by_token`.
+  **Review follow-up (folded in):** the code-reviewer caught a fencing gap — a SLOW (not crashed)
+  holder could have its lock reclaimed, then its `finally` release would delete the NEW holder's
+  lock and reopen the race. Fixed with a per-acquire `lock_token`: reclaim/release only delete the
+  row they own, the release is best-effort (never shadows the body's result/exception in `finally`),
+  and the acquire only maps a real unique-violation (23505) to "in progress" (other errors surface).
+  Residual: an apply genuinely running >5 min could still be reclaimed and run concurrently — the
+  stale window is generous (applies take seconds) and the token prevents any cascade.
+  **Migration `20260820000010` must be applied to the hosted DB before deploying this code.**
+  (Real DB path is CI-untested like the rest of SupabaseRepo; logic is covered via the InMemoryRepo mirror.)
 - **BUG-14 (P2, adversarial #3) — wiring/PII smuggled into a whitelisted field VALUE** ✅ FIXED.
   The payload route now runs a TARGETED `_WIRING_VALUE` check on VALUES (SSN pattern +
   routing/IBAN/SWIFT/ABA-label-near-digits + "account number: N") in addition to the name

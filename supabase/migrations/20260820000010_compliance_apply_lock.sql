@@ -14,8 +14,12 @@
 -- The reconciliation itself (run_id insert-then-delete) is unchanged — this only
 -- guarantees one apply runs at a time per deal, which is what makes it safe.
 
+-- `lock_token` fences ownership: a reclaim/release only removes the row it owns,
+-- so a slow (not crashed) holder whose lock was reclaimed can't later delete the
+-- new holder's lock out from under it.
 create table if not exists public.compliance_apply_lock (
   transaction_id uuid primary key,
+  lock_token uuid not null,
   locked_at timestamptz not null default now()
 );
 

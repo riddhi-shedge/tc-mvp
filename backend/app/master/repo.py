@@ -58,6 +58,14 @@ class ComplianceRunInProgress(Exception):
 _COMPLIANCE_LOCK_STALE_SECONDS = 300
 
 
+def _is_unique_violation(exc: Exception) -> bool:
+    """True iff a Supabase/PostgREST write failed on a unique/PK conflict (23505).
+    Used to tell 'another apply holds the lock' apart from a real infra error."""
+    code = getattr(exc, "code", None)
+    blob = f"{code} {getattr(exc, 'message', '')} {exc}".lower()
+    return "23505" in blob or "duplicate key" in blob
+
+
 def _deadline_gate_state(rows: list[dict[str, Any]]) -> dict[str, Any]:
     """The timeline-readiness breakdown for the UI (and the "Build timeline"
     pre-check): which deadline-driving §5 fields are MISSING (no row at all —
@@ -2102,46 +2110,65 @@ class SupabaseRepo:
         rows = self._db.table("parties").select("email").eq("id", party_id).execute().data
         return rows[0]["email"] if rows and rows[0].get("email") else None
 
-    def _acquire_compliance_lock(self, transaction_id: str) -> None:
+    def _acquire_compliance_lock(self, transaction_id: str) -> str:
+        """Acquire the per-deal apply lock; returns a fencing token used to release
+        exactly the row we inserted. Raises ComplianceRunInProgress if a fresh lock
+        is held. A stale lock (crashed holder) is reclaimed by its OWN token so we
+        never delete a row a concurrent reclaimer already replaced."""
         existing = (
             self._db.table("compliance_apply_lock")
-            .select("locked_at")
+            .select("lock_token, locked_at")
             .eq("transaction_id", transaction_id)
             .execute()
             .data
         )
         if existing:
-            locked_at = datetime.fromisoformat(existing[0]["locked_at"])
+            locked_at = datetime.fromisoformat(existing[0]["locked_at"].replace("Z", "+00:00"))
             age = (datetime.now(timezone.utc) - locked_at).total_seconds()
             if age < _COMPLIANCE_LOCK_STALE_SECONDS:
                 raise ComplianceRunInProgress(transaction_id)
-            # Stale (the holding process crashed before releasing) — reclaim it.
+            # Stale (the holding process crashed) — reclaim only that exact row.
             self._db.table("compliance_apply_lock").delete().eq(
                 "transaction_id", transaction_id
-            ).execute()
+            ).eq("lock_token", existing[0]["lock_token"]).execute()
+
+        token = str(uuid.uuid4())
         try:
             self._db.table("compliance_apply_lock").insert(
-                {"transaction_id": transaction_id}
+                {"transaction_id": transaction_id, "lock_token": token}
             ).execute()
         except Exception as exc:
-            # Lost the race: a concurrent apply inserted the lock between our check
-            # and this insert (the PK rejects the duplicate). Back off — it has the deal.
-            raise ComplianceRunInProgress(transaction_id) from exc
+            # Only a unique/PK violation means "another apply holds it" — anything
+            # else (RLS, a transient 5xx) is a real error and must surface as-is.
+            if _is_unique_violation(exc):
+                raise ComplianceRunInProgress(transaction_id) from exc
+            raise
+        return token
 
-    def _release_compliance_lock(self, transaction_id: str) -> None:
-        self._db.table("compliance_apply_lock").delete().eq(
-            "transaction_id", transaction_id
-        ).execute()
+    def _release_compliance_lock(self, transaction_id: str, token: str) -> None:
+        # Best-effort + fenced: delete only OUR row, and never let a release failure
+        # shadow the body's real result/exception in the caller's `finally`. A missed
+        # release just delays the deal by the stale window (it self-heals).
+        try:
+            self._db.table("compliance_apply_lock").delete().eq(
+                "transaction_id", transaction_id
+            ).eq("lock_token", token).execute()
+        except Exception:
+            _log.warning(
+                "compliance lock release failed for txn=%s; it will self-heal after "
+                "the stale window.",
+                transaction_id,
+            )
 
     def apply_compliance_result(self, *, result: ComplianceResult, actor: str) -> dict[str, Any]:
         # Serialize applies per deal (BUG-13): the daily scheduler sweep and a
         # manual re-run both hit this endpoint; without the lock, two overlapping
         # applies delete each other's timeline rows (torn/empty timeline).
-        self._acquire_compliance_lock(result.transaction_id)
+        token = self._acquire_compliance_lock(result.transaction_id)
         try:
             return self._apply_compliance_result_body(result=result, actor=actor)
         finally:
-            self._release_compliance_lock(result.transaction_id)
+            self._release_compliance_lock(result.transaction_id, token)
 
     def _apply_compliance_result_body(
         self, *, result: ComplianceResult, actor: str

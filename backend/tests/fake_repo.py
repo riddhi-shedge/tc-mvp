@@ -51,8 +51,8 @@ class InMemoryRepo:
         self.risk_flags: list[dict[str, Any]] = []
         self.reminders: list[dict[str, Any]] = []
         self.audit_log: list[dict[str, Any]] = []
-        # transaction_id -> locked_at (mirrors the compliance_apply_lock table).
-        self.compliance_locks: dict[str, datetime] = {}
+        # transaction_id -> {"locked_at", "token"} (mirrors compliance_apply_lock).
+        self.compliance_locks: dict[str, dict[str, Any]] = {}
 
     def add_party(self, *, transaction_id: str, name: str, role: str) -> dict[str, Any]:
         """Test helper — party CRUD arrives in a later phase."""
@@ -1075,23 +1075,28 @@ class InMemoryRepo:
             txn["status"] = "open"
         return row
 
-    def _acquire_compliance_lock(self, transaction_id: str) -> None:
-        locked_at = self.compliance_locks.get(transaction_id)
-        if locked_at is not None:
-            age = (datetime.now(timezone.utc) - locked_at).total_seconds()
+    def _acquire_compliance_lock(self, transaction_id: str) -> str:
+        held = self.compliance_locks.get(transaction_id)
+        if held is not None:
+            age = (datetime.now(timezone.utc) - held["locked_at"]).total_seconds()
             if age < _COMPLIANCE_LOCK_STALE_SECONDS:
                 raise ComplianceRunInProgress(transaction_id)
-        self.compliance_locks[transaction_id] = datetime.now(timezone.utc)
+        token = str(uuid.uuid4())
+        self.compliance_locks[transaction_id] = {"locked_at": datetime.now(timezone.utc), "token": token}
+        return token
 
-    def _release_compliance_lock(self, transaction_id: str) -> None:
-        self.compliance_locks.pop(transaction_id, None)
+    def _release_compliance_lock(self, transaction_id: str, token: str) -> None:
+        # Fenced: only remove the lock if it's still ours (a reclaimer may have taken it).
+        held = self.compliance_locks.get(transaction_id)
+        if held is not None and held["token"] == token:
+            self.compliance_locks.pop(transaction_id, None)
 
     def apply_compliance_result(self, *, result, actor: str) -> dict[str, Any]:
-        self._acquire_compliance_lock(result.transaction_id)
+        token = self._acquire_compliance_lock(result.transaction_id)
         try:
             return self._apply_compliance_result_body(result=result, actor=actor)
         finally:
-            self._release_compliance_lock(result.transaction_id)
+            self._release_compliance_lock(result.transaction_id, token)
 
     def _apply_compliance_result_body(self, *, result, actor: str) -> dict[str, Any]:
         transaction_id = result.transaction_id

@@ -205,7 +205,8 @@ def test_concurrent_compliance_apply_is_rejected(client, tc_headers, repo):
     from datetime import datetime, timezone
 
     txn_id = _confirmed_deal(client, tc_headers, repo)
-    repo.compliance_locks[txn_id] = datetime.now(timezone.utc)  # an apply is in flight
+    # an apply is in flight (held by another process/token)
+    repo.compliance_locks[txn_id] = {"locked_at": datetime.now(timezone.utc), "token": "other"}
     r = client.post(
         f"/transactions/{txn_id}/compliance-result", json=_result(txn_id), headers=_headers()
     )
@@ -219,7 +220,10 @@ def test_stale_compliance_lock_is_reclaimed(client, tc_headers, repo):
     from datetime import datetime, timedelta, timezone
 
     txn_id = _confirmed_deal(client, tc_headers, repo)
-    repo.compliance_locks[txn_id] = datetime.now(timezone.utc) - timedelta(seconds=1000)
+    repo.compliance_locks[txn_id] = {
+        "locked_at": datetime.now(timezone.utc) - timedelta(seconds=1000),
+        "token": "crashed",
+    }
     r = client.post(
         f"/transactions/{txn_id}/compliance-result", json=_result(txn_id), headers=_headers()
     )
@@ -239,6 +243,21 @@ def test_compliance_lock_is_released_after_apply(client, tc_headers, repo):
         f"/transactions/{txn_id}/compliance-result", json=_result(txn_id), headers=_headers()
     )
     assert r.status_code == 201
+
+
+def test_release_is_fenced_by_token(repo):
+    """Review fix: after a slow holder's lock is reclaimed, that holder's later
+    release must NOT delete the NEW holder's lock (which would reopen the race)."""
+    from datetime import datetime, timedelta, timezone
+
+    token_a = repo._acquire_compliance_lock("txn-x")
+    # Age A's lock past the stale window, then B reclaims it → a new token.
+    repo.compliance_locks["txn-x"]["locked_at"] = datetime.now(timezone.utc) - timedelta(seconds=1000)
+    token_b = repo._acquire_compliance_lock("txn-x")
+    assert token_b != token_a
+
+    repo._release_compliance_lock("txn-x", token_a)  # A finally-releases with its stale token
+    assert repo.compliance_locks["txn-x"]["token"] == token_b  # B's lock survives
 
 
 def test_transaction_id_mismatch_is_409(client, tc_headers, repo):
