@@ -128,14 +128,21 @@ Full detail in `ADVERSARIAL_FINDINGS.md`, `RLS_FINDINGS.md`, `CONCURRENCY_FINDIN
   a normal real-estate workflow — not a data-integrity violation. Only restrict if the spec
   truly means "collaborators are strictly read-only, no uploads." Needs an owner decision before
   changing behavior (a wrong restriction breaks a legitimate flow).
-- **BUG-16 (P2, concurrency #4/#5) — orphans + retry-dup:** compensation deletes only the
-  document, leaving spurious risk_flags/parties; and the route's write_payload + derive_parties
-  + derive_tasks are un-compensated, so a retry re-inserts (no unique on `documents.external_ref`).
-- **BUG-17 (P2, concurrency #3) — stuck 'processing':** a non-graceful crash between `claim()`
-  and `release()` leaves an inbox item stuck in `processing` forever (drops from `list_open`).
-  Needs a reaper / timeout to reclaim. (claim() itself is a correct atomic CAS — no TOCTOU.)
-- **BUG-18 (P2, concurrency #6) — lost update on task completion** across a compliance re-run
-  (reads prior status, deletes, re-inserts as pending — a party's "done" in that window is lost).
+- **BUG-17 (P2, concurrency #3) — stuck 'processing'** ✅ FIXED. New `claimed_at` column
+  (migration `20260820000011`); `claim()` stamps it, and `list_open()` self-heals by reclaiming
+  any `processing` item claimed longer ago than the stale window (5 min) back to `pending` so it
+  resurfaces — a crashed confirm no longer strands an item invisibly. Test:
+  `test_stale_processing_item_is_reclaimed_into_the_queue`. (claim() is already a correct atomic CAS.)
+- **BUG-16 (P2, concurrency #4/#5) — orphans + retry-dup — STILL OPEN.** Compensation deletes only
+  the document, leaving spurious risk_flags/parties; and the route's write_payload + derive_parties
+  + derive_tasks are un-compensated, so a retry re-inserts (no `unique(transaction_id, external_ref)`
+  on documents). _Fix needs the unique constraint + idempotent conflict handling in write_payload
+  (detect an already-written external_ref and return it, not error) — a behavior change to design
+  carefully. Deferred as its own reviewed commit._
+- **BUG-18 (P2, concurrency #6) — lost update on task completion — STILL OPEN.** A compliance
+  re-run reads prior task status, deletes, re-inserts as pending — a party's "done" in that window
+  is lost. The BUG-13 lock serializes apply-vs-apply but NOT party-update-vs-apply, so this needs
+  the task carry-over to upsert by compute_key rather than delete+recreate. Deferred.
 
 ### Cleared / accepted
 - **Doc-type + signature spoofing (adversarial #2, P1-theoretical):** the §4 guard trusts the

@@ -10,12 +10,16 @@ import binascii
 import hashlib
 import os
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Protocol
 
 from app.common.db import ThreadLocalSupabase
 
 BUCKET = "ingestion-attachments"
+
+# An inbox item claimed (pending -> processing) longer ago than this is treated as
+# abandoned by a crashed confirm and reclaimed back to 'pending' (BUG-17).
+_INBOX_CLAIM_STALE_SECONDS = 300
 
 _SAFE_NAME = re.compile(r"[^A-Za-z0-9._-]")
 
@@ -196,6 +200,7 @@ class SupabaseInboxRepo:
             raise StorageUnavailable(f"attachment store failed ({type(exc).__name__})") from exc
 
     def list_open(self) -> list[dict[str, Any]]:
+        self._reclaim_stale_processing()
         return (
             self._db.table("ingestion_inbox")
             .select("*")
@@ -204,6 +209,17 @@ class SupabaseInboxRepo:
             .execute()
             .data
         )
+
+    def _reclaim_stale_processing(self) -> None:
+        """Return items stranded in 'processing' by a crashed confirm (claimed longer
+        ago than the stale window) back to 'pending' so they resurface (BUG-17).
+        Self-healing, like the compliance lock — no separate reaper job needed."""
+        cutoff = (
+            datetime.now(timezone.utc) - timedelta(seconds=_INBOX_CLAIM_STALE_SECONDS)
+        ).isoformat()
+        self._db.table("ingestion_inbox").update({"status": "pending", "claimed_at": None}).eq(
+            "status", "processing"
+        ).lt("claimed_at", cutoff).execute()
 
     def get(self, item_id: str) -> dict[str, Any] | None:
         rows = self._db.table("ingestion_inbox").select("*").eq("id", item_id).execute().data
@@ -234,10 +250,14 @@ class SupabaseInboxRepo:
         return rows[0] if rows else None
 
     def claim(self, item_id: str) -> dict[str, Any] | None:
-        return self._transition(item_id, "pending", {"status": "processing"})
+        return self._transition(
+            item_id,
+            "pending",
+            {"status": "processing", "claimed_at": datetime.now(timezone.utc).isoformat()},
+        )
 
     def release(self, item_id: str) -> dict[str, Any] | None:
-        return self._transition(item_id, "processing", {"status": "pending"})
+        return self._transition(item_id, "processing", {"status": "pending", "claimed_at": None})
 
     def mark_confirmed(self, item_id: str, transaction_id: str) -> dict[str, Any] | None:
         return self._transition(

@@ -11,11 +11,15 @@ from __future__ import annotations
 import base64
 import binascii
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from app.contracts.payload import Payload
-from app.ingestion.inbox_repo import StorageUnavailable, content_addressed_path
+from app.ingestion.inbox_repo import (
+    _INBOX_CLAIM_STALE_SECONDS,
+    StorageUnavailable,
+    content_addressed_path,
+)
 from app.master.routes import _MONEY_FIELD_NAME
 from tests.fake_repo import InMemoryRepo
 
@@ -89,12 +93,22 @@ class InMemoryInboxRepo:
             "confirmed_transaction_id": None,
             "created_at": _now(),
             "confirmed_at": None,
+            "claimed_at": None,
         }
         self.items[item["id"]] = item
         return item
 
     def list_open(self) -> list[dict[str, Any]]:
+        self._reclaim_stale_processing()
         return [i for i in self.items.values() if i["status"] in ("pending", "needs_manual")]
+
+    def _reclaim_stale_processing(self) -> None:
+        cutoff = datetime.now(timezone.utc) - timedelta(seconds=_INBOX_CLAIM_STALE_SECONDS)
+        for i in self.items.values():
+            claimed = i.get("claimed_at")
+            if i["status"] == "processing" and claimed and datetime.fromisoformat(claimed) < cutoff:
+                i["status"] = "pending"
+                i["claimed_at"] = None
 
     def get(self, item_id: str) -> dict[str, Any] | None:
         return self.items.get(item_id)
@@ -115,6 +129,7 @@ class InMemoryInboxRepo:
         if item["status"] != "pending":
             return None
         item["status"] = "processing"
+        item["claimed_at"] = _now()
         return item
 
     def release(self, item_id: str) -> dict[str, Any] | None:
@@ -122,6 +137,7 @@ class InMemoryInboxRepo:
         if item["status"] != "processing":
             return None
         item["status"] = "pending"
+        item["claimed_at"] = None
         return item
 
     def mark_confirmed(self, item_id: str, transaction_id: str) -> dict[str, Any] | None:

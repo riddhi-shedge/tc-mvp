@@ -61,6 +61,25 @@ def test_dedup_key_is_content_addressed_so_distinct_docs_never_collide():
     assert content_addressed_path("email", "doc.pdf", b"document-A-bytes") == p_a
 
 
+def test_stale_processing_item_is_reclaimed_into_the_queue(client, tc_headers, inbox):
+    """BUG-17: a confirm that crashed after claim() strands an item in 'processing',
+    invisible to the TC. list_open reclaims a stale claim so it resurfaces."""
+    from datetime import datetime, timedelta, timezone
+
+    item_id = _inbound_item(client)
+    inbox.claim(item_id)  # simulate an in-flight confirm
+    assert client.get("/ingestion/inbox", headers=tc_headers).json() == []  # hidden while processing
+
+    # Backdate the claim past the stale window (the confirming process "crashed").
+    inbox.items[item_id]["claimed_at"] = (
+        datetime.now(timezone.utc) - timedelta(seconds=1000)
+    ).isoformat()
+
+    open_ids = [i["id"] for i in client.get("/ingestion/inbox", headers=tc_headers).json()]
+    assert open_ids == [item_id]  # reclaimed → back in the queue
+    assert inbox.items[item_id]["status"] == "pending"
+
+
 def test_confirm_requires_auth(client):
     item_id = _inbound_item(client)
     r = client.post(f"/ingestion/inbox/{item_id}/confirm", json={"decision": "new"})
