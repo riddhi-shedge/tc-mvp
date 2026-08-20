@@ -6,12 +6,13 @@ sweeps + a multi-agent security/reliability probe, with fixes shipped as they we
 
 ## Readiness verdict
 
-**Meaningfully hardened; core guarantees verified; a few reliability items need an owner
-decision before this carries real client documents.** The extraction→confirm→SOR→timeline
-pipeline is sound and its safety controls are real (not just prompt-level). No cross-tenant
-data leak and no auto-send path exist. The remaining open items are concurrency/reliability
-edges — two of which need a small DB migration to close exactly — plus the AI-quality
-evaluation (P3), which has not yet been run against a live model on a ground-truth corpus.
+**Meaningfully hardened; core guarantees verified; extraction quality strong on synthetic
+evals; the main residual is applying two shipped migrations and broadening coverage.** The
+extraction→confirm→SOR→timeline pipeline is sound and its safety controls are real (not just
+prompt-level). No cross-tenant data leak and no auto-send path exist. Live-model evals show
+15/15 extraction accuracy, semantically consistent runs, and 6/6 injection defenses holding
+on the synthetic corpus. The two concurrency P1s (BUG-13, BUG-17) are now FIXED but ship with
+DB migrations (`20260820000010/11`) that must be applied to the hosted DB before deploy.
 
 ## What was done
 - **P1 — automated logic sweep** (deterministic, no API cost): a probe harness
@@ -68,11 +69,15 @@ evaluation (P3), which has not yet been run against a live model on a ground-tru
 - **BUG-18** a compliance re-run can revert a party's just-marked-`done` task (read→delete→re-insert
   window). _Fix: carry status via upsert keyed on compute_key rather than delete+recreate._
 
+## AI evals — DONE (bounded live-model, synthetic) — see `AI_EVALUATION.md`
+- **Accuracy 15/15** on the synthetic signed PA; **semantically consistent** across runs (only
+  cosmetic "17 days" vs "17" variation, normalized downstream); **6/6 injection defenses held**
+  (a PA carrying "ignore instructions / leak wiring / flip all_cash / reclassify" was resisted,
+  and the structural whitelist + `_WIRING_VALUE` guards would block anything that slipped).
+- Still to broaden: ground-truth corpus for the OTHER doc types (counters/CR/preapproval/prelim/
+  inspections), confidence calibration, and more injection payload variants (single stochastic run).
+
 ## Not yet tested — and how to test later
-- **P3 AI-quality evals (biggest gap):** extraction accuracy vs. a synthetic ground-truth corpus,
-  cross-run consistency, confidence calibration, and the doc-type/signature **injection** case
-  (adversarial #2 — the §4 guard trusts the model's self-report; the TC HITL confirm is the
-  backstop). Needs bounded, cost-capped live-model runs on ~8–12 synthetic CA documents.
 - **Messy-PDF robustness (#17):** 0-byte / non-PDF / password / scanned / multi-doc / huge files.
 - **Live RLS:** proven today only by 22 skipped DB-integration tests (a CI gap — the RLS policies
   aren't exercised because the backend bypasses them). Run that suite against a Supabase test env.
