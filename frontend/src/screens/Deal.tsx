@@ -113,13 +113,17 @@ export function Deal({ id, onBack }: { id: string; onBack: () => void }) {
     void refresh();
   }, [refresh]);
 
-  async function run(fn: () => Promise<unknown>, ok?: string) {
+  async function run(
+    fn: () => Promise<unknown>,
+    ok?: string | ((result: unknown) => { msg: string; error?: boolean } | null),
+  ) {
     setBusy(true);
     setError(null);
     try {
-      await fn();
+      const result = await fn();
       await refresh();
-      if (ok) toast(ok);
+      const t = typeof ok === "function" ? ok(result) : ok ? { msg: ok } : null;
+      if (t) toast(t.msg, t.error ? { error: true } : undefined);
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Request failed";
       setError(msg);
@@ -461,7 +465,17 @@ export function Deal({ id, onBack }: { id: string; onBack: () => void }) {
             onClick={() =>
               void run(
                 () => api.post(`/transactions/${id}/build-timeline`),
-                "Timeline built",
+                (res) => {
+                  // BUG-20: don't claim success on an empty build — reflect the
+                  // real deadline count the server returned.
+                  const n = Number((res as { deadlines?: number })?.deadlines ?? 0);
+                  return n > 0
+                    ? { msg: `Timeline built — ${n} deadline${n === 1 ? "" : "s"}` }
+                    : {
+                        msg: "No deadlines were computed — check the deal's dates and try again.",
+                        error: true,
+                      };
+                },
               )
             }
           >

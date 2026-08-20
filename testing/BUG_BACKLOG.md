@@ -187,12 +187,12 @@ Full detail in `ADVERSARIAL_FINDINGS.md`, `RLS_FINDINGS.md`, `CONCURRENCY_FINDIN
   raises a "no §5 fields could be read → enter manually" error when a pre-check-passing PA yields
   zero fields, instead of creating a deal with a placeholder address. Test:
   `test_zero_field_extraction_routes_to_manual`.
-- **BUG-20 (P2, A2) — "Build timeline" success toast on an empty build (frontend).** The UI always
-  toasts "Timeline built" and ignores the returned `deadlines` count; a zero-deadline build shows
-  green success with no timeline. _Fix: branch on the count._
-- **BUG-21 (P2, A3) — "Confirm all" bypasses low-confidence review (frontend).** Both bulk-confirm
-  buttons POST every unconfirmed id with no confidence gate; a TC can one-tap-confirm a
-  low-confidence deadline-driving date without opening the verify panel. _Fix: warn/flag on bulk-confirm._
+- **BUG-20 (P2, A2) — "Build timeline" success toast on an empty build (frontend)** ✅ FIXED. The
+  build now branches on the server's returned deadline count: "Timeline built — N deadlines" on
+  success, or an error toast "No deadlines were computed — check the deal's dates" on an empty build.
+- **BUG-21 (P2, A3) — "Confirm all" bypasses low-confidence review (frontend)** ✅ FIXED. When
+  unreviewed low-confidence fields exist, "Confirm all" now warns (they can drive the deal's
+  deadlines) and requires a conscious confirm before bulk-confirming them.
 - **BUG-25 (P2 theoretical, B8) — concatenated documents silently mis-extract.** Nothing detects a
   PA+counter merged into one PDF; a blended field set confirms into the SOR unflagged.
 - **BUG-26 (P3, A5/A6) — prototype-data labels (frontend).** "My Quarter" shows all-time figures

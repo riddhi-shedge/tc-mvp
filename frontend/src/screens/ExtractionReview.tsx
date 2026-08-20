@@ -123,6 +123,22 @@ export function ExtractionReview({
   const verifiedCount = total - unconfirmed;
   const needsReview = fields.filter((f) => f.confidence < CONF_THRESHOLD && !f.confirmed);
 
+  // BUG-21: "Confirm all" would otherwise one-tap-confirm low-confidence,
+  // deadline-driving fields without the TC ever opening the verify panel. Make
+  // that a conscious choice — warn before confirming unreviewed low-confidence values.
+  const confirmAllGuarded = () => {
+    if (
+      needsReview.length > 0 &&
+      !window.confirm(
+        `${needsReview.length} low-confidence field${needsReview.length === 1 ? " has" : "s have"} ` +
+          "not been reviewed. These can drive the deal's deadlines. Confirm all without checking them?",
+      )
+    ) {
+      return;
+    }
+    onConfirmAll();
+  };
+
   const resolved = (name: string): string | null => {
     const kw = FIELD_DEADLINE_KEYWORD[name];
     if (!kw) return null;
@@ -233,7 +249,7 @@ export function ExtractionReview({
             </div>
           </div>
           {unconfirmed > 0 && (
-            <button className="gold" disabled={busy} onClick={onConfirmAll}>
+            <button className="gold" disabled={busy} onClick={confirmAllGuarded}>
               {busy ? "…" : `✓ Confirm all (${unconfirmed})`}
             </button>
           )}
