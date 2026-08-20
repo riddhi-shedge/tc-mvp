@@ -193,10 +193,13 @@ Full detail in `ADVERSARIAL_FINDINGS.md`, `RLS_FINDINGS.md`, `CONCURRENCY_FINDIN
 - **BUG-21 (P2, A3) — "Confirm all" bypasses low-confidence review (frontend)** ✅ FIXED. When
   unreviewed low-confidence fields exist, "Confirm all" now warns (they can drive the deal's
   deadlines) and requires a conscious confirm before bulk-confirming them.
-- **BUG-25 (P2 theoretical, B8) — concatenated documents silently mis-extract.** Nothing detects a
-  PA+counter merged into one PDF; a blended field set confirms into the SOR unflagged.
-- **BUG-26 (P3, A5/A6) — prototype-data labels (frontend).** "My Quarter" shows all-time figures
-  under a hardcoded "Q3 2025" label; the Admin KPI row is unmarked synthetic (screen is PROTOTYPE-tagged).
+- **BUG-25 (P2 theoretical, B8) — concatenated documents silently mis-extract — STILL OPEN.** Nothing
+  detects a PA+counter merged into one PDF; a blended field set confirms into the SOR unflagged.
+  _Needs a detection heuristic (e.g. multiple signature blocks / doc-type markers) — deferred._
+- **BUG-26 (P3, A5/A6) — prototype-data labels (frontend)** ✅ PARTIAL. "My Quarter" no longer shows a
+  stale hardcoded "Q3 2025"; it computes the current quarter. The deeper item (figures are all-time,
+  not quarter-scoped; the Admin KPI row) is a product decision on demo screens — left as-is (the
+  whole Admin screen is already PROTOTYPE-tagged).
 
 ### Gracefully handled (no bug)
 0-byte attachments, encrypted/owner-password PDFs (`decrypt_pdf` safe on a bad password), the

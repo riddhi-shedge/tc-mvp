@@ -30,6 +30,10 @@ function fmtM(n: number): string {
 export function Quarter() {
   const [deals, setDeals] = useState<DealSummary[]>([]);
   const [loaded, setLoaded] = useState(false);
+  // BUG-26: don't hardcode a stale quarter. Figures are all-time until quarter
+  // history lands; label the CURRENT quarter rather than a fixed past one.
+  const now = new Date();
+  const quarterLabel = `Q${Math.floor(now.getMonth() / 3) + 1} ${now.getFullYear()}`;
 
   const load = useCallback(async () => {
     try {
@@ -69,7 +73,7 @@ export function Quarter() {
       <div className="qtr-head">
         <div>
           <h1>Your quarter</h1>
-          <div className="muted">Q3 2025 · your personal performance — visible only to you</div>
+          <div className="muted">{quarterLabel} · your personal performance — visible only to you</div>
         </div>
         <div className="seg-static">
           <span className="on">This quarter</span>

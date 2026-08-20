@@ -91,11 +91,18 @@ DB migrations (`20260820000010/11`) that must be applied to the hosted DB before
   of `_WIRING_VALUE` is a recommended follow-up.
 
 ## Robustness pass (C probe) — DONE — see `UX_ROBUSTNESS_FINDINGS.md`
-Fixed the P1 (BUG-19 multi-attachment loss) + BUG-24 (size cap). Open, triaged: precheck runs
-for PAs only (BUG-23), a zero-field PA makes a hollow deal (BUG-22), a success toast on an empty
-timeline build (BUG-20, frontend), "Confirm all" can bypass low-confidence review (BUG-21,
-frontend), concatenated-doc mis-extract (BUG-25), prototype-data labels (BUG-26). Gracefully
+Fixed: **BUG-19** (P1 multi-attachment loss), **BUG-24** (size cap), **BUG-23** (precheck now runs
+for ALL doc types — the §4 "never guess" guarantee covers counters/CR/preapproval/prelim/inspection,
+not just PAs), **BUG-22** (a zero-field PA routes to manual instead of a hollow deal), **BUG-20**
+(build-timeline reports the real deadline count / errors on an empty build), **BUG-21** ("Confirm
+all" warns before confirming unreviewed low-confidence fields), **BUG-26** (current-quarter label,
+no stale "Q3 2025"). Still open (design-heavy): concatenated-doc detection (BUG-25). Gracefully
 handled already: 0-byte / encrypted / truncated / non-PDF all route to needs_manual.
+
+**Final tally: 16 bugs fixed (4 P1s) across P1 sweeps, the P2 security probes, and A/B/C —
+all with regression tests; backend 435 pass; frontend builds clean; ~20 commits pushed.**
+Remaining are triaged in `BUG_BACKLOG.md`: BUG-16/18 (crash-safety, need a migration),
+BUG-25 (concatenated docs), BUG-15 (product call), and low/accepted items.
 
 ## Sprint recommendation
 - **NOW:** apply the two shipped migrations (`20260820000010/11`) to the hosted DB before the
