@@ -7,6 +7,7 @@ Supabase service-role key: backend only, never exposed to a frontend.
 
 from __future__ import annotations
 
+import logging
 import os
 import re
 import uuid
@@ -27,6 +28,8 @@ from app.contracts.payload import (
 from app.master.deal_tasks import derive_tasks
 from app.master.inconsistency import CRITICAL_FIELDS, MATERIAL_FIELDS, find_field_conflicts
 from app.master.parties import derive_parties, party_key, tier_for
+
+_log = logging.getLogger(__name__)
 
 
 class TimelineAlreadyExists(Exception):
@@ -1322,13 +1325,25 @@ class SupabaseRepo:
         # per deal, so older PA documents (and their cascaded payloads + fields) are
         # removed rather than piling up. This runs ONLY after the new PA fully landed
         # (outside the try): a mid-write failure above leaves the OLD PA intact
-        # (compensation removed just the new doc), and a failure of this delete
-        # leaves two PAs — recoverable, and `_effective_fields` precedence still
-        # resolves correctly — never a deal with zero purchase agreements.
+        # (compensation removed just the new doc), never a deal with zero PAs.
+        #
+        # The new PA is already durable here, so a failure of the supersede-delete
+        # must NOT propagate: re-raising would return a spurious 500 (the write
+        # succeeded), skip the caller's party/task derivation, and invite a retry
+        # that inserts a THIRD PA. Instead we degrade to the intended "two PAs"
+        # state (recoverable, `_effective_fields` precedence resolves the newest)
+        # and log it for reconciliation.
         if payload.document_type == "purchase_agreement":
-            self._db.table("documents").delete().eq(
-                "transaction_id", transaction_id
-            ).eq("doc_type", "purchase_agreement").neq("id", doc["id"]).execute()
+            try:
+                self._db.table("documents").delete().eq(
+                    "transaction_id", transaction_id
+                ).eq("doc_type", "purchase_agreement").neq("id", doc["id"]).execute()
+            except Exception:
+                _log.warning(
+                    "write_payload: PA supersede-delete failed for txn=%s; the new PA "
+                    "is committed and a prior PA remains (resolved by precedence).",
+                    transaction_id,
+                )
 
         return row
 

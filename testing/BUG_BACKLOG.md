@@ -93,6 +93,10 @@ Full detail in `ADVERSARIAL_FINDINGS.md`, `RLS_FINDINGS.md`, `CONCURRENCY_FINDIN
   the try succeeds ("land the new, then remove the old", like `apply_compliance_result`): a
   mid-write failure now leaves the old PA intact; a failed delete leaves two PAs (recoverable,
   precedence-resolved) — never zero. Test: `test_reupload_leaves_exactly_one_purchase_agreement`.
+  **Review follow-up (folded in):** the relocated delete is now wrapped in its own try/except
+  that logs and does NOT re-raise — so a failed supersede degrades to the intended "two PAs"
+  state instead of a spurious 500 that would skip party/task derivation and invite a retry
+  inserting a third PA. (`apply_compliance_result` has the same pre-existing post-try gap → BUG-16.)
 - **BUG-12 (P2, adversarial #4) — lender_contact_email/phone not on the §5 whitelist** ✅ FIXED.
   The extractor creates these from a preapproval's loan officer, but they were off-whitelist →
   the whole payload 422'd (silent feature break). Added both (mirroring buyer/listing agent
