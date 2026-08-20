@@ -18,8 +18,10 @@ from app.master.parties import derive_parties, party_key, tier_for
 from app.master.repo import (
     _STUB_DRAFT_BODY,
     _STUB_DRAFT_SUBJECT,
+    _COMPLIANCE_LOCK_STALE_SECONDS,
     _STUB_DRAFT_WHY,
     _STUB_TIMELINE,
+    ComplianceRunInProgress,
     DeadlineFieldsUnconfirmed,
     MessageNotSendable,
     NoPayloadForManualField,
@@ -49,6 +51,8 @@ class InMemoryRepo:
         self.risk_flags: list[dict[str, Any]] = []
         self.reminders: list[dict[str, Any]] = []
         self.audit_log: list[dict[str, Any]] = []
+        # transaction_id -> locked_at (mirrors the compliance_apply_lock table).
+        self.compliance_locks: dict[str, datetime] = {}
 
     def add_party(self, *, transaction_id: str, name: str, role: str) -> dict[str, Any]:
         """Test helper — party CRUD arrives in a later phase."""
@@ -1071,7 +1075,25 @@ class InMemoryRepo:
             txn["status"] = "open"
         return row
 
+    def _acquire_compliance_lock(self, transaction_id: str) -> None:
+        locked_at = self.compliance_locks.get(transaction_id)
+        if locked_at is not None:
+            age = (datetime.now(timezone.utc) - locked_at).total_seconds()
+            if age < _COMPLIANCE_LOCK_STALE_SECONDS:
+                raise ComplianceRunInProgress(transaction_id)
+        self.compliance_locks[transaction_id] = datetime.now(timezone.utc)
+
+    def _release_compliance_lock(self, transaction_id: str) -> None:
+        self.compliance_locks.pop(transaction_id, None)
+
     def apply_compliance_result(self, *, result, actor: str) -> dict[str, Any]:
+        self._acquire_compliance_lock(result.transaction_id)
+        try:
+            return self._apply_compliance_result_body(result=result, actor=actor)
+        finally:
+            self._release_compliance_lock(result.transaction_id)
+
+    def _apply_compliance_result_body(self, *, result, actor: str) -> dict[str, Any]:
         transaction_id = result.transaction_id
         rows = [
             {"name": f["name"], "confirmed": f["confirmed"]}

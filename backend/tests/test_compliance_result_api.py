@@ -198,6 +198,49 @@ def test_rerun_removes_a_deadline_no_longer_computed(client, tc_headers, repo):
     assert not [f for f in state["risk_flags"] if f.get("case_key") == "missing_escrow_contact"]
 
 
+def test_concurrent_compliance_apply_is_rejected(client, tc_headers, repo):
+    """BUG-13: while one apply holds the per-deal lock (the daily scheduler sweep),
+    a second concurrent apply (a manual re-run) is rejected — instead of the two
+    mutually deleting each other's timeline rows into a torn/empty state."""
+    from datetime import datetime, timezone
+
+    txn_id = _confirmed_deal(client, tc_headers, repo)
+    repo.compliance_locks[txn_id] = datetime.now(timezone.utc)  # an apply is in flight
+    r = client.post(
+        f"/transactions/{txn_id}/compliance-result", json=_result(txn_id), headers=_headers()
+    )
+    assert r.status_code == 409
+    assert "in progress" in r.json()["detail"].lower()
+
+
+def test_stale_compliance_lock_is_reclaimed(client, tc_headers, repo):
+    """A lock left by a crashed apply (older than the stale window) is reclaimed, so
+    a non-graceful crash can't wedge a deal's timeline forever."""
+    from datetime import datetime, timedelta, timezone
+
+    txn_id = _confirmed_deal(client, tc_headers, repo)
+    repo.compliance_locks[txn_id] = datetime.now(timezone.utc) - timedelta(seconds=1000)
+    r = client.post(
+        f"/transactions/{txn_id}/compliance-result", json=_result(txn_id), headers=_headers()
+    )
+    assert r.status_code == 201
+    assert txn_id not in repo.compliance_locks  # released after the apply
+
+
+def test_compliance_lock_is_released_after_apply(client, tc_headers, repo):
+    """A normal apply releases its lock, so the next run (or the daily sweep) proceeds."""
+    txn_id = _confirmed_deal(client, tc_headers, repo)
+    client.post(
+        f"/transactions/{txn_id}/compliance-result", json=_result(txn_id), headers=_headers()
+    )
+    assert txn_id not in repo.compliance_locks
+    # A second, sequential apply now succeeds (lock is free).
+    r = client.post(
+        f"/transactions/{txn_id}/compliance-result", json=_result(txn_id), headers=_headers()
+    )
+    assert r.status_code == 201
+
+
 def test_transaction_id_mismatch_is_409(client, tc_headers, repo):
     txn_id = _confirmed_deal(client, tc_headers, repo)
     r = client.post(

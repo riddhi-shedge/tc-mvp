@@ -50,6 +50,7 @@ from app.master.mailer import (
 )
 from app.master.repo import (
     DEAL_STAGES,
+    ComplianceRunInProgress,
     DeadlineFieldsUnconfirmed,
     MasterRepo,
     MessageNotSendable,
@@ -1041,6 +1042,13 @@ def apply_compliance_result(
                 "BLOCKED: compliance cannot run until every deadline-driving field "
                 f"is TC-confirmed (§11). Unconfirmed or missing: {', '.join(exc.field_names)}."
             ),
+        ) from None
+    except ComplianceRunInProgress:
+        # Another apply holds this deal (scheduler vs. manual re-run). Idempotent —
+        # back off; the in-flight run produces the same result.
+        raise HTTPException(
+            status_code=409,
+            detail="A compliance run is already in progress for this deal; retry shortly.",
         ) from None
 
 

@@ -47,6 +47,17 @@ class DeadlineFieldsUnconfirmed(Exception):
         super().__init__(", ".join(field_names))
 
 
+class ComplianceRunInProgress(Exception):
+    """Another compliance apply is already running for this deal (the daily
+    scheduler racing a manual re-run). The caller should back off and retry —
+    applies are idempotent, so nothing is lost by waiting for the in-flight one."""
+
+
+# A compliance apply lock older than this is treated as abandoned (its process
+# crashed) and may be reclaimed, so a non-graceful crash can't wedge a deal.
+_COMPLIANCE_LOCK_STALE_SECONDS = 300
+
+
 def _deadline_gate_state(rows: list[dict[str, Any]]) -> dict[str, Any]:
     """The timeline-readiness breakdown for the UI (and the "Build timeline"
     pre-check): which deadline-driving §5 fields are MISSING (no row at all —
@@ -2091,7 +2102,50 @@ class SupabaseRepo:
         rows = self._db.table("parties").select("email").eq("id", party_id).execute().data
         return rows[0]["email"] if rows and rows[0].get("email") else None
 
+    def _acquire_compliance_lock(self, transaction_id: str) -> None:
+        existing = (
+            self._db.table("compliance_apply_lock")
+            .select("locked_at")
+            .eq("transaction_id", transaction_id)
+            .execute()
+            .data
+        )
+        if existing:
+            locked_at = datetime.fromisoformat(existing[0]["locked_at"])
+            age = (datetime.now(timezone.utc) - locked_at).total_seconds()
+            if age < _COMPLIANCE_LOCK_STALE_SECONDS:
+                raise ComplianceRunInProgress(transaction_id)
+            # Stale (the holding process crashed before releasing) — reclaim it.
+            self._db.table("compliance_apply_lock").delete().eq(
+                "transaction_id", transaction_id
+            ).execute()
+        try:
+            self._db.table("compliance_apply_lock").insert(
+                {"transaction_id": transaction_id}
+            ).execute()
+        except Exception as exc:
+            # Lost the race: a concurrent apply inserted the lock between our check
+            # and this insert (the PK rejects the duplicate). Back off — it has the deal.
+            raise ComplianceRunInProgress(transaction_id) from exc
+
+    def _release_compliance_lock(self, transaction_id: str) -> None:
+        self._db.table("compliance_apply_lock").delete().eq(
+            "transaction_id", transaction_id
+        ).execute()
+
     def apply_compliance_result(self, *, result: ComplianceResult, actor: str) -> dict[str, Any]:
+        # Serialize applies per deal (BUG-13): the daily scheduler sweep and a
+        # manual re-run both hit this endpoint; without the lock, two overlapping
+        # applies delete each other's timeline rows (torn/empty timeline).
+        self._acquire_compliance_lock(result.transaction_id)
+        try:
+            return self._apply_compliance_result_body(result=result, actor=actor)
+        finally:
+            self._release_compliance_lock(result.transaction_id)
+
+    def _apply_compliance_result_body(
+        self, *, result: ComplianceResult, actor: str
+    ) -> dict[str, Any]:
         transaction_id = result.transaction_id
         # The §11 gate holds here too: no unconfirmed/missing deadline-driving
         # field may drive a Deadline/Task.
