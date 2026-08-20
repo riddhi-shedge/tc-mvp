@@ -144,8 +144,13 @@ Full detail in `ADVERSARIAL_FINDINGS.md`, `RLS_FINDINGS.md`, `CONCURRENCY_FINDIN
   on `documents(transaction_id, external_ref)` (migration `20260820000012`) + idempotent handling in
   `write_payload`: an existing document for the source id returns its already-written payload rather
   than inserting a second, and a concurrent duplicate insert (23505) is caught and resolved to the
-  winner's payload. Test: `test_write_payload_is_idempotent_on_retry`. (The related orphan-on-
-  compensation sub-issue — a failed write leaving stray flags/parties — is narrower; still open.)
+  winner's payload. Tests: `test_write_payload_is_idempotent_on_retry`, `test_party_can_upload_multiple_documents`.
+  **Review follow-ups (folded in):** the reviewer caught that `external_ref` is overloaded —
+  `add_party_document` reuses `'party:<id>'` for every party upload, so a naive unique index would
+  reject a party's 2nd upload (and a "de-dupe first" migration could delete real docs). The index now
+  EXCLUDES `'party:%'`. Also self-heals an orphan document (a prior compensating delete that itself
+  failed) instead of permanently blocking the source id; payload lookups take `.limit(1)`. (The
+  orphan-on-compensation stray flags/parties sub-issue is narrower; still open.)
 - **BUG-18 (P2, concurrency #6) — lost update on task completion — STILL OPEN (design documented).**
   A compliance re-run reads prior task status once at the start, then deletes+recreates; a party's
   "done" marked in that window is reverted. BUG-13's lock serializes apply-vs-apply but not

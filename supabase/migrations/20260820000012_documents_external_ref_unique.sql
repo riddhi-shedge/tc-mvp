@@ -7,12 +7,17 @@
 --
 -- A partial unique index on (transaction_id, external_ref) makes the duplicate
 -- insert fail fast (23505); write_payload catches that and returns the already-
--- written payload instead (idempotent). NULL external_refs stay distinct (a doc
--- with no source id is never deduped), which is why this is a PARTIAL index.
+-- written payload instead (idempotent). NULL external_refs stay distinct.
 --
--- NOTE: if the pre-fix bug already produced duplicate (transaction_id, external_ref)
--- rows in a given database, de-duplicate them before applying this index.
+-- IMPORTANT: `external_ref` is overloaded. write_payload sets it to the SOURCE
+-- document id (what we want unique per deal), but add_party_document sets it to
+-- 'party:<party_id>' as an ATTRIBUTION tag that legitimately repeats (a party may
+-- upload several documents). The index therefore EXCLUDES 'party:%' refs — it
+-- constrains only real source documents, and never rejects a party's Nth upload.
+--
+-- NOTE: only the source-document rows are constrained, so this cannot fail on (or
+-- require de-duping) legitimate repeated party-upload rows.
 
 create unique index if not exists documents_txn_external_ref_uidx
   on public.documents (transaction_id, external_ref)
-  where external_ref is not null;
+  where external_ref is not null and external_ref not like 'party:%';

@@ -1059,10 +1059,11 @@ class SupabaseRepo:
     def write_payload(self, *, transaction_id: str, payload: Payload, actor: str) -> dict[str, Any]:
         # Idempotent on the source document id (BUG-16): the confirm route may retry
         # after a post-write step failed. write_payload compensates the document on
-        # any internal failure, so an EXISTING document for this external_ref means a
-        # prior call fully completed — return its payload instead of writing a second
-        # one. The unique index on (transaction_id, external_ref) also fails a
-        # concurrent duplicate insert fast (caught below).
+        # any internal failure, so an EXISTING document WITH a payload means a prior
+        # call fully completed — return that payload instead of writing a second one.
+        # (`document_id` is always set — Payload.document_id is min_length=1 — so this
+        # guard is defensive; it also skips the 'party:<id>' attribution refs that
+        # add_party_document reuses and the unique index deliberately excludes.)
         if payload.document_id:
             prior = (
                 self._db.table("documents")
@@ -1077,11 +1078,16 @@ class SupabaseRepo:
                     self._db.table("payloads")
                     .select("*")
                     .eq("document_id", prior[0]["id"])
+                    .order("created_at")
+                    .limit(1)
                     .execute()
                     .data
                 )
                 if existing_payload:
                     return existing_payload[0]
+                # Orphan document (a prior compensating delete itself failed): remove
+                # it so this write isn't permanently blocked by the unique index.
+                self._db.table("documents").delete().eq("id", prior[0]["id"]).execute()
         # Compensated like create_transaction: deleting the document cascades
         # the payload and extracted fields if any later step fails.
         try:
@@ -1110,12 +1116,15 @@ class SupabaseRepo:
                 )
                 existing = (
                     self._db.table("payloads").select("*")
-                    .eq("document_id", prior[0]["id"]).execute().data
+                    .eq("document_id", prior[0]["id"])
+                    .order("created_at").limit(1).execute().data
                     if prior
                     else []
                 )
                 if existing:
                     return existing[0]
+                # Winner hasn't landed its payload yet (or it's an orphan): re-raise
+                # as transient — the next retry's early-return resolves or heals it.
             raise
         try:
             row = (

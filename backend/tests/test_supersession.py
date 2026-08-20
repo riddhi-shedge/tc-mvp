@@ -120,6 +120,28 @@ def test_write_payload_is_idempotent_on_retry():
     assert len([f for f in state["extracted_fields"] if f["name"] == "purchase_price"]) == 1
 
 
+def test_party_can_upload_multiple_documents():
+    """Regression (BUG-16 review): the source-document idempotency / unique index
+    must NOT collapse a party's repeated uploads — external_ref='party:<id>' is an
+    attribution tag that legitimately repeats (an inspector uploads more than once)."""
+    import base64
+
+    repo = InMemoryRepo()
+    tid = repo.create_transaction(property_address="1 Party St", actor="tc")["id"]
+    party = repo.add_party(transaction_id=tid, name="Inspector Ives", role="inspector_general")
+    b64 = base64.b64encode(b"synthetic").decode()
+    d1 = repo.add_party_document(
+        transaction_id=tid, party_id=party["id"], filename="r1.pdf",
+        content_base64=b64, doc_type="inspection_report", actor="party",
+    )
+    d2 = repo.add_party_document(
+        transaction_id=tid, party_id=party["id"], filename="r2.pdf",
+        content_base64=b64, doc_type="inspection_report", actor="party",
+    )
+    assert d1["id"] != d2["id"]
+    assert len(repo.get_full_state(tid)["documents"]) == 2
+
+
 def test_no_counter_leaves_pa_value_effective():
     repo = InMemoryRepo()
     tid = repo.create_transaction(property_address="1 Solo St", actor="tc")["id"]
