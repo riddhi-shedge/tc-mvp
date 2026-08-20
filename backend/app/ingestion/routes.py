@@ -400,6 +400,14 @@ def _extract_counter(
             "The document is password-protected",
             ["the PDF requires a password to open — upload an unlocked copy"],
         )
+    # §4 "never guess" applies to EVERY doc type, not just the PA (BUG-23): a
+    # scanned/no-text or non-PDF counter/CR/preapproval/prelim/inspection must
+    # route to manual entry rather than being guessed at by the model.
+    reasons = precheck_pdf(readable, expect_purchase_agreement=False)
+    if reasons:
+        raise _extraction_error(
+            "The document failed pre-checks — extraction was not attempted", reasons
+        )
     try:
         result = extractor.extract(pdf_bytes=readable, doc_type="seller_counter_offer")
         meta = extractor.extract_counter_meta(pdf_bytes=readable)
@@ -438,6 +446,14 @@ def _extract_contingency_removal_fields(
         raise _extraction_error(
             "The document is password-protected",
             ["the PDF requires a password to open — upload an unlocked copy"],
+        )
+    # §4 "never guess" applies to EVERY doc type, not just the PA (BUG-23): a
+    # scanned/no-text or non-PDF counter/CR/preapproval/prelim/inspection must
+    # route to manual entry rather than being guessed at by the model.
+    reasons = precheck_pdf(readable, expect_purchase_agreement=False)
+    if reasons:
+        raise _extraction_error(
+            "The document failed pre-checks — extraction was not attempted", reasons
         )
     try:
         cr = extractor.extract_contingency_removal(pdf_bytes=readable)
@@ -489,6 +505,14 @@ def _extract_preapproval(
             "The document is password-protected",
             ["the PDF requires a password to open — upload an unlocked copy"],
         )
+    # §4 "never guess" applies to EVERY doc type, not just the PA (BUG-23): a
+    # scanned/no-text or non-PDF counter/CR/preapproval/prelim/inspection must
+    # route to manual entry rather than being guessed at by the model.
+    reasons = precheck_pdf(readable, expect_purchase_agreement=False)
+    if reasons:
+        raise _extraction_error(
+            "The document failed pre-checks — extraction was not attempted", reasons
+        )
     try:
         pa = extractor.extract_preapproval(pdf_bytes=readable)
     except ExtractionBlocked as exc:
@@ -537,6 +561,14 @@ def _extract_preliminary(
             "The document is password-protected",
             ["the PDF requires a password to open — upload an unlocked copy"],
         )
+    # §4 "never guess" applies to EVERY doc type, not just the PA (BUG-23): a
+    # scanned/no-text or non-PDF counter/CR/preapproval/prelim/inspection must
+    # route to manual entry rather than being guessed at by the model.
+    reasons = precheck_pdf(readable, expect_purchase_agreement=False)
+    if reasons:
+        raise _extraction_error(
+            "The document failed pre-checks — extraction was not attempted", reasons
+        )
     try:
         pr = extractor.extract_preliminary(pdf_bytes=readable)
     except ExtractionBlocked as exc:
@@ -568,6 +600,14 @@ def _extract_inspection(
         raise _extraction_error(
             "The document is password-protected",
             ["the PDF requires a password to open — upload an unlocked copy"],
+        )
+    # §4 "never guess" applies to EVERY doc type, not just the PA (BUG-23): a
+    # scanned/no-text or non-PDF counter/CR/preapproval/prelim/inspection must
+    # route to manual entry rather than being guessed at by the model.
+    reasons = precheck_pdf(readable, expect_purchase_agreement=False)
+    if reasons:
+        raise _extraction_error(
+            "The document failed pre-checks — extraction was not attempted", reasons
         )
     try:
         insp = extractor.extract_inspection(pdf_bytes=readable)
@@ -646,6 +686,16 @@ def _extract_pa_fields(
             [
                 "the document does not appear to be a signed copy — verify it is "
                 "executed; to proceed deliberately, enter the fields manually"
+            ],
+        )
+    if not result.fields:
+        # Passed pre-checks (has pages + a text layer) yet nothing mapped — don't
+        # create a hollow deal with a placeholder address (BUG-22); route to manual.
+        raise _extraction_error(
+            "No fields could be read from this document",
+            [
+                "the document passed pre-checks but no §5 fields were extracted — "
+                "enter the fields manually, or upload a clearer copy"
             ],
         )
     return result.fields, result.subject_to_counter_offer

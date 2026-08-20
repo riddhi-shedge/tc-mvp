@@ -61,6 +61,28 @@ def test_bad_scan_routes_everything_to_manual(client, tc_headers, repo, inbox):
     assert inbox.items[item_id]["status"] == "pending"  # claim released — retryable
 
 
+def test_precheck_guards_non_pa_documents(inbox):
+    """BUG-23: the §4 precheck now runs for EVERY doc type, not just the PA — a
+    scanned counter offer with no text layer routes to manual (422), never guessed."""
+    import pytest
+    from fastapi import HTTPException
+
+    from app.ingestion.routes import _extract_counter
+    from tests.fake_extractor import FakeExtractor
+
+    path = inbox.store_attachment(
+        source="email",
+        filename="counter.pdf",
+        content_base64=base64.standard_b64encode(
+            (FIXTURES / "synthetic_scan_no_text.pdf").read_bytes()
+        ).decode(),
+    )
+    with pytest.raises(HTTPException) as exc:
+        _extract_counter({"storage_path": path}, inbox, FakeExtractor())
+    assert exc.value.status_code == 422
+    assert any("text layer" in r for r in exc.value.detail["reasons"])
+
+
 def test_truncated_pa_reports_missing_pages(client, tc_headers, repo):
     truncated_b64 = base64.standard_b64encode(
         (FIXTURES / "synthetic_pa_truncated.pdf").read_bytes()
@@ -72,6 +94,17 @@ def test_truncated_pa_reports_missing_pages(client, tc_headers, repo):
     r = _confirm(client, tc_headers, item_id)
     assert r.status_code == 422
     assert any("missing pages" in reason for reason in r.json()["detail"]["reasons"])
+
+
+def test_zero_field_extraction_routes_to_manual(client, tc_headers, repo, extractor):
+    """BUG-22: a PA that passes pre-checks but yields NO §5 fields must not create a
+    hollow deal with a placeholder address — it routes to manual, nothing committed."""
+    extractor.fields = []
+    item_id = _inbound_item(client)
+    r = _confirm(client, tc_headers, item_id)
+    assert r.status_code == 422
+    assert any("§5 fields" in reason for reason in r.json()["detail"]["reasons"])
+    assert repo.transactions == {}  # no hollow deal
 
 
 def test_wrong_doc_type_is_flagged_not_guessed(client, tc_headers, repo, extractor):

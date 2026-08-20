@@ -179,13 +179,14 @@ Full detail in `ADVERSARIAL_FINDINGS.md`, `RLS_FINDINGS.md`, `CONCURRENCY_FINDIN
   (cost/memory/DoS). Test added to the readability parametrize.
 
 ### Open (triaged)
-- **BUG-23 (P2, B1) — pre-check is purchase-agreement-ONLY.** `precheck_pdf` runs only in
-  `_extract_pa_fields`; the counter/CR/preapproval/prelim/inspection paths skip it and hit the
-  model directly, so a scanned/no-text inspection or title report (a common real case) isn't
-  routed to `needs_manual`. _Fix: run the precheck for every doc type before extraction._
-- **BUG-22 (P2, A4) — zero-field PA creates a hollow deal.** No empty-list guard in
-  `_extract_pa_fields`; a text-bearing PA that yields no §5 fields makes a real deal with a
-  placeholder address and only the generic empty state — never a "couldn't read this" message.
+- **BUG-23 (P2, B1) — pre-check was purchase-agreement-ONLY** ✅ FIXED. The precheck now runs
+  (`expect_purchase_agreement=False`) in the counter/CR/preapproval/prelim/inspection paths too,
+  so a scanned/no-text or non-PDF of any type routes to `needs_manual` — the §4 "never guess"
+  guarantee now covers every doc type. Test: `test_precheck_guards_non_pa_documents`.
+- **BUG-22 (P2, A4) — zero-field PA created a hollow deal** ✅ FIXED. `_extract_pa_fields` now
+  raises a "no §5 fields could be read → enter manually" error when a pre-check-passing PA yields
+  zero fields, instead of creating a deal with a placeholder address. Test:
+  `test_zero_field_extraction_routes_to_manual`.
 - **BUG-20 (P2, A2) — "Build timeline" success toast on an empty build (frontend).** The UI always
   toasts "Timeline built" and ignores the returned `deadlines` count; a zero-deadline build shows
   green success with no timeline. _Fix: branch on the count._
