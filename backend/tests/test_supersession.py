@@ -101,6 +101,25 @@ def test_unconfirmed_counter_never_supersedes_the_confirmed_pa():
     assert repo.get_full_state(tid)["effective_fields"]["purchase_price"]["value"] == "$1,800,000"
 
 
+def test_write_payload_is_idempotent_on_retry():
+    """BUG-16: the confirm route may retry after a post-write step failed. A second
+    write_payload with the SAME source document_id must return the already-written
+    payload — not create a duplicate document / duplicate fields."""
+    repo = InMemoryRepo()
+    tid = repo.create_transaction(property_address="1 Retry St", actor="tc")["id"]
+    p = Payload(
+        document_id="doc-A", transaction_id=tid,
+        extracted_fields=[_price_field("$900,000")], document_type="purchase_agreement",
+    )
+    first = repo.write_payload(transaction_id=tid, payload=p, actor="tc")
+    second = repo.write_payload(transaction_id=tid, payload=p, actor="tc")
+
+    assert first["id"] == second["id"]  # same payload returned, not a new one
+    state = repo.get_full_state(tid)
+    assert len(state["documents"]) == 1
+    assert len([f for f in state["extracted_fields"] if f["name"] == "purchase_price"]) == 1
+
+
 def test_no_counter_leaves_pa_value_effective():
     repo = InMemoryRepo()
     tid = repo.create_transaction(property_address="1 Solo St", actor="tc")["id"]

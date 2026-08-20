@@ -140,16 +140,19 @@ Full detail in `ADVERSARIAL_FINDINGS.md`, `RLS_FINDINGS.md`, `CONCURRENCY_FINDIN
   any `processing` item claimed longer ago than the stale window (5 min) back to `pending` so it
   resurfaces — a crashed confirm no longer strands an item invisibly. Test:
   `test_stale_processing_item_is_reclaimed_into_the_queue`. (claim() is already a correct atomic CAS.)
-- **BUG-16 (P2, concurrency #4/#5) — orphans + retry-dup — STILL OPEN.** Compensation deletes only
-  the document, leaving spurious risk_flags/parties; and the route's write_payload + derive_parties
-  + derive_tasks are un-compensated, so a retry re-inserts (no `unique(transaction_id, external_ref)`
-  on documents). _Fix needs the unique constraint + idempotent conflict handling in write_payload
-  (detect an already-written external_ref and return it, not error) — a behavior change to design
-  carefully. Deferred as its own reviewed commit._
-- **BUG-18 (P2, concurrency #6) — lost update on task completion — STILL OPEN.** A compliance
-  re-run reads prior task status, deletes, re-inserts as pending — a party's "done" in that window
-  is lost. The BUG-13 lock serializes apply-vs-apply but NOT party-update-vs-apply, so this needs
-  the task carry-over to upsert by compute_key rather than delete+recreate. Deferred.
+- **BUG-16 (P2, concurrency #4/#5) — retry duplicates a document** ✅ FIXED. A partial unique index
+  on `documents(transaction_id, external_ref)` (migration `20260820000012`) + idempotent handling in
+  `write_payload`: an existing document for the source id returns its already-written payload rather
+  than inserting a second, and a concurrent duplicate insert (23505) is caught and resolved to the
+  winner's payload. Test: `test_write_payload_is_idempotent_on_retry`. (The related orphan-on-
+  compensation sub-issue — a failed write leaving stray flags/parties — is narrower; still open.)
+- **BUG-18 (P2, concurrency #6) — lost update on task completion — STILL OPEN (design documented).**
+  A compliance re-run reads prior task status once at the start, then deletes+recreates; a party's
+  "done" marked in that window is reverted. BUG-13's lock serializes apply-vs-apply but not
+  party-update-vs-apply. _Fix: right before deleting the prior run's tasks, RE-READ their current
+  status/assignee and propagate to the new run's tasks by compute_key (closes the practical window);
+  or move to a `unique(transaction_id, compute_key)` upsert. Touches the critical SOR apply path and
+  the race isn't CI-testable — deserves a dedicated reviewed change against a real DB._
 
 ### Cleared / accepted
 - **Doc-type + signature spoofing (adversarial #2, P1-theoretical):** the §4 guard trusts the

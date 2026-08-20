@@ -808,6 +808,24 @@ class InMemoryRepo:
         )
 
     def write_payload(self, *, transaction_id: str, payload: Payload, actor: str) -> dict[str, Any]:
+        # Idempotent on the source document id (BUG-16) — mirrors the unique index
+        # on (transaction_id, external_ref): a retry returns the existing payload.
+        if payload.document_id:
+            prior = next(
+                (
+                    d
+                    for d in self.documents.values()
+                    if d["transaction_id"] == transaction_id
+                    and d.get("external_ref") == payload.document_id
+                ),
+                None,
+            )
+            if prior is not None:
+                existing = next(
+                    (p for p in self.payloads.values() if p["document_id"] == prior["id"]), None
+                )
+                if existing is not None:
+                    return existing
         doc = {
             "id": str(uuid.uuid4()),
             "transaction_id": transaction_id,

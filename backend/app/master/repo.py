@@ -1057,22 +1057,66 @@ class SupabaseRepo:
         return _effective_fields(fields, rank)
 
     def write_payload(self, *, transaction_id: str, payload: Payload, actor: str) -> dict[str, Any]:
+        # Idempotent on the source document id (BUG-16): the confirm route may retry
+        # after a post-write step failed. write_payload compensates the document on
+        # any internal failure, so an EXISTING document for this external_ref means a
+        # prior call fully completed — return its payload instead of writing a second
+        # one. The unique index on (transaction_id, external_ref) also fails a
+        # concurrent duplicate insert fast (caught below).
+        if payload.document_id:
+            prior = (
+                self._db.table("documents")
+                .select("id")
+                .eq("transaction_id", transaction_id)
+                .eq("external_ref", payload.document_id)
+                .execute()
+                .data
+            )
+            if prior:
+                existing_payload = (
+                    self._db.table("payloads")
+                    .select("*")
+                    .eq("document_id", prior[0]["id"])
+                    .execute()
+                    .data
+                )
+                if existing_payload:
+                    return existing_payload[0]
         # Compensated like create_transaction: deleting the document cascades
         # the payload and extracted fields if any later step fails.
-        doc = (
-            self._db.table("documents")
-            .insert(
-                {
-                    "transaction_id": transaction_id,
-                    "external_ref": payload.document_id,
-                    "doc_type": payload.document_type,
-                    "storage_path": payload.document_storage_ref,
-                    "status": "pending",
-                }
+        try:
+            doc = (
+                self._db.table("documents")
+                .insert(
+                    {
+                        "transaction_id": transaction_id,
+                        "external_ref": payload.document_id,
+                        "doc_type": payload.document_type,
+                        "storage_path": payload.document_storage_ref,
+                        "status": "pending",
+                    }
+                )
+                .execute()
+                .data[0]
             )
-            .execute()
-            .data[0]
-        )
+        except Exception as exc:
+            # Concurrent duplicate confirm: the unique index rejected the second
+            # insert. Return the payload the winning writer already wrote.
+            if _is_unique_violation(exc) and payload.document_id:
+                prior = (
+                    self._db.table("documents").select("id")
+                    .eq("transaction_id", transaction_id)
+                    .eq("external_ref", payload.document_id).execute().data
+                )
+                existing = (
+                    self._db.table("payloads").select("*")
+                    .eq("document_id", prior[0]["id"]).execute().data
+                    if prior
+                    else []
+                )
+                if existing:
+                    return existing[0]
+            raise
         try:
             row = (
                 self._db.table("payloads")
