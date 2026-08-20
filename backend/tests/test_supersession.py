@@ -68,6 +68,21 @@ def test_reuploading_the_pa_does_not_revert_a_counter():
     assert board[tid]["purchase_price"] == "$1,900,000"
 
 
+def test_reupload_leaves_exactly_one_purchase_agreement():
+    """Re-uploading the PA supersedes the prior one — exactly one PA document
+    remains (the newest). Guards the supersede that BUG (concurrency #1) moved
+    outside write_payload's compensated try so a mid-write failure can never leave
+    a deal with ZERO purchase agreements."""
+    repo = InMemoryRepo()
+    tid = repo.create_transaction(property_address="1 One-PA St", actor="tc")["id"]
+    _write(repo, tid, "pa", "purchase_agreement", "$1,800,000")
+    _write(repo, tid, "pa2", "purchase_agreement", "$1,850,000")
+
+    docs = [d for d in repo.get_full_state(tid)["documents"] if d["doc_type"] == "purchase_agreement"]
+    assert len(docs) == 1
+    assert repo.get_full_state(tid)["effective_fields"]["purchase_price"]["value"] == "$1,850,000"
+
+
 def test_unconfirmed_counter_never_supersedes_the_confirmed_pa():
     """A confirmed value beats an unconfirmed one even when the unconfirmed row is
     from a higher-precedence document — precedence only breaks ties among confirmed."""

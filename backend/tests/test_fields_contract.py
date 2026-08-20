@@ -52,8 +52,9 @@ def test_field_count_and_uniqueness():
     names = [f.name for f in S5_FIELDS]
     assert len(names) == len(set(names))
     # 30 verified v2 + 5 v3 (items, home-warranty, other_terms) + 4 v4 agent
-    # contact fields (buyer/listing agent email+phone) — v3/v4 non-deadline-driving.
-    assert len(names) == 39
+    # contact fields (buyer/listing agent email+phone) + 2 lender_contact
+    # email/phone (preapproval officer) — v3/v4 non-deadline-driving.
+    assert len(names) == 41
 
 
 def test_membership_helpers():

@@ -83,6 +83,59 @@ Locked in by new `test_rerun_removes_a_deadline_no_longer_computed`.
 `evaluate_counter_flags` raises an ADVISORY `counter_chain` warning ("upload the
 further counter") — there is no code loop; the TC drives each upload. Not a defect.
 
+## P2 multi-agent probe findings (adversarial / RLS / concurrency)
+Full detail in `ADVERSARIAL_FINDINGS.md`, `RLS_FINDINGS.md`, `CONCURRENCY_FINDINGS.md`.
+
+### Fixed this batch
+- **BUG-11 (P1, concurrency #1) — PA-wipe on a failed re-write** ✅ FIXED. `write_payload`
+  deleted the prior PA *inside* the compensated try; a later failure then deleted the new
+  doc too → deal with ZERO purchase agreements + no §5 fields. Moved the supersede to AFTER
+  the try succeeds ("land the new, then remove the old", like `apply_compliance_result`): a
+  mid-write failure now leaves the old PA intact; a failed delete leaves two PAs (recoverable,
+  precedence-resolved) — never zero. Test: `test_reupload_leaves_exactly_one_purchase_agreement`.
+- **BUG-12 (P2, adversarial #4) — lender_contact_email/phone not on the §5 whitelist** ✅ FIXED.
+  The extractor creates these from a preapproval's loan officer, but they were off-whitelist →
+  the whole payload 422'd (silent feature break). Added both (mirroring buyer/listing agent
+  email+phone). Test: `test_lender_contact_email_and_phone_are_accepted`.
+
+### Confirmed, queued (need careful design / own reviewed commit)
+- **BUG-13 (P1, concurrency #2) — concurrent compliance runs delete each other's rows.**
+  `apply_compliance_result` inserts run_id then deletes `!= run_id`; two overlapping runs
+  (cron sweep vs. the "Build timeline" tap) mutually delete → torn/empty timeline. No lock.
+  Fix options: a `pg_advisory_xact_lock` on the transaction_id, or serialize runs per deal.
+- **BUG-14 (P2, adversarial #3) — wiring/PII smuggled into a whitelisted field VALUE.**
+  The payload route checks the money regex on `f.name` only, not `f.value` (a naive value
+  scan would false-reject "Wells Fargo **Bank**" / an APN / a phone). Needs a TARGETED value
+  guard (SSN pattern + routing/IBAN/SWIFT/ABA-label-near-digits) with false-positive tests.
+  Low exfil risk (no auto-send; TC-review; at-rest only) but a Rule-5 hardening.
+- **BUG-15 (P2, RLS F2) — tier confusion:** `require_party` ignores tier, so a read-only
+  `collaborator` can WRITE via `POST /party/documents` (scoped to their own deal → integrity
+  gap, not cross-tenant leak). Add a tier gate on party write routes.
+- **BUG-16 (P2, concurrency #4/#5) — orphans + retry-dup:** compensation deletes only the
+  document, leaving spurious risk_flags/parties; and the route's write_payload + derive_parties
+  + derive_tasks are un-compensated, so a retry re-inserts (no unique on `documents.external_ref`).
+- **BUG-17 (P2, concurrency #3) — stuck 'processing':** a non-graceful crash between `claim()`
+  and `release()` leaves an inbox item stuck in `processing` forever (drops from `list_open`).
+  Needs a reaper / timeout to reclaim. (claim() itself is a correct atomic CAS — no TOCTOU.)
+- **BUG-18 (P2, concurrency #6) — lost update on task completion** across a compliance re-run
+  (reads prior status, deletes, re-inserts as pending — a party's "done" in that window is lost).
+
+### Cleared / accepted
+- **Doc-type + signature spoofing (adversarial #2, P1-theoretical):** the §4 guard trusts the
+  model's self-reported `doc_looks_like`/`signature_indicators`; PDF-content injection targets
+  those. **Backstop:** the TC picks the doc-type in the HITL confirm, so this is bounded, not
+  a silent bypass. Needs a live-model run to prove (→ P3 injection eval). Consider a corroborating
+  deterministic check.
+- **§5 whitelist enforcement — VERIFIED SOLID** (3 layers: enum-constrained output, post-filter,
+  master 422). No money/wiring/SSN field NAME can reach the SOR.
+- **No-auto-send — VERIFIED SOLID.** No mailer in the extract/confirm path; drafts are `status=draft`;
+  the only send is the human-authenticated `approve_and_send` behind a fail-closed allowlisted mailer.
+- **Cross-party/cross-deal isolation — VERIFIED enforced in app code** (party_id/transaction_id from
+  the signed admin-set JWT, never client input; repo double-scopes). No P0/P1 IDOR.
+- **RLS F1/F3/F4, Anthropic/Supabase/storage failure handling:** RLS proven only by 22 skipped
+  DB-integration tests (CI gap); invite tokens lack revocation (P3); shared compliance token is
+  URL-enumerable (P3); dependency failures raise clean 5xx before any SOR write (handled well).
+
 ## Reviewer follow-ups (low severity — triaged, not yet built)
 - **BUG-06 (Accept):** `_parse_money` treats `-$1,800,000` / `($1,800,000)` as positive. Domain amounts are non-negative; accept.
 - **BUG-07 (Consider):** `.5M` (leading-dot, no integer) mis-scales to 5,000,000. Rare OCR shape; low priority.

@@ -194,6 +194,18 @@ S5_FIELDS: tuple[FieldSpec, ...] = (
         False,
         "Lender/loan officer if written in (usually NOT on the form)",
     ),
+    FieldSpec(
+        "lender_contact_email",
+        "contacts",
+        False,
+        "Loan officer email from a preapproval / underwriter letter; null if absent",
+    ),
+    FieldSpec(
+        "lender_contact_phone",
+        "contacts",
+        False,
+        "Loan officer phone from a preapproval / underwriter letter; null if absent",
+    ),
 )
 
 EXTRACTABLE_FIELD_NAMES: frozenset[str] = frozenset(f.name for f in S5_FIELDS)

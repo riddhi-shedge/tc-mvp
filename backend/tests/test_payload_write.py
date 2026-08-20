@@ -96,6 +96,24 @@ def test_money_wiring_field_names_are_rejected(client, tc_headers, repo):
     assert repo.documents == {}
 
 
+def test_lender_contact_email_and_phone_are_accepted(client, tc_headers, repo):
+    """Regression (adversarial probe #4): a preapproval carries the loan officer's
+    email/phone as lender_contact_email / lender_contact_phone — these must be on
+    the §5 whitelist, else the WHOLE payload 422s and the feature silently breaks."""
+    txn_id = _create_txn(client, tc_headers)
+    body = _payload(txn_id)
+    body["extracted_fields"].extend(
+        [
+            {"name": "lender_contact_email", "value": "officer@examplebank.test", "confidence": 0.9},
+            {"name": "lender_contact_phone", "value": "555-0100", "confidence": 0.9},
+        ]
+    )
+    r = client.post(f"/transactions/{txn_id}/payloads", json=body, headers=tc_headers)
+    assert r.status_code == 201, r.text
+    names = {f["name"] for f in client.get(f"/transactions/{txn_id}", headers=tc_headers).json()["extracted_fields"]}
+    assert {"lender_contact_email", "lender_contact_phone"} <= names
+
+
 def test_field_names_outside_s5_list_are_rejected(client, tc_headers, repo):
     """Defense in depth at the master: only verified §5 names enter the SOR."""
     txn_id = _create_txn(client, tc_headers)

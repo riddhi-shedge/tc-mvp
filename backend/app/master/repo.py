@@ -1135,16 +1135,6 @@ class SupabaseRepo:
                         details={"field": name, "old": old, "new": new},
                     )
 
-            # A re-uploaded purchase agreement SUPERSEDES the prior one — there is
-            # exactly one PA per deal, so older PA documents (and their cascaded
-            # payloads + fields) are removed rather than piling up as duplicates.
-            # Other doc types (disclosures, addenda) may legitimately repeat and
-            # are never superseded.
-            if payload.document_type == "purchase_agreement":
-                self._db.table("documents").delete().eq(
-                    "transaction_id", transaction_id
-                ).eq("doc_type", "purchase_agreement").neq("id", doc["id"]).execute()
-
             # PA marked subject-to-counter, but no counter uploaded yet → prompt for
             # it: the printed price/terms may not be final.
             if payload.document_type == "purchase_agreement" and payload.pa_subject_to_counter:
@@ -1327,6 +1317,19 @@ class SupabaseRepo:
         except Exception:
             self._db.table("documents").delete().eq("id", doc["id"]).execute()
             raise
+
+        # A re-uploaded purchase agreement SUPERSEDES the prior one — exactly one PA
+        # per deal, so older PA documents (and their cascaded payloads + fields) are
+        # removed rather than piling up. This runs ONLY after the new PA fully landed
+        # (outside the try): a mid-write failure above leaves the OLD PA intact
+        # (compensation removed just the new doc), and a failure of this delete
+        # leaves two PAs — recoverable, and `_effective_fields` precedence still
+        # resolves correctly — never a deal with zero purchase agreements.
+        if payload.document_type == "purchase_agreement":
+            self._db.table("documents").delete().eq(
+                "transaction_id", transaction_id
+            ).eq("doc_type", "purchase_agreement").neq("id", doc["id"]).execute()
+
         return row
 
     def confirm_fields(self, *, transaction_id: str, field_ids: list[str], actor: str) -> int:
