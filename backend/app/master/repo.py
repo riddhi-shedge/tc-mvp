@@ -2398,14 +2398,18 @@ class SupabaseRepo:
         Street View photo (stored in the public property-media bucket) + deep links.
         Cached in properties.details; re-fetched only when there's no useful data
         yet (so it lights up once the API keys are added). Fully best-effort — any
-        failure returns the graceful address-only card."""
-        rows = (
-            self._db.table("properties")
-            .select("address, details")
-            .eq("transaction_id", transaction_id)
-            .execute()
-            .data
-        )
+        failure (incl. the details column not existing yet, pre-migration) returns
+        the graceful address-only card."""
+        try:
+            rows = (
+                self._db.table("properties")
+                .select("address, details")
+                .eq("transaction_id", transaction_id)
+                .execute()
+                .data
+            )
+        except Exception:
+            return None  # e.g. migration 20260824000013 not applied yet
         if not rows:
             return None
         details = rows[0].get("details")
