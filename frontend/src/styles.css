@@ -1813,3 +1813,58 @@ button.secondary.sm { padding: 0.28rem 0.55rem; font-size: 0.76rem; }
 .db-sv.on { background: var(--surface); border-color: var(--line); color: var(--ink); box-shadow: var(--shadow-sm); }
 .db-sv-c { font-size: 0.72rem; color: var(--muted); font-variant-numeric: tabular-nums; }
 .db-sv.on .db-sv-c { color: var(--gold-700); }
+
+/* ---- Personalized party invite workspace (per-role identity) ------------- */
+.inv2 { min-height: 100vh; background: var(--bg); }
+.inv2-bar { display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+  padding: 0.85rem 1.4rem; border-bottom: 1px solid var(--line); background: var(--surface); position: sticky; top: 0; z-index: 5; }
+.inv2-me { display: flex; align-items: center; gap: 0.6rem; }
+.inv2-me-name { font-weight: 600; font-size: 0.85rem; }
+.inv2-me-role { font-size: 0.74rem; color: var(--muted); }
+.inv2-page { max-width: 780px; margin: 0 auto; padding: 1.6rem 1.3rem 4rem; }
+
+/* hero — tinted by --role-accent */
+.inv2-hero { position: relative; border-radius: var(--r); padding: 1.6rem 1.5rem 1.7rem; margin-bottom: 1.3rem;
+  background: linear-gradient(135deg, var(--role-soft), transparent 70%), var(--surface);
+  border: 1px solid var(--line); border-left: 4px solid var(--role-accent); box-shadow: var(--shadow-sm); }
+.inv2-hero-ic { width: 48px; height: 48px; border-radius: 13px; display: grid; place-items: center;
+  background: var(--role-soft); color: var(--role-accent); margin-bottom: 0.7rem; }
+.inv2-hero-eyebrow { text-transform: uppercase; letter-spacing: 0.08em; font-size: 0.72rem; font-weight: 700; color: var(--role-accent); }
+.inv2-hero-title { font-size: 1.7rem; margin: 0.15rem 0 0.35rem; text-wrap: balance; }
+.inv2-hero-sub { color: var(--muted); margin: 0; max-width: 60ch; }
+
+/* property card */
+.pcard { padding: 0; overflow: hidden; }
+.pcard-media { aspect-ratio: 16 / 8; background: var(--surface-2); }
+.pcard-img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.pcard-imgph { width: 100%; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 0.4rem; color: var(--muted); font-size: 0.8rem; background: linear-gradient(135deg, var(--role-soft), var(--surface-2)); }
+.pcard-body { padding: 1.1rem 1.3rem 1.25rem; }
+.pcard-addr { font-size: 1.15rem; font-weight: 650; }
+.pcard-sub { font-size: 0.85rem; margin-top: 0.1rem; }
+.pcard-facts { display: flex; flex-wrap: wrap; gap: 0.5rem 1.1rem; margin: 0.85rem 0 0.2rem; }
+.pcard-fact { font-size: 0.85rem; color: var(--ink-2); display: inline-flex; align-items: center; gap: 0.35rem; }
+.pcard-fact b { color: var(--ink); }
+.pcard-links { display: flex; gap: 0.55rem; margin-top: 0.9rem; flex-wrap: wrap; }
+.pcard-btn { display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.8rem; font-weight: 550;
+  padding: 0.4rem 0.75rem; border-radius: 8px; border: 1px solid var(--line); color: var(--ink-2); text-decoration: none; background: var(--surface); }
+.pcard-btn:hover { border-color: var(--role-accent); color: var(--role-accent); }
+.pcard-note { font-size: 0.8rem; margin: 0.7rem 0 0; }
+
+/* money grid */
+.mgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 0.9rem; }
+.mgrid-cell { background: var(--surface-2); border: 1px solid var(--line); border-radius: 12px; padding: 0.75rem 0.85rem; }
+.mgrid-k { font-size: 0.74rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.mgrid-v { font-size: 1.15rem; font-weight: 650; margin-top: 0.2rem; font-variant-numeric: tabular-nums; }
+
+/* stage bar */
+.stagebar { display: flex; gap: 0.4rem; }
+.stagebar-step { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 0.35rem; text-align: center; opacity: 0.55; }
+.stagebar-step.on, .stagebar-step.done { opacity: 1; }
+.stagebar-dot { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; font-size: 0.8rem; font-weight: 650;
+  background: var(--surface-2); border: 1px solid var(--line); color: var(--muted); }
+.stagebar-step.done .stagebar-dot { background: var(--role-accent); border-color: var(--role-accent); color: #fff; }
+.stagebar-step.on .stagebar-dot { border-color: var(--role-accent); color: var(--role-accent); box-shadow: 0 0 0 3px var(--role-soft); }
+.stagebar-lbl { font-size: 0.74rem; color: var(--ink-2); }
+
+@media (max-width: 560px) { .inv2-page { padding: 1.1rem 0.9rem 3rem; } .stagebar-lbl { font-size: 0.66rem; } }

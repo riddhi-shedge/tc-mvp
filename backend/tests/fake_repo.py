@@ -1251,6 +1251,11 @@ class InMemoryRepo:
             [f for f in self.extracted_fields if f["transaction_id"] == transaction_id], rank
         )
 
+    def get_or_enrich_property(self, transaction_id: str) -> dict[str, Any] | None:
+        # Tests can set self.property_enrichment[transaction_id] to simulate a
+        # cached enrichment; None by default (graceful address-only card).
+        return getattr(self, "property_enrichment", {}).get(transaction_id)
+
     def get_full_state(self, transaction_id: str) -> dict[str, Any] | None:
         txn = self.transactions.get(transaction_id)
         if txn is None:

@@ -1,18 +1,33 @@
-import { ChangeEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { ChangeEvent, useCallback, useEffect, useState } from "react";
 import { fmtDate } from "../lib/format";
 import { Icon, IconName } from "../lib/icons";
+import { themeFor } from "./invite/roleThemes";
 
 const API: string = import.meta.env.VITE_API_BASE ?? "http://localhost:8000";
 const DAY = 86_400_000;
 
 type Task = { id: string; title: string; status: string; due_date: string | null; priority: string };
 type Doc = { id: string; doc_type: string | null; status: string; created_at?: string };
+type PropertyView = {
+  address: string | null;
+  city: string | null;
+  zip: string | null;
+  included_items: string | null;
+  excluded_items: string | null;
+  // enrichment (Phase 3) — optional, rendered when present:
+  details?: Record<string, string | number | null> | null;
+  photo_url?: string | null;
+  deep_links?: Record<string, string> | null;
+};
 type Workspace = {
   me: { name: string | null; role: string; email: string | null; company: string | null; tier: string };
-  property_address: string | null;
+  archetype: string;
+  sections: string[];
+  property: PropertyView | null;
+  fields: Record<string, string>;
   stage: string | null;
   roster: { name: string | null; role: string }[];
-  timeline: { name: string; due_date: string }[];
+  deadlines: { name: string; due_date: string }[];
   my_tasks: Task[];
   my_documents: Doc[];
 };
@@ -26,24 +41,17 @@ const TASK_META: Record<string, { label: string; cls: string }> = {
   complete: { label: "Done", cls: "st-done" },
 };
 const isDone = (s: string) => s === "done" || s === "complete";
-const STAGE_LABEL: Record<string, string> = { new: "New offer", cont: "Contingency period", closing: "Closing", closed: "Closed" };
-
-const TINT: Record<string, string> = {
+const STAGES: { key: string; label: string }[] = [
+  { key: "new", label: "New offer" },
+  { key: "cont", label: "Contingencies" },
+  { key: "closing", label: "Closing" },
+  { key: "closed", label: "Closed" },
+];
+const roleTint: Record<string, string> = {
   buyer: "#5257ea", seller: "#0e9488", buyer_agent: "#c07512", listing_agent: "#c07512",
-  escrow: "#5b6472", title: "#5b6472", lender: "#5b6472",
+  escrow: "#4f5a6a", title: "#4f5a6a", lender: "#2563a8", loan_officer: "#2563a8",
 };
-const tint = (r: string) => TINT[r] ?? "#8457d6";
-const ROLE_BLURB: Record<string, string> = {
-  buyer_agent: "Track the deal, complete your tasks, and upload buyer-side documents.",
-  listing_agent: "Track the deal, complete your tasks, and upload seller-side documents.",
-  escrow: "See the timeline, confirm your items, and upload escrow documents.",
-  lender: "See the loan timeline, respond to status items, and upload loan documents.",
-  title: "See the timeline and upload title documents.",
-  inspector_general: "Upload your inspection report and mark your inspection complete.",
-  appraiser: "Upload your appraisal and mark it complete.",
-  buyer: "Follow your purchase, complete your to-dos, and upload requested documents.",
-  seller: "Follow your sale, complete your to-dos, and upload requested documents.",
-};
+const tint = (r: string) => roleTint[r] ?? "#8457d6";
 const DOC_TYPES = [
   { v: "proof_of_funds", label: "Proof of funds" },
   { v: "inspection_report", label: "Inspection report" },
@@ -63,19 +71,23 @@ function daysTo(iso: string | null): number | null {
 }
 const countdown = (n: number | null) => (n == null ? "—" : n < 0 ? `${-n}d ago` : n === 0 ? "today" : `${n}d`);
 const dstamp = (iso: string) => fmtDate(iso).replace(/,\s*\d{4}$/, "");
+const mapsLink = (addr: string) => `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(addr)}`;
+const zillowLink = (addr: string) => `https://www.zillow.com/homes/${encodeURIComponent(addr)}_rb/`;
 
-type ViewName = "home" | "calendar" | "deal";
+// Money-panel framings: which fields each role's summary shows, in order.
+const MONEY_FRAMES: Record<string, { title: string; icon: IconName; rows: [string, string][] }> = {
+  money_milestones: { title: "Your numbers", icon: "money", rows: [["purchase_price", "Purchase price"], ["initial_deposit_amount", "Earnest money"], ["loan_amount", "Loan"], ["down_payment", "Down payment"]] },
+  offer_summary: { title: "The offer", icon: "receipt", rows: [["purchase_price", "Accepted offer"], ["initial_deposit_amount", "Buyer's deposit"], ["close_of_escrow", "Closing"]] },
+  closing_summary: { title: "Closing figures", icon: "bank", rows: [["purchase_price", "Purchase price"], ["initial_deposit_amount", "Earnest money"], ["loan_amount", "Loan"], ["close_of_escrow", "Close of escrow"]] },
+  loan_summary: { title: "Loan file", icon: "money", rows: [["loan_amount", "Loan amount"], ["purchase_price", "Purchase price"], ["down_payment", "Down payment"], ["close_of_escrow", "Close of escrow"]] },
+};
+const DATE_FIELDS = new Set(["close_of_escrow", "acceptance_date"]);
 
-/** An invited party's own scoped WORKSPACE — the same shell as the coordinator
- *  (Home · Calendar · My deal), but showing only what they're allowed to see and
- *  do: the roster + process, and only their own tasks and documents. */
 export function InviteView({ token }: { token: string }) {
   const [ws, setWs] = useState<Workspace | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [docType, setDocType] = useState("other");
-  const [view, setView] = useState<ViewName>("home");
-  const [cursor, setCursor] = useState(() => { const d = new Date(); d.setDate(1); d.setHours(0, 0, 0, 0); return d; });
   const [dark, setDark] = useState(() => document.documentElement.getAttribute("data-theme") === "dark");
 
   function toggleTheme() {
@@ -140,14 +152,6 @@ export function InviteView({ token }: { token: string }) {
     reader.readAsDataURL(file);
   }
 
-  const weeks = useMemo(() => {
-    const start = new Date(cursor);
-    start.setDate(start.getDate() - start.getDay());
-    return Array.from({ length: 6 }, (_, w) =>
-      Array.from({ length: 7 }, (_, d) => { const x = new Date(start); x.setDate(start.getDate() + w * 7 + d); return x; }),
-    );
-  }, [cursor]);
-
   if (error) {
     return (
       <div className="inv-wrap">
@@ -161,15 +165,10 @@ export function InviteView({ token }: { token: string }) {
   }
   if (!ws) return <div className="inv-wrap"><p className="muted" style={{ padding: "10vh 2rem", textAlign: "center" }}>Loading your workspace…</p></div>;
 
-  const openTasks = ws.my_tasks.filter((t) => !isDone(t.status));
-  const nextDl = [...ws.timeline].filter((d) => (daysTo(d.due_date) ?? -1) >= 0).sort((a, b) => a.due_date.localeCompare(b.due_date))[0] ?? null;
-  const blurb = ROLE_BLURB[ws.me.role] ?? "See where the deal stands, complete your tasks, and upload your documents.";
-
-  const nav: { id: ViewName; label: string; icon: IconName }[] = [
-    { id: "home", label: "Home", icon: "home" },
-    { id: "calendar", label: "Calendar", icon: "calendar" },
-    { id: "deal", label: "My deal", icon: "doc" },
-  ];
+  const theme = themeFor(ws.archetype);
+  const prop = ws.property;
+  const addr = prop?.address ?? null;
+  const fv = (k: string) => ws.fields[k];
 
   const taskRow = (t: Task) => {
     const done = isDone(t.status);
@@ -194,202 +193,214 @@ export function InviteView({ token }: { token: string }) {
     );
   };
 
-  return (
-    <div className="app">
-      <aside className="sidebar">
-        <div className="brand">
-          <div className="mark">T</div>
-          <div>
-            <div className="name">Terra</div>
-            <div className="sub">Shared workspace</div>
-          </div>
+  const propertyCard = () => {
+    if (!prop) return null;
+    const d = prop.details ?? {};
+    const facts: [string, IconName, unknown][] = [
+      ["Beds", "home", d.beds], ["Baths", "home", d.baths], ["Sq ft", "board", d.sqft],
+      ["Year", "clock", d.year_built], ["Lot", "pin", d.lot_size],
+    ];
+    const shown = facts.filter(([, , v]) => v != null && v !== "");
+    return (
+      <div className="card pcard" key="property_card">
+        <div className="pcard-media">
+          {prop.photo_url ? (
+            <img className="pcard-img" src={prop.photo_url} alt={addr ?? "the property"} loading="lazy" />
+          ) : (
+            <div className="pcard-imgph"><Icon name="home" size={30} /><span>Home photo{addr ? "" : " unavailable"}</span></div>
+          )}
         </div>
-        {nav.map((n) => (
-          <button key={n.id} className={`nav-item ${view === n.id ? "active" : ""}`} onClick={() => setView(n.id)}>
-            {view === n.id && <span className="side-ind" />}
-            <span className="ni-label"><span className="ic"><Icon name={n.icon} /></span> {n.label}</span>
-          </button>
-        ))}
-        <div className="spacer" />
-        <div className="side-account">
-          <div className="side-ava" style={{ background: tint(ws.me.role) }}>{initials(ws.me.name, ws.me.role)}</div>
-          <div className="side-account-info">
-            <div className="side-email">{ws.me.name ?? "You"}</div>
-            <div className="side-plan">{humanize(ws.me.role)}</div>
-          </div>
+        <div className="pcard-body">
+          <div className="pcard-addr">{addr ?? "This property"}</div>
+          {(prop.city || prop.zip) && <div className="muted pcard-sub">{[prop.city, prop.zip].filter(Boolean).join(", ")}</div>}
+          {shown.length > 0 && (
+            <div className="pcard-facts">
+              {shown.map(([label, icon, v]) => (
+                <div key={label} className="pcard-fact"><Icon name={icon} size={14} /> <b>{String(v)}</b> {label}</div>
+              ))}
+            </div>
+          )}
+          {addr && (
+            <div className="pcard-links">
+              <a className="pcard-btn" href={prop.deep_links?.maps ?? mapsLink(addr)} target="_blank" rel="noreferrer"><Icon name="pin" size={13} /> Google Maps</a>
+              <a className="pcard-btn" href={prop.deep_links?.zillow ?? zillowLink(addr)} target="_blank" rel="noreferrer"><Icon name="external" size={13} /> Zillow</a>
+            </div>
+          )}
+          {shown.length === 0 && <div className="muted pcard-note">Home details will appear here once available.</div>}
         </div>
-      </aside>
+      </div>
+    );
+  };
 
-      <main className="main">
-        <div className="topbar">
-          <div className="crumbs"><b>{nav.find((n) => n.id === view)?.label}</b></div>
-          <div className="top-sp" />
+  const moneyPanel = (key: string) => {
+    const frame = MONEY_FRAMES[key];
+    if (!frame) return null;
+    const rows = frame.rows.filter(([k]) => fv(k) != null);
+    if (rows.length === 0) return null;
+    return (
+      <div className="card" key={key}>
+        <h2><Icon name={frame.icon} size={17} /> {frame.title}</h2>
+        <div className="mgrid">
+          {rows.map(([k, label]) => (
+            <div key={k} className="mgrid-cell">
+              <div className="mgrid-k">{label}</div>
+              <div className="mgrid-v">{DATE_FIELDS.has(k) ? fmtDate(fv(k)) : fv(k)}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  };
+
+  const keyDates = () => (
+    <div className="card" key="key_dates">
+      <h2><Icon name="calendar" size={17} /> Key dates</h2>
+      {ws.deadlines.length === 0 ? (
+        <div className="empty"><span className="empty-ic"><Icon name="calendar" size={24} /></span>No dated milestones yet.</div>
+      ) : (
+        <div className="hm-list">
+          {[...ws.deadlines].sort((a, b) => a.due_date.localeCompare(b.due_date)).map((d, i) => {
+            const n = daysTo(d.due_date);
+            return (
+              <div key={i} className="hm-row" style={{ cursor: "default" }}>
+                <span className="hm-date tnum">{dstamp(d.due_date)}</span>
+                <div className="hm-main"><div className="hm-title">{d.name}</div></div>
+                <span className={`pill-${n != null && n <= 2 ? "red" : n != null && n <= 7 ? "amber" : "plain"}`}>{countdown(n)}</span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+
+  const dealProgress = () => {
+    const idx = Math.max(0, STAGES.findIndex((s) => s.key === ws.stage));
+    return (
+      <div className="card" key="deal_progress">
+        <h2><Icon name="flag" size={17} /> Where the deal stands</h2>
+        <div className="stagebar">
+          {STAGES.map((s, i) => (
+            <div key={s.key} className={`stagebar-step ${i < idx ? "done" : ""} ${i === idx ? "on" : ""}`}>
+              <span className="stagebar-dot">{i < idx ? "✓" : i + 1}</span>
+              <span className="stagebar-lbl">{s.label}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  };
+
+  const includedItems = () => {
+    if (!prop?.included_items && !prop?.excluded_items) return null;
+    return (
+      <div className="card" key="included_items">
+        <h2><Icon name="tag" size={17} /> Included in the sale</h2>
+        {prop.included_items && <p style={{ margin: "0 0 0.4rem" }}><b>Stays:</b> {prop.included_items}</p>}
+        {prop.excluded_items && <p className="muted" style={{ margin: 0 }}><b>Excluded:</b> {prop.excluded_items}</p>}
+      </div>
+    );
+  };
+
+  const myTasks = () => (
+    <div className="card" key="my_tasks">
+      <h2><Icon name="checkCircle" size={17} /> {ws.archetype === "inspector" ? "Your inspection" : "Your tasks"}</h2>
+      {ws.my_tasks.length === 0 ? (
+        <div className="empty"><span className="empty-ic"><Icon name="checkCircle" size={24} /></span>Nothing needs you right now.</div>
+      ) : <div className="stack">{ws.my_tasks.map(taskRow)}</div>}
+    </div>
+  );
+
+  const myDocuments = () => (
+    <div className="card" key="my_documents">
+      <h2><Icon name="doc" size={17} /> {ws.archetype === "inspector" ? "Upload your report" : "Your documents"}</h2>
+      <p className="muted" style={{ margin: "-0.4rem 0 0.8rem" }}>Only the coordinator sees what you upload.</p>
+      <div className="inv-upload">
+        <select value={docType} onChange={(e) => setDocType(e.target.value)} style={{ maxWidth: 220 }}>
+          {DOC_TYPES.map((d) => <option key={d.v} value={d.v}>{d.label}</option>)}
+        </select>
+        <label className={`inv-uploadbtn ${busy ? "off" : ""}`}>
+          <Icon name="attach" size={14} /> Choose file…
+          <input type="file" hidden disabled={busy} onChange={onFile} />
+        </label>
+      </div>
+      {ws.my_documents.length > 0 && (
+        <div className="stack" style={{ marginTop: "0.8rem" }}>
+          {ws.my_documents.map((d) => (
+            <div key={d.id} className="inv-doc">
+              <div className="doc-ic sm" style={{ background: theme.soft, color: theme.accent }}><Icon name="doc" size={16} /></div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div className="doc-name">{humanize(d.doc_type ?? "document")}</div>
+                {d.created_at && <div className="muted" style={{ fontSize: "0.76rem" }}>Uploaded {fmtDate(d.created_at)}</div>}
+              </div>
+              <span className="badge ok">{d.status}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+
+  const roster = () => (
+    <div className="card" key="roster">
+      <h2><Icon name="users" size={17} /> Everyone on this deal</h2>
+      <p className="muted" style={{ margin: "-0.4rem 0 0.8rem" }}>The people coordinating this transaction. Private contact details stay private.</p>
+      <div className="inv-roster">
+        {ws.roster.map((p, i) => (
+          <div key={i} className="inv-person">
+            <div className="prow-ava" style={{ background: tint(p.role) }}>{initials(p.name, p.role)}</div>
+            <div style={{ minWidth: 0 }}>
+              <div className="prow-name">{p.name ?? humanize(p.role)}</div>
+              <div className="prow-role">{humanize(p.role)}</div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+
+  const renderSection = (key: string) => {
+    switch (key) {
+      case "property_card": return propertyCard();
+      case "money_milestones":
+      case "offer_summary":
+      case "closing_summary":
+      case "loan_summary": return moneyPanel(key);
+      case "key_dates": return keyDates();
+      case "deal_progress": return dealProgress();
+      case "included_items": return includedItems();
+      case "my_tasks": return myTasks();
+      case "my_documents": return myDocuments();
+      case "roster": return roster();
+      default: return null;
+    }
+  };
+
+  return (
+    <div className="inv2" style={{ ["--role-accent" as string]: theme.accent, ["--role-soft" as string]: theme.soft }}>
+      <header className="inv2-bar">
+        <div className="brand"><div className="mark">T</div><div><div className="name">Terra</div><div className="sub">Shared workspace</div></div></div>
+        <div className="inv2-me">
+          <div className="side-ava" style={{ background: theme.accent }}>{initials(ws.me.name, ws.me.role)}</div>
+          <div><div className="inv2-me-name">{ws.me.name ?? "You"}</div><div className="inv2-me-role">{humanize(ws.me.role)}</div></div>
           <button className="kbtn icon" title="Toggle theme" onClick={toggleTheme}>{dark ? "☀" : "☾"}</button>
         </div>
-        <div className="page">
-          {/* ---- HOME ---- */}
-          {view === "home" && (
-            <div className="hm">
-              <div>
-                <h1>Hi {ws.me.name ?? "there"}</h1>
-                <div className="hm-sub">{ws.property_address ?? "Your transaction"} · {blurb}</div>
-              </div>
-              <div className="hm-stats">
-                <div className="hm-stat"><div className="hm-k"><span className="hm-kd" style={{ background: "var(--gold-500)" }} />Your open tasks</div><div className="hm-v tnum">{openTasks.length}</div></div>
-                <div className="hm-stat"><div className="hm-k"><span className="hm-kd" style={{ background: "var(--red-600)" }} />Next deadline</div><div className="hm-v" style={{ fontSize: "1.1rem" }}>{nextDl ? dstamp(nextDl.due_date) : "—"}</div></div>
-                <div className="hm-stat"><div className="hm-k"><span className="hm-kd" style={{ background: "var(--muted)" }} />Stage</div><div className="hm-v" style={{ fontSize: "1.05rem" }}>{ws.stage ? STAGE_LABEL[ws.stage] ?? ws.stage : "—"}</div></div>
-              </div>
-              <div className="hm-cols">
-                <div>
-                  <div className="hm-section">
-                    <div className="hm-sh"><span className="hm-st">Your tasks</span><span className="hm-sc">{openTasks.length}</span></div>
-                    <div className="hm-list">
-                      {openTasks.length === 0 ? <div className="hm-empty">Nothing needs you right now.</div> : openTasks.map(taskRow)}
-                    </div>
-                  </div>
-                </div>
-                <div>
-                  <div className="hm-section">
-                    <div className="hm-sh"><span className="hm-st">Coming up</span><span className="hm-sc">{ws.timeline.length}</span></div>
-                    <div className="hm-list">
-                      {ws.timeline.length === 0 ? <div className="hm-empty">No dated milestones yet.</div> :
-                        [...ws.timeline].sort((a, b) => a.due_date.localeCompare(b.due_date)).slice(0, 8).map((d, i) => {
-                          const n = daysTo(d.due_date);
-                          return (
-                            <div key={i} className="hm-row" style={{ cursor: "default" }}>
-                              <span className="hm-date tnum">{dstamp(d.due_date)}</span>
-                              <div className="hm-main"><div className="hm-title">{d.name}</div></div>
-                              <span className={`pill-${n != null && n <= 2 ? "red" : n != null && n <= 7 ? "amber" : "plain"}`}>{countdown(n)}</span>
-                            </div>
-                          );
-                        })}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
+      </header>
 
-          {/* ---- CALENDAR ---- */}
-          {view === "calendar" && (
-            <div className="cal">
-              <div className="page-head">
-                <div><h1>Calendar</h1><div className="muted">The deal's key dates and your tasks.</div></div>
-                <div className="row" style={{ gap: "0.5rem", flex: "0 0 auto" }}>
-                  <button className="secondary" onClick={() => { const d = new Date(); d.setDate(1); d.setHours(0, 0, 0, 0); setCursor(d); }}>Today</button>
-                </div>
-              </div>
-              <div className="card cal-main">
-                <div className="cal-toolbar">
-                  <button className="kbtn icon" onClick={() => setCursor(new Date(cursor.getFullYear(), cursor.getMonth() - 1, 1))}>‹</button>
-                  <b>{cursor.toLocaleDateString("en-US", { month: "long", year: "numeric" })}</b>
-                  <button className="kbtn icon" onClick={() => setCursor(new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1))}>›</button>
-                </div>
-                <div className="cal-dow">{["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((w) => <div key={w}>{w}</div>)}</div>
-                <div className="cal-weeks">
-                  {weeks.map((wk, wi) => (
-                    <div key={wi} className="cal-week">
-                      {wk.map((day) => {
-                        const k = `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, "0")}-${String(day.getDate()).padStart(2, "0")}`;
-                        const inMonth = day.getMonth() === cursor.getMonth();
-                        const isToday = daysTo(k) === 0;
-                        const dls = ws.timeline.filter((d) => d.due_date === k);
-                        const tks = ws.my_tasks.filter((t) => t.due_date === k);
-                        return (
-                          <div key={k} className={`cal-day ${inMonth ? "" : "off"} ${isToday ? "today" : ""}`} style={{ cursor: "default" }}>
-                            <div className="cal-dnum">{day.getDate()}</div>
-                            {dls.map((d, i) => <div key={`d${i}`} className="cal-dl" title={d.name}><span className="cal-dot" /> {d.name.replace(/ (ends|due|delivery|delivered).*$/i, "")}</div>)}
-                            {tks.map((t) => <div key={t.id} className="cal-task" title={t.title}><span className="cal-task-t">{t.title}</span></div>)}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
+      <main className="inv2-page">
+        <section className="inv2-hero">
+          <div className="inv2-hero-ic"><Icon name={theme.icon} size={26} /></div>
+          <div className="inv2-hero-eyebrow">{theme.eyebrow}</div>
+          <h1 className="inv2-hero-title">{theme.greeting(ws.me.name)}</h1>
+          <p className="inv2-hero-sub">{addr ? `${addr} · ` : ""}{theme.tagline}</p>
+        </section>
 
-          {/* ---- MY DEAL ---- */}
-          {view === "deal" && (
-            <>
-              <div className="card inv-hero" style={{ marginBottom: "1.1rem" }}>
-                <div className="inv-eyebrow">Your view · {humanize(ws.me.role)}</div>
-                <h1 style={{ margin: "0.2rem 0 0" }}>{ws.property_address ?? "This property"}</h1>
-                <p className="muted" style={{ margin: "0.4rem 0 0" }}>{blurb} Private information for other parties stays private.</p>
-              </div>
+        {ws.sections.map(renderSection)}
 
-              <div className="card">
-                <h2><Icon name="checkCircle" size={17} /> Your tasks</h2>
-                {ws.my_tasks.length === 0 ? (
-                  <div className="empty"><span className="empty-ic"><Icon name="checkCircle" size={24} /></span>Nothing needs you right now.</div>
-                ) : <div className="stack">{ws.my_tasks.map(taskRow)}</div>}
-              </div>
-
-              <div className="card">
-                <h2><Icon name="doc" size={17} /> Your documents</h2>
-                <p className="muted" style={{ margin: "-0.4rem 0 0.8rem" }}>Upload documents for your part of the deal — only the coordinator sees them.</p>
-                <div className="inv-upload">
-                  <select value={docType} onChange={(e) => setDocType(e.target.value)} style={{ maxWidth: 220 }}>
-                    {DOC_TYPES.map((d) => <option key={d.v} value={d.v}>{d.label}</option>)}
-                  </select>
-                  <label className={`inv-uploadbtn ${busy ? "off" : ""}`}>
-                    <Icon name="attach" size={14} /> Choose file…
-                    <input type="file" hidden disabled={busy} onChange={onFile} />
-                  </label>
-                </div>
-                {ws.my_documents.length > 0 && (
-                  <div className="stack" style={{ marginTop: "0.8rem" }}>
-                    {ws.my_documents.map((d) => (
-                      <div key={d.id} className="inv-doc">
-                        <div className="doc-ic sm" style={{ background: "#8457d61f", color: "#8457d6" }}><Icon name="doc" size={16} /></div>
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div className="doc-name">{humanize(d.doc_type ?? "document")}</div>
-                          {d.created_at && <div className="muted" style={{ fontSize: "0.76rem" }}>Uploaded {fmtDate(d.created_at)}</div>}
-                        </div>
-                        <span className="badge ok">{d.status}</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              <div className="card">
-                <h2><Icon name="calendar" size={17} /> The process</h2>
-                {ws.timeline.length === 0 ? (
-                  <div className="empty"><span className="empty-ic"><Icon name="calendar" size={26} /></span>No dated milestones yet.</div>
-                ) : (
-                  <div className="stack">
-                    {ws.timeline.map((d, i) => (
-                      <div key={i} className="inv-dl"><span className="inv-dl-date">{fmtDate(d.due_date)}</span><span className="inv-dl-name">{d.name}</span></div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              <div className="card">
-                <h2><Icon name="users" size={17} /> Everyone on this deal</h2>
-                <p className="muted" style={{ margin: "-0.4rem 0 0.8rem" }}>The people coordinating this transaction. Private contact details stay private.</p>
-                <div className="inv-roster">
-                  {ws.roster.map((p, i) => (
-                    <div key={i} className="inv-person">
-                      <div className="prow-ava" style={{ background: tint(p.role) }}>{initials(p.name, p.role)}</div>
-                      <div style={{ minWidth: 0 }}>
-                        <div className="prow-name">{p.name ?? humanize(p.role)}</div>
-                        <div className="prow-role">{humanize(p.role)}</div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <p className="inv-foot muted">
-                <Icon name="lock" size={13} /> Scoped to this deal — you complete only your own tasks and upload your own
-                documents. You can't see other parties' private information or any other transaction.
-              </p>
-            </>
-          )}
-        </div>
+        <p className="inv-foot muted">
+          <Icon name="lock" size={13} /> This view is personalized to your role and scoped to this deal — you see only
+          what you need, complete only your own tasks, and can't see other parties' private information or any other transaction.
+        </p>
       </main>
     </div>
   );

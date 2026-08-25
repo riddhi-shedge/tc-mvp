@@ -48,6 +48,7 @@ from app.master.mailer import (
     SendDisabled,
     SendFailed,
 )
+from app.master.party_views import build_party_workspace
 from app.master.repo import (
     DEAL_STAGES,
     ComplianceRunInProgress,
@@ -1146,48 +1147,13 @@ def party_workspace(
     if state is None:
         raise HTTPException(status_code=404, detail="Deal not found")
     _merge_task_meta(state)
-    parties = state.get("parties", [])
-    me = next((p for p in parties if p["id"] == party.party_id), None)
+    me = next((p for p in state.get("parties", []) if p["id"] == party.party_id), None)
     if me is None:
         raise HTTPException(status_code=403, detail="You are not on this deal")
-    deadlines = state.get("deadlines", [])
-    prop = state.get("property") or {}
-    return {
-        "me": {
-            "name": me.get("name"),
-            "role": me.get("role"),
-            "email": me.get("email"),
-            "company": me.get("company"),
-            "tier": party.tier,
-        },
-        "property_address": prop.get("address"),
-        "stage": (state.get("transaction") or {}).get("stage"),
-        # Everyone can see WHO is involved — names + roles only, no contact/financials.
-        "roster": [{"name": p.get("name"), "role": p.get("role")} for p in parties],
-        # The process, read-only.
-        "timeline": [
-            {"name": d["name"], "due_date": d["due_date"]}
-            for d in sorted(deadlines, key=lambda x: x.get("due_date", ""))
-        ],
-        # Only THIS party's tasks.
-        "my_tasks": [
-            {
-                "id": t["id"],
-                "title": t["title"],
-                "status": t["status"],
-                "due_date": _due_for(t, deadlines),
-                "priority": t.get("priority", "normal"),
-            }
-            for t in state.get("tasks", [])
-            if t.get("assigned_party_id") == party.party_id
-        ],
-        # Only documents THIS party uploaded.
-        "my_documents": [
-            {"id": d["id"], "doc_type": d.get("doc_type"), "status": d.get("status"), "created_at": d.get("created_at")}
-            for d in state.get("documents", [])
-            if d.get("external_ref") == f"party:{party.party_id}"
-        ],
-    }
+    # Personalized, role-scoped view: the sections + the deal fields this role may
+    # see (a vendor never sees the price) — assembled + privacy-filtered server-side.
+    property_view = repo.get_or_enrich_property(party.transaction_id)
+    return build_party_workspace(state=state, me=me, tier=party.tier, property_view=property_view)
 
 
 class PartyTaskStatusRequest(BaseModel):

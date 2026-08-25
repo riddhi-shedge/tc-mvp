@@ -530,6 +530,11 @@ class MasterRepo(Protocol):
 
     def get_full_state(self, transaction_id: str) -> dict[str, Any] | None: ...
 
+    def get_or_enrich_property(self, transaction_id: str) -> dict[str, Any] | None:
+        """Cached address enrichment (facts/photo/deep-links) for the property
+        card; None when unavailable. Populated in the enrichment phase."""
+        ...
+
     def confirm_fields(self, *, transaction_id: str, field_ids: list[str], actor: str) -> int: ...
 
     def add_manual_field(
@@ -2375,6 +2380,12 @@ class SupabaseRepo:
             details={**summary, "run_id": run_id},
         )
         return summary
+
+    def get_or_enrich_property(self, transaction_id: str) -> dict[str, Any] | None:
+        # Enrichment (RentCast facts + Street View photo + deep links, cached in
+        # properties.details) is wired in the enrichment phase; None until then so
+        # the property card shows its graceful address-only state.
+        return None
 
     def get_full_state(self, transaction_id: str) -> dict[str, Any] | None:
         txns = self._db.table("transactions").select("*").eq("id", transaction_id).execute().data
