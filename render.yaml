@@ -39,6 +39,12 @@ services:
         sync: false
       - key: FRONTEND_ORIGIN       # the static site's URL, for CORS
         sync: false
+      # Property enrichment for the party workspaces — both OPTIONAL (absent ⇒
+      # graceful address-only property card). Public-record data only.
+      - key: RENTCAST_API_KEY
+        sync: false
+      - key: GOOGLE_MAPS_API_KEY
+        sync: false
 
   # ---- Frontend (static) --------------------------------------------------
   - type: web

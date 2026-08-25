@@ -66,6 +66,18 @@ def _is_unique_violation(exc: Exception) -> bool:
     return "23505" in blob or "duplicate key" in blob
 
 
+def _property_view(details: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Map a cached property-enrichment blob to the property-card fields the party
+    workspace merges (facts/photo/deep-links). None ⇒ address-only graceful card."""
+    if not details:
+        return None
+    return {
+        "details": details.get("facts"),
+        "photo_url": details.get("photo_url"),
+        "deep_links": details.get("deep_links"),
+    }
+
+
 def _deadline_gate_state(rows: list[dict[str, Any]]) -> dict[str, Any]:
     """The timeline-readiness breakdown for the UI (and the "Build timeline"
     pre-check): which deadline-driving §5 fields are MISSING (no row at all —
@@ -2382,10 +2394,59 @@ class SupabaseRepo:
         return summary
 
     def get_or_enrich_property(self, transaction_id: str) -> dict[str, Any] | None:
-        # Enrichment (RentCast facts + Street View photo + deep links, cached in
-        # properties.details) is wired in the enrichment phase; None until then so
-        # the property card shows its graceful address-only state.
-        return None
+        """Cached address enrichment for the property card: RentCast facts + a
+        Street View photo (stored in the public property-media bucket) + deep links.
+        Cached in properties.details; re-fetched only when there's no useful data
+        yet (so it lights up once the API keys are added). Fully best-effort — any
+        failure returns the graceful address-only card."""
+        rows = (
+            self._db.table("properties")
+            .select("address, details")
+            .eq("transaction_id", transaction_id)
+            .execute()
+            .data
+        )
+        if not rows:
+            return None
+        details = rows[0].get("details")
+        if details and (details.get("facts") or details.get("photo_url")):
+            return _property_view(details)
+        details = self._enrich_and_cache(transaction_id, rows[0].get("address"))
+        return _property_view(details)
+
+    def _enrich_and_cache(self, transaction_id: str, address: str | None) -> dict[str, Any]:
+        from app.enrichment.property_data import deep_links, fetch_facts, street_view_image
+
+        facts: dict[str, Any] | None = None
+        photo_url: str | None = None
+        if address:
+            try:
+                facts = fetch_facts(address)
+                img = street_view_image(address)
+                if img:
+                    path = f"{transaction_id}.jpg"
+                    try:
+                        self._db.storage.from_("property-media").upload(
+                            path, img, {"content-type": "image/jpeg", "upsert": "true"}
+                        )
+                    except Exception:  # bucket/upload hiccup — skip the photo
+                        pass
+                    else:
+                        photo_url = self._db.storage.from_("property-media").get_public_url(path)
+            except Exception:
+                _log.info("property enrichment failed for txn=%s", transaction_id)
+        blob = {
+            "facts": facts,
+            "photo_url": photo_url,
+            "deep_links": deep_links(address) if address else {},
+        }
+        try:
+            self._db.table("properties").update(
+                {"details": blob, "enriched_at": datetime.now(timezone.utc).isoformat()}
+            ).eq("transaction_id", transaction_id).execute()
+        except Exception:
+            pass
+        return blob
 
     def get_full_state(self, transaction_id: str) -> dict[str, Any] | None:
         txns = self._db.table("transactions").select("*").eq("id", transaction_id).execute().data
