@@ -1,36 +1,12 @@
 import { ChangeEvent, useCallback, useEffect, useState } from "react";
 import { fmtDate } from "../lib/format";
 import { Icon, IconName } from "../lib/icons";
+import { BuyerView } from "./invite/BuyerView";
 import { themeFor } from "./invite/roleThemes";
+import { DOC_TYPES, Task, Workspace } from "./invite/types";
 
 const API: string = import.meta.env.VITE_API_BASE ?? "http://localhost:8000";
 const DAY = 86_400_000;
-
-type Task = { id: string; title: string; status: string; due_date: string | null; priority: string };
-type Doc = { id: string; doc_type: string | null; status: string; created_at?: string };
-type PropertyView = {
-  address: string | null;
-  city: string | null;
-  zip: string | null;
-  included_items: string | null;
-  excluded_items: string | null;
-  // enrichment (Phase 3) — optional, rendered when present:
-  details?: Record<string, string | number | null> | null;
-  photo_url?: string | null;
-  deep_links?: Record<string, string> | null;
-};
-type Workspace = {
-  me: { name: string | null; role: string; email: string | null; company: string | null; tier: string };
-  archetype: string;
-  sections: string[];
-  property: PropertyView | null;
-  fields: Record<string, string>;
-  stage: string | null;
-  roster: { name: string | null; role: string }[];
-  deadlines: { name: string; due_date: string }[];
-  my_tasks: Task[];
-  my_documents: Doc[];
-};
 
 const humanize = (s: string) => s.replace(/_/g, " ").replace(/\b\w/g, (m) => m.toUpperCase());
 const TASK_NEXT: Record<string, string> = { pending: "in_progress", in_progress: "done", done: "pending" };
@@ -52,13 +28,6 @@ const roleTint: Record<string, string> = {
   escrow: "#4f5a6a", title: "#4f5a6a", lender: "#2563a8", loan_officer: "#2563a8",
 };
 const tint = (r: string) => roleTint[r] ?? "#8457d6";
-const DOC_TYPES = [
-  { v: "proof_of_funds", label: "Proof of funds" },
-  { v: "inspection_report", label: "Inspection report" },
-  { v: "appraisal", label: "Appraisal" },
-  { v: "disclosure", label: "Disclosure" },
-  { v: "other", label: "Other document" },
-];
 function initials(name: string | null, role: string) {
   const s = (name || role || "?").trim().split(/\s+/);
   return ((s[0]?.[0] ?? "") + (s[1]?.[0] ?? "")).toUpperCase() || "?";
@@ -387,21 +356,25 @@ export function InviteView({ token }: { token: string }) {
         </div>
       </header>
 
-      <main className="inv2-page">
-        <section className="inv2-hero">
-          <div className="inv2-hero-ic"><Icon name={theme.icon} size={26} /></div>
-          <div className="inv2-hero-eyebrow">{theme.eyebrow}</div>
-          <h1 className="inv2-hero-title">{theme.greeting(ws.me.name)}</h1>
-          <p className="inv2-hero-sub">{addr ? `${addr} · ` : ""}{theme.tagline}</p>
-        </section>
+      {ws.archetype === "buyer" ? (
+        <BuyerView ws={ws} busy={busy} docType={docType} setDocType={setDocType} cycle={cycle} onFile={onFile} />
+      ) : (
+        <main className="inv2-page">
+          <section className="inv2-hero">
+            <div className="inv2-hero-ic"><Icon name={theme.icon} size={26} /></div>
+            <div className="inv2-hero-eyebrow">{theme.eyebrow}</div>
+            <h1 className="inv2-hero-title">{theme.greeting(ws.me.name)}</h1>
+            <p className="inv2-hero-sub">{addr ? `${addr} · ` : ""}{theme.tagline}</p>
+          </section>
 
-        {ws.sections.map(renderSection)}
+          {ws.sections.map(renderSection)}
 
-        <p className="inv-foot muted">
-          <Icon name="lock" size={13} /> This view is personalized to your role and scoped to this deal — you see only
-          what you need, complete only your own tasks, and can't see other parties' private information or any other transaction.
-        </p>
-      </main>
+          <p className="inv-foot muted">
+            <Icon name="lock" size={13} /> This view is personalized to your role and scoped to this deal — you see only
+            what you need, complete only your own tasks, and can't see other parties' private information or any other transaction.
+          </p>
+        </main>
+      )}
     </div>
   );
 }
