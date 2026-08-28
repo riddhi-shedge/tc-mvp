@@ -9,22 +9,23 @@ Public-record + street imagery only; no document content, no Rule-5 data.
 
 from __future__ import annotations
 
-import json
 import logging
 import os
 import urllib.parse
-import urllib.request
 from typing import Any
 
+import httpx
+
 _log = logging.getLogger(__name__)
-_TIMEOUT = 8.0
+_TIMEOUT = 10.0
 
 
 def _http_json(url: str, headers: dict[str, str] | None = None) -> Any | None:
+    # httpx (bundles certifi) — urllib fails SSL cert verification on macOS.
     try:
-        req = urllib.request.Request(url, headers=headers or {})
-        with urllib.request.urlopen(req, timeout=_TIMEOUT) as resp:  # noqa: S310 (fixed https hosts)
-            return json.loads(resp.read().decode())
+        r = httpx.get(url, headers=headers or {}, timeout=_TIMEOUT, follow_redirects=True)
+        r.raise_for_status()
+        return r.json()
     except Exception as exc:  # network/HTTP/parse — enrichment is best-effort
         _log.info("enrichment: json fetch failed (%s)", type(exc).__name__)
         return None
@@ -32,8 +33,9 @@ def _http_json(url: str, headers: dict[str, str] | None = None) -> Any | None:
 
 def _http_bytes(url: str) -> bytes | None:
     try:
-        with urllib.request.urlopen(url, timeout=_TIMEOUT) as resp:  # noqa: S310
-            return resp.read()
+        r = httpx.get(url, timeout=_TIMEOUT, follow_redirects=True)
+        r.raise_for_status()
+        return r.content
     except Exception as exc:
         _log.info("enrichment: image fetch failed (%s)", type(exc).__name__)
         return None

@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { fmtDate } from "../../lib/format";
 import { Icon, IconName } from "../../lib/icons";
 import { DOC_TYPES, RoleViewProps } from "./types";
@@ -30,6 +31,21 @@ export function BuyerView({ ws, busy, docType, setDocType, cycle, onFile }: Role
   const coe = ws.deadlines.find((x) => /escrow|clos/i.test(x.name)) ?? null;
   const keysDate = coe?.due_date ?? null;
   const nDays = daysTo(keysDate);
+
+  // count the "days to keys" up on load — a small, warm moment
+  const [shownDays, setShownDays] = useState(0);
+  useEffect(() => {
+    if (nDays == null || nDays <= 0) { setShownDays(nDays ?? 0); return; }
+    if (matchMedia("(prefers-reduced-motion: reduce)").matches) { setShownDays(nDays); return; }
+    let raf = 0; const start = performance.now(); const dur = 950;
+    const tick = (now: number) => {
+      const p = Math.min(1, (now - start) / dur);
+      setShownDays(Math.round(nDays * (1 - Math.pow(1 - p, 3))));
+      if (p < 1) raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [nDays]);
 
   // progress through the escrow window (acceptance → close)
   const acc = fv("acceptance_date");
@@ -73,7 +89,8 @@ export function BuyerView({ ws, busy, docType, setDocType, cycle, onFile }: Role
   return (
     <div className="bv">
       {/* HERO */}
-      <div className="bv-hero" style={photo ? { backgroundImage: `url(${photo})` } : undefined}>
+      <div className={`bv-hero ${photo ? "has-photo" : ""}`}>
+        <div className="bv-hero-photo" style={photo ? { backgroundImage: `url(${photo})` } : undefined} />
         <div className="bv-hero-scrim" />
         <div className="bv-hero-in">
           <div className="bv-eyebrow"><Icon name="home" size={13} /> Your future home</div>
@@ -87,7 +104,7 @@ export function BuyerView({ ws, busy, docType, setDocType, cycle, onFile }: Role
       {keysDate && (
         <div className="bv-count card">
           <div className="bv-count-main">
-            <div className="bv-count-n">{nDays != null && nDays > 0 ? nDays : nDays === 0 ? "🎉" : "✓"}</div>
+            <div className="bv-count-n">{nDays != null && nDays > 0 ? shownDays : nDays === 0 ? "🎉" : "✓"}</div>
             <div>
               <div className="bv-count-lbl">
                 {nDays != null && nDays > 0 ? `days until you get the keys` : nDays === 0 ? "Closing day — it's yours today!" : "You've closed — congratulations!"}

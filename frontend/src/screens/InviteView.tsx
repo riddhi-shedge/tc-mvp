@@ -1,9 +1,19 @@
 import { ChangeEvent, useCallback, useEffect, useState } from "react";
 import { fmtDate } from "../lib/format";
 import { Icon, IconName } from "../lib/icons";
+import { AgentView } from "./invite/AgentView";
 import { BuyerView } from "./invite/BuyerView";
+import { EscrowView } from "./invite/EscrowView";
+import { InspectorView } from "./invite/InspectorView";
+import { LenderView } from "./invite/LenderView";
+import { SellerView } from "./invite/SellerView";
 import { themeFor } from "./invite/roleThemes";
-import { DOC_TYPES, Task, Workspace } from "./invite/types";
+import { DOC_TYPES, RoleViewProps, Task, Workspace } from "./invite/types";
+
+const ROLE_VIEWS: Record<string, (p: RoleViewProps) => JSX.Element> = {
+  buyer: BuyerView, seller: SellerView, escrow: EscrowView,
+  inspector: InspectorView, lender: LenderView, agent: AgentView,
+};
 
 const API: string = import.meta.env.VITE_API_BASE ?? "http://localhost:8000";
 const DAY = 86_400_000;
@@ -132,7 +142,13 @@ export function InviteView({ token }: { token: string }) {
       </div>
     );
   }
-  if (!ws) return <div className="inv-wrap"><p className="muted" style={{ padding: "10vh 2rem", textAlign: "center" }}>Loading your workspace…</p></div>;
+  if (!ws) return (
+    <div className="inv-load">
+      <div className="inv-load-mark"><span>T</span></div>
+      <div className="inv-load-bar"><i /></div>
+      <div className="inv-load-txt">Preparing your workspace…</div>
+    </div>
+  );
 
   const theme = themeFor(ws.archetype);
   const prop = ws.property;
@@ -356,8 +372,11 @@ export function InviteView({ token }: { token: string }) {
         </div>
       </header>
 
-      {ws.archetype === "buyer" ? (
-        <BuyerView ws={ws} busy={busy} docType={docType} setDocType={setDocType} cycle={cycle} onFile={onFile} />
+      {ROLE_VIEWS[ws.archetype] ? (
+        (() => {
+          const RoleView = ROLE_VIEWS[ws.archetype];
+          return <RoleView ws={ws} busy={busy} docType={docType} setDocType={setDocType} cycle={cycle} onFile={onFile} />;
+        })()
       ) : (
         <main className="inv2-page">
           <section className="inv2-hero">
