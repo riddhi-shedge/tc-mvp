@@ -704,6 +704,24 @@ class InMemoryRepo:
         )
         return doc
 
+    def record_deposit_verified(self, *, transaction_id: str, party_id: str, actor: str) -> None:
+        self._audit(
+            transaction_id=transaction_id, actor=actor, action="party.deposit_verified",
+            entity_type="party", entity_id=party_id, details={"party_id": party_id},
+        )
+
+    def record_disclosure_attested(self, *, transaction_id: str, party_id: str, kind: str, actor: str) -> None:
+        self._audit(
+            transaction_id=transaction_id, actor=actor, action="party.disclosure_attested",
+            entity_type="party", entity_id=party_id, details={"party_id": party_id, "kind": kind},
+        )
+
+    def record_disbursement_verified(self, *, transaction_id: str, party_id: str, actor: str) -> None:
+        self._audit(
+            transaction_id=transaction_id, actor=actor, action="party.disbursement_verified",
+            entity_type="party", entity_id=party_id, details={"party_id": party_id},
+        )
+
     def send_invite(
         self, *, transaction_id, party_id, to, subject, body, mailer, actor
     ) -> None:
@@ -712,6 +730,30 @@ class InMemoryRepo:
             transaction_id=transaction_id, actor=actor, action="party.invite_sent",
             entity_type="party", entity_id=party_id, details={},
         )
+
+    def record_message_approved(
+        self, *, transaction_id, message_id, actor, subject, body
+    ) -> dict[str, Any] | None:
+        message = self.messages.get(message_id)
+        if message is None or message["transaction_id"] != transaction_id:
+            return None
+        if message["status"] not in ("draft", "approved"):
+            raise MessageNotSendable
+        message.update({
+            "status": "approved",
+            "subject": subject if subject is not None else message["subject"],
+            "body": body if body is not None else message["body"],
+            "approved_by": actor, "approved_at": _now(),
+        })
+        self.approvals.append({
+            "id": str(uuid.uuid4()), "transaction_id": transaction_id,
+            "message_id": message_id, "approved_by": actor, "approved_at": _now(),
+        })
+        self._audit(
+            transaction_id=transaction_id, actor=actor, action="message.approved",
+            entity_type="message", entity_id=message_id, details={"logged": True},
+        )
+        return message
 
     def approve_and_send(
         self, *, transaction_id, message_id, actor, subject, body, mailer, followup_days

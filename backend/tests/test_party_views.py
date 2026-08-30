@@ -107,6 +107,110 @@ def test_scoped_to_my_own_tasks_and_documents():
     assert [d["id"] for d in ws["my_documents"]] == ["doc1"]
 
 
+def _buyer_state_rich() -> dict:
+    st = _state("buyer")
+    st["parties"].append({"id": "esc", "name": "CA Escrow Co", "role": "escrow", "phone": "555-0199"})
+    st["audit_log"] = [
+        {"id": "a1", "action": "payload.written", "created_at": "2026-07-10T10:00:00Z"},
+        {"id": "a2", "action": "risk_flag.counter", "created_at": "2026-07-11T10:00:00Z"},  # internal
+        {"id": "a3", "action": "compliance.run", "created_at": "2026-07-12T10:00:00Z"},
+    ]
+    return st
+
+
+def test_buyer_gets_activity_deposit_and_callable_roster():
+    st = _buyer_state_rich()
+    me = next(p for p in st["parties"] if p["id"] == "me")
+    ws = build_party_workspace(state=st, me=me, tier="email_participant")
+
+    texts = [e["text"] for e in ws["activity"]]
+    assert "Your timeline was updated" in texts and "A new document was added to your deal" in texts
+    assert all("risk" not in t.lower() for t in texts)  # internal events never surface
+
+    assert ws["deposit"]["amount"] == "$25,500"
+    assert ws["deposit"]["payee"] == "CA Escrow Co"
+    assert ws["deposit"]["escrowContactId"] == "esc"
+    assert ws["deposit"]["verifiedByBuyer"] is False
+
+    esc = next(p for p in ws["roster"] if p["role"] == "escrow")
+    assert esc.get("phone") == "555-0199" and esc.get("id") == "esc"  # escrow phone exposed to buyer
+    seller = next(p for p in ws["roster"] if p["role"] == "seller")
+    assert "phone" not in seller  # seller-side contact stays private
+
+
+def test_buyer_deposit_reflects_verification():
+    st = _buyer_state_rich()
+    st["audit_log"].append(
+        {"id": "a4", "action": "party.deposit_verified", "created_at": "2026-07-13T10:00:00Z", "details": {"party_id": "me"}}
+    )
+    me = next(p for p in st["parties"] if p["id"] == "me")
+    ws = build_party_workspace(state=st, me=me, tier="email_participant")
+    assert ws["deposit"]["verifiedByBuyer"] is True
+
+
+def test_non_buyer_has_no_activity_or_deposit_block():
+    st = _buyer_state_rich()
+    me = next(p for p in st["parties"] if p["id"] == "me")
+    me = {**me, "role": "escrow"}  # same person as an escrow archetype
+    ws = build_party_workspace(state=st, me=me, tier="email_participant")
+    assert "activity" not in ws and "deposit" not in ws
+
+
+def _seller_state_rich() -> dict:
+    st = _state("seller")
+    st["parties"].append({"id": "la", "name": "Coco Tan", "role": "listing_agent", "phone": "555-0100"})
+    st["parties"].append({"id": "esc", "name": "CA Escrow", "role": "escrow"})
+    st["audit_log"] = [{"id": "a1", "action": "payload.written", "created_at": "2026-07-10T10:00:00Z"}]
+    return st
+
+
+def test_seller_gets_deal_health_disclosures_and_net_sheet():
+    st = _seller_state_rich()
+    me = next(p for p in st["parties"] if p["id"] == "me")
+    ws = build_party_workspace(state=st, me=me, tier="email_participant")
+
+    assert ws["dealHealth"]["meter"] in {"on_track", "watch", "at_risk"}
+    assert ws["dealHealth"]["milestones"]  # buyer-side milestones
+    assert all(m["actionableBySeller"] is False for m in ws["dealHealth"]["milestones"])  # read-only
+
+    kinds = {d["kind"] for d in ws["disclosures"]}
+    assert {"tds", "spq", "nhd"} <= kinds
+    assert all(d["state"] == "draft" for d in ws["disclosures"])  # nothing attested yet
+
+    sale = next(row["amountCents"] for row in ws["netSheet"]["lines"] if row["label"] == "Sale price")
+    assert ws["netSheet"]["estimatedNetProceedsCents"] == sale - round(sale * 0.05) - round(sale * 0.012)
+    assert ws["netSheet"]["disbursementVerified"] is False
+    assert ws["netSheet"]["beforeMortgagePayoff"] is True
+
+    la = next(p for p in ws["roster"] if p["role"] == "listing_agent")
+    assert la.get("phone") == "555-0100"  # seller can call their listing agent
+    esc = next(p for p in ws["roster"] if p["role"] == "escrow")
+    assert "phone" not in esc  # no number on file → not fabricated
+    assert len(ws["activity"]) >= 1 and ws["requests"] == []
+
+
+def test_seller_disclosure_and_disbursement_attestations_read_back():
+    st = _seller_state_rich()
+    me = next(p for p in st["parties"] if p["id"] == "me")
+    st["audit_log"] += [
+        {"id": "a2", "action": "party.disclosure_attested", "created_at": "2026-07-12T10:00:00Z", "details": {"party_id": "me", "kind": "spq"}},
+        {"id": "a3", "action": "party.disbursement_verified", "created_at": "2026-07-13T10:00:00Z", "details": {"party_id": "me"}},
+    ]
+    ws = build_party_workspace(state=st, me=me, tier="email_participant")
+    spq = next(d for d in ws["disclosures"] if d["kind"] == "spq")
+    assert spq["state"] == "delivered"
+    tds = next(d for d in ws["disclosures"] if d["kind"] == "tds")
+    assert tds["state"] == "draft"  # only the attested one flips
+    assert ws["netSheet"]["disbursementVerified"] is True
+
+
+def test_buyer_has_no_seller_sections():
+    st = _seller_state_rich()
+    me = {**next(p for p in st["parties"] if p["id"] == "me"), "role": "buyer"}
+    ws = build_party_workspace(state=st, me=me, tier="email_participant")
+    assert "dealHealth" not in ws and "disclosures" not in ws and "netSheet" not in ws
+
+
 def test_unknown_role_falls_back_to_default_view():
     ws = _ws("home_warranty")
     assert ws["archetype"] == "default"

@@ -20,7 +20,15 @@ from typing import Any
 from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel, Field
 
-from app.common.auth import PartyUser, TCUser, require_party, require_tc
+from app.common.auth import PartyUser, TCUser, require_agent_portfolio, require_party, require_tc
+from app.master.agent_portfolio import (
+    build_agent_portfolio,
+    build_listing_portfolio,
+    build_offer_comparison,
+    deal_summary,
+    draft_targets,
+)
+from app.master.party_views import _seller_deal_health
 from app.common.zdr import ZdrNotConfirmed
 from app.contracts.compliance import ComplianceResult
 from app.contracts.fields import EXTRACTABLE_FIELD_NAMES
@@ -1207,6 +1215,403 @@ def party_upload_document(
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from None
     return {"document": {"id": doc["id"], "doc_type": doc.get("doc_type"), "status": doc.get("status")}}
+
+
+@router.post("/party/deposit/verify", status_code=201)
+def party_verify_deposit(
+    party: PartyUser = Depends(require_party),
+    repo: MasterRepo = Depends(get_repo),
+) -> dict[str, Any]:
+    """The buyer self-attests they verified wire instructions out of band (by phone)
+    and sent their deposit. NO wiring/account data is accepted or stored (Rule 2) —
+    only the attestation, recorded to the audit log and shown back in their workspace."""
+    repo.record_deposit_verified(
+        transaction_id=party.transaction_id, party_id=party.party_id, actor=party.actor
+    )
+    return {"verified": True}
+
+
+class DisclosureAttestRequest(BaseModel):
+    kind: str = Field(min_length=1, max_length=40)
+
+
+@router.post("/party/disclosure/attest", status_code=201)
+def party_attest_disclosure(
+    body: DisclosureAttestRequest,
+    party: PartyUser = Depends(require_party),
+    repo: MasterRepo = Depends(get_repo),
+) -> dict[str, Any]:
+    """The seller attests a specific CA disclosure is accurate, complete, and
+    delivered (an informed, gated attestation — never auto-completed). Recorded to
+    the audit log and read back as that disclosure's delivered state."""
+    repo.record_disclosure_attested(
+        transaction_id=party.transaction_id, party_id=party.party_id,
+        kind=body.kind.strip(), actor=party.actor,
+    )
+    return {"attested": True, "kind": body.kind.strip()}
+
+
+@router.post("/party/disbursement/verify", status_code=201)
+def party_verify_disbursement(
+    party: PartyUser = Depends(require_party),
+    repo: MasterRepo = Depends(get_repo),
+) -> dict[str, Any]:
+    """The seller self-attests they verified their proceeds-disbursement account out
+    of band (by phone). NO account/routing data is accepted or stored (Rule 1)."""
+    repo.record_disbursement_verified(
+        transaction_id=party.transaction_id, party_id=party.party_id, actor=party.actor
+    )
+    return {"verified": True}
+
+
+# ---- Buyer's-agent command center: cross-deal portfolio (the whole book) ------
+# The agent's token authenticates; aggregation runs service-role across every deal.
+
+def _all_deal_states(repo: MasterRepo) -> list[dict[str, Any]]:
+    states: list[dict[str, Any]] = []
+    for t in repo.list_transactions():
+        tid = t.get("id") or t.get("transaction_id")
+        if not tid:
+            continue
+        st = repo.get_full_state(tid)
+        if st:
+            states.append(st)
+    return states
+
+
+def _agent_me(states: list[dict[str, Any]], party_id: str) -> dict[str, Any]:
+    for st in states:
+        for p in st.get("parties") or []:
+            if p.get("id") == party_id:
+                return {"name": p.get("name"), "role": p.get("role")}
+    return {"name": "Agent", "role": "buyer_agent"}
+
+
+def _draft_meta(state: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    """message_id -> its message.drafted audit details (why / purpose / urgency…)."""
+    out: dict[str, dict[str, Any]] = {}
+    for row in state.get("audit_log") or []:
+        if row.get("action") == "message.drafted" and row.get("entity_id"):
+            out[row["entity_id"]] = row.get("details") or {}
+    return out
+
+
+def _pending_drafts(states: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Draft-status messages across the book, enriched into ApprovalItems (rule #3:
+    recipient + full body + the co-pilot's reasoning, always shown before send)."""
+    items: list[dict[str, Any]] = []
+    for st in states:
+        txn = st.get("transaction") or {}
+        parties = {p["id"]: p for p in (st.get("parties") or [])}
+        fields = {k: v.get("value") for k, v in (st.get("effective_fields") or {}).items()}
+        meta = _draft_meta(st)
+        for m in st.get("messages") or []:
+            if m.get("status") != "draft":
+                continue
+            d = meta.get(m["id"], {})
+            recipient = parties.get(m.get("party_id")) or {}
+            items.append({
+                "id": m["id"], "dealId": txn.get("id"),
+                "clientName": fields.get("buyer_names") or "Buyer",
+                "title": m.get("subject") or "Outbound message",
+                "recipient": {
+                    "name": recipient.get("name") or d.get("recipient_name") or "Recipient",
+                    "relationship": recipient.get("role") or d.get("recipient_role") or "other",
+                    "channel": "email",
+                },
+                "draftBody": m.get("body") or "",
+                "reasoning": d.get("why") or "Flagged by your co-pilot.",
+                "urgency": d.get("urgency") or "normal",
+                "riskClass": d.get("risk_class") or "standard",
+                "state": "pending",
+                "createdAt": m.get("created_at"),
+            })
+    rank = {"urgent": 0, "normal": 1, "low": 2}
+    items.sort(key=lambda x: (rank.get(x["urgency"], 1), x.get("createdAt") or ""))
+    return items
+
+
+def _agent_deal_detail(st: dict[str, Any]) -> dict[str, Any]:
+    fields = {k: v.get("value") for k, v in (st.get("effective_fields") or {}).items() if v.get("value") is not None}
+    deadlines = sorted(st.get("deadlines") or [], key=lambda x: x.get("due_date") or "")
+    meta = _draft_meta(st)
+    return {
+        "summary": deal_summary(st),
+        "fields": fields,
+        "deadlines": [{"id": d.get("id"), "name": d.get("name"), "due_date": d.get("due_date")} for d in deadlines],
+        "parties": [
+            {"id": p.get("id"), "name": p.get("name"), "role": p.get("role"), "phone": p.get("phone")}
+            for p in st.get("parties") or []
+        ],
+        "tasks": [
+            {"id": t.get("id"), "title": t.get("title"), "status": t.get("status"), "due_date": t.get("due_date")}
+            for t in st.get("tasks") or []
+        ],
+        "documents": [
+            {"id": d.get("id"), "doc_type": d.get("doc_type"), "status": d.get("status")}
+            for d in st.get("documents") or []
+        ],
+        "messages": [
+            {
+                "id": m.get("id"), "subject": m.get("subject"), "status": m.get("status"),
+                "reasoning": (meta.get(m.get("id"), {}) or {}).get("why"),
+            }
+            for m in st.get("messages") or []
+        ],
+    }
+
+
+@router.get("/agent/portfolio")
+def agent_portfolio(
+    agent: PartyUser = Depends(require_agent_portfolio),
+    repo: MasterRepo = Depends(get_repo),
+) -> dict[str, Any]:
+    states = _all_deal_states(repo)
+    pending = _pending_drafts(states)
+    return build_agent_portfolio(deals=states, me=_agent_me(states, agent.party_id), pending_drafts=len(pending))
+
+
+@router.get("/agent/approvals")
+def agent_approvals(
+    agent: PartyUser = Depends(require_agent_portfolio),
+    repo: MasterRepo = Depends(get_repo),
+) -> dict[str, Any]:
+    return {"items": _pending_drafts(_all_deal_states(repo))}
+
+
+@router.get("/agent/clients")
+def agent_clients(
+    agent: PartyUser = Depends(require_agent_portfolio),
+    repo: MasterRepo = Depends(get_repo),
+) -> dict[str, Any]:
+    out = []
+    for st in _all_deal_states(repo):
+        txn = st.get("transaction") or {}
+        fields = {k: v.get("value") for k, v in (st.get("effective_fields") or {}).items()}
+        out.append({
+            "dealId": txn.get("id"),
+            "clientName": fields.get("buyer_names") or "Buyer",
+            "propertyAddress": (st.get("property") or {}).get("address") or fields.get("property_address") or "Property",
+            "parties": [
+                {"id": p.get("id"), "name": p.get("name"), "role": p.get("role"), "phone": p.get("phone")}
+                for p in st.get("parties") or [] if p.get("role") != "buyer"
+            ],
+        })
+    return {"clients": out}
+
+
+@router.get("/agent/deals/{transaction_id}")
+def agent_deal_detail(
+    transaction_id: str,
+    agent: PartyUser = Depends(require_agent_portfolio),
+    repo: MasterRepo = Depends(get_repo),
+) -> dict[str, Any]:
+    st = repo.get_full_state(transaction_id)
+    if not st:
+        raise HTTPException(status_code=404, detail="Deal not found")
+    return _agent_deal_detail(st)
+
+
+class CopilotRefreshRequest(BaseModel):
+    limit: int = Field(default=8, ge=1, le=20)
+
+
+@router.post("/agent/copilot/refresh", status_code=201)
+def agent_copilot_refresh(
+    body: CopilotRefreshRequest,
+    agent: PartyUser = Depends(require_agent_portfolio),
+    repo: MasterRepo = Depends(get_repo),
+    drafter: Drafter = Depends(get_drafter),
+) -> dict[str, Any]:
+    """Generate outbound DRAFTS for outreach the book needs (live co-pilot drafting).
+    Each becomes a pending approval item — nothing is sent (rule #3)."""
+    states = _all_deal_states(repo)
+    generated = 0
+    errors = 0
+    for st in states:
+        if generated >= body.limit:
+            break
+        txn = st.get("transaction") or {}
+        tid = txn.get("id")
+        fields = {k: v.get("value") for k, v in (st.get("effective_fields") or {}).items()}
+        existing = {d.get("purpose") for d in _draft_meta(st).values() if d.get("purpose")}
+        prop = (st.get("property") or {}).get("address") or fields.get("property_address")
+        for tgt in draft_targets(st, existing_purposes=existing):
+            if generated >= body.limit:
+                break
+            dl = tgt["deadline"]
+            rec = tgt["recipient"]
+            ctx = MessageContext(
+                purpose=tgt["purpose"], recipient_name=rec.get("name"), recipient_role=rec.get("role"),
+                property_address=prop, buyer_names=fields.get("buyer_names"),
+                seller_names=fields.get("seller_names"), tc_name=_agent_me(states, agent.party_id).get("name"),
+                key_dates=((dl.get("name"), dl.get("due_date")),), note=None,
+            )
+            try:
+                draft = drafter.draft_message(ctx)
+            except DraftFailed:
+                errors += 1
+                continue
+            repo.create_message(
+                transaction_id=tid, subject=draft.subject, body=draft.body,
+                party_id=rec.get("id"), actor=agent.actor, action="message.drafted",
+                details={
+                    "why": draft.why, "purpose": tgt["purpose"], "urgency": tgt["urgency"],
+                    "risk_class": tgt["risk_class"], "recipient_role": rec.get("role"),
+                    "recipient_name": rec.get("name"), "ai": True,
+                },
+            )
+            generated += 1
+    return {"generated": generated, "errors": errors}
+
+
+class AgentApproveRequest(BaseModel):
+    transaction_id: str
+    subject: str | None = None
+    body: str | None = None
+
+
+@router.post("/agent/approvals/{message_id}/approve", status_code=201)
+def agent_approve(
+    message_id: str,
+    body: AgentApproveRequest,
+    agent: PartyUser = Depends(require_agent_portfolio),
+    repo: MasterRepo = Depends(get_repo),
+) -> dict[str, Any]:
+    """Rule #3: the agent's explicit approval of an AI draft — logged to the deal
+    (not silently sent; the command center isn't wired to outbound delivery)."""
+    try:
+        msg = repo.record_message_approved(
+            transaction_id=body.transaction_id, message_id=message_id,
+            actor=agent.actor, subject=body.subject, body=body.body,
+        )
+    except MessageNotSendable:
+        raise HTTPException(status_code=409, detail="This message was already approved or sent") from None
+    if msg is None:
+        raise HTTPException(status_code=404, detail="Draft not found")
+    return {"approved": True, "id": message_id}
+
+
+class AgentDismissRequest(BaseModel):
+    transaction_id: str
+
+
+@router.post("/agent/approvals/{message_id}/dismiss")
+def agent_dismiss(
+    message_id: str,
+    body: AgentDismissRequest,
+    agent: PartyUser = Depends(require_agent_portfolio),
+    repo: MasterRepo = Depends(get_repo),
+) -> dict[str, Any]:
+    result = repo.delete_message(transaction_id=body.transaction_id, message_id=message_id, actor=agent.actor)
+    if result is None:
+        raise HTTPException(status_code=404, detail="Draft not found")
+    if result == "sent":
+        raise HTTPException(status_code=409, detail="Already sent — can't dismiss")
+    return {"dismissed": True}
+
+
+# ---- Listing-agent command center (near-mirror; listing frame) ----------------
+# Reuses the same auth, approval queue (/agent/approvals + approve/dismiss), and
+# co-pilot refresh; adds the listing portfolio and the offer-comparison workflow.
+
+@router.get("/listing/portfolio")
+def listing_portfolio(
+    agent: PartyUser = Depends(require_agent_portfolio),
+    repo: MasterRepo = Depends(get_repo),
+) -> dict[str, Any]:
+    states = _all_deal_states(repo)
+    pending = _pending_drafts(states)
+    return build_listing_portfolio(deals=states, me=_agent_me(states, agent.party_id), pending_drafts=len(pending))
+
+
+@router.get("/listing/sellers")
+def listing_sellers(
+    agent: PartyUser = Depends(require_agent_portfolio),
+    repo: MasterRepo = Depends(get_repo),
+) -> dict[str, Any]:
+    out = []
+    for st in _all_deal_states(repo):
+        txn = st.get("transaction") or {}
+        fields = {k: v.get("value") for k, v in (st.get("effective_fields") or {}).items()}
+        out.append({
+            "listingId": txn.get("id"),
+            "sellerName": fields.get("seller_names") or "Seller",
+            "propertyAddress": (st.get("property") or {}).get("address") or fields.get("property_address") or "Property",
+            "parties": [
+                {"id": p.get("id"), "name": p.get("name"), "role": p.get("role"), "phone": p.get("phone")}
+                for p in st.get("parties") or [] if p.get("role") != "seller"
+            ],
+        })
+    return {"sellers": out}
+
+
+@router.get("/listing/offers/{transaction_id}")
+def listing_offers(
+    transaction_id: str,
+    agent: PartyUser = Depends(require_agent_portfolio),
+    repo: MasterRepo = Depends(get_repo),
+) -> dict[str, Any]:
+    st = repo.get_full_state(transaction_id)
+    if not st:
+        raise HTTPException(status_code=404, detail="Listing not found")
+    fields = {k: v.get("value") for k, v in (st.get("effective_fields") or {}).items()}
+    health = _seller_deal_health(fields, st.get("audit_log", []))
+    # re-point the key name for the listing frame (read-only to the agent)
+    for m in health["milestones"]:
+        m["actionableByAgent"] = m.pop("actionableBySeller", False)
+    return {
+        "offers": build_offer_comparison(st),
+        "buyerHealth": health,
+        "sellerName": fields.get("seller_names") or "Seller",
+        "propertyAddress": (st.get("property") or {}).get("address") or fields.get("property_address"),
+    }
+
+
+@router.post("/listing/offers/{transaction_id}/draft-comparison", status_code=201)
+def listing_draft_comparison(
+    transaction_id: str,
+    agent: PartyUser = Depends(require_agent_portfolio),
+    repo: MasterRepo = Depends(get_repo),
+    drafter: Drafter = Depends(get_drafter),
+) -> dict[str, Any]:
+    """Draft a plain-language, neutral offer summary FOR THE SELLER (rule #3: goes to
+    the approval queue; the AI never picks a winner — the seller decides)."""
+    st = repo.get_full_state(transaction_id)
+    if not st:
+        raise HTTPException(status_code=404, detail="Listing not found")
+    offers = build_offer_comparison(st)
+    if not offers:
+        raise HTTPException(status_code=409, detail="No offers to compare on this listing")
+    fields = {k: v.get("value") for k, v in (st.get("effective_fields") or {}).items()}
+    seller = next((p for p in st.get("parties") or [] if p.get("role") == "seller"), None)
+    if not seller:
+        raise HTTPException(status_code=409, detail="No seller on file to send to")
+
+    def _usd(c: int | None) -> str:
+        return f"${c / 100:,.0f}" if c else "—"
+    lines = "; ".join(
+        f"{o['buyerAgentName']}: {_usd(o['priceCents'])}, {o['financing']}, {o['contingencies']} contingencies, "
+        f"close {o['closeDays']}d ({o['tradeoffTag']})" for o in offers
+    )
+    ctx = MessageContext(
+        purpose="offer_comparison", recipient_name=seller.get("name"), recipient_role="seller",
+        property_address=(st.get("property") or {}).get("address") or fields.get("property_address"),
+        buyer_names=None, seller_names=fields.get("seller_names"),
+        tc_name=_agent_me(_all_deal_states(repo), agent.party_id).get("name"),
+        key_dates=(), note=f"Offers received: {lines}. Present these neutrally; do not recommend one.",
+    )
+    try:
+        draft = drafter.draft_message(ctx)
+    except DraftFailed:
+        raise HTTPException(status_code=502, detail="Co-pilot drafting is unavailable") from None
+    repo.create_message(
+        transaction_id=transaction_id, subject=draft.subject, body=draft.body,
+        party_id=seller.get("id"), actor=agent.actor, action="message.drafted",
+        details={"why": draft.why, "purpose": "offer_comparison", "urgency": "normal",
+                 "risk_class": "standard", "recipient_role": "seller", "recipient_name": seller.get("name"), "ai": True},
+    )
+    return {"drafted": True}
 
 
 @router.post("/transactions/{transaction_id}/payloads", status_code=201)

@@ -17,10 +17,27 @@ export type Workspace = {
   property: PropertyView | null;
   fields: Record<string, string>;
   stage: string | null;
-  roster: { name: string | null; role: string }[];
+  roster: { name: string | null; role: string; id?: string | null; phone?: string | null }[];
   deadlines: { name: string; due_date: string }[];
   my_tasks: Task[];
   my_documents: Doc[];
+  // Buyer-workspace-only augmentations (present when archetype === "buyer").
+  activity?: { id: string; text: string; occurredAt: string | null }[];
+  deposit?: {
+    amount: string; payee: string | null; dueDate: string | null;
+    verifiedByBuyer: boolean; escrowContactId: string | null;
+  } | null;
+  // Seller-workspace-only augmentations (present when archetype === "seller").
+  dealHealth?: {
+    meter: "on_track" | "watch" | "at_risk";
+    milestones: { id: string; label: string; detail: string | null; state: "complete" | "in_progress" | "pending" | "at_risk"; actionableBySeller: false }[];
+  };
+  disclosures?: { id: string; kind: string; title: string; state: "draft" | "completed" | "delivered" | "acknowledged"; dueDate: string | null }[];
+  netSheet?: {
+    lines: { label: string; amountCents: number; kind: "credit" | "debit" }[];
+    estimatedNetProceedsCents: number; disbursementVerified: boolean; beforeMortgagePayoff?: boolean;
+  } | null;
+  requests?: { id: string; kind: "repair" | "credit"; summary: string; amountCents: number | null; proceedsAfterAcceptCents: number; state: "pending" | "accepted" | "countered" | "declined" }[];
 };
 
 /** Handlers + state the shell owns, passed down to a bespoke per-role layout. */

@@ -155,6 +155,19 @@ def require_party(
     )
 
 
+def require_agent_portfolio(
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
+) -> PartyUser:
+    """A buyer's-agent (or broker) session for the cross-deal command center. It's a
+    normal party session, but only the collaborator tier — agents/broker — may reach
+    the whole-book portfolio. Aggregation runs service-role in the backend; the token
+    authenticates the agent, and receiving-end (buyer/seller/vendor) tiers are refused."""
+    party = require_party(credentials)
+    if party.tier != "collaborator":
+        raise _unauthorized("Portfolio access is for agents and brokers only")
+    return party
+
+
 def require_tc(
     credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
 ) -> TCUser:

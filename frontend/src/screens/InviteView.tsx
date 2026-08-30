@@ -1,18 +1,19 @@
 import { ChangeEvent, useCallback, useEffect, useState } from "react";
 import { fmtDate } from "../lib/format";
 import { Icon, IconName } from "../lib/icons";
-import { AgentView } from "./invite/AgentView";
-import { BuyerView } from "./invite/BuyerView";
+import { AgentCommandCenter } from "./invite/agent/AgentCommandCenter";
+import { BuyerWorkspace } from "./invite/buyer/BuyerWorkspace";
 import { EscrowView } from "./invite/EscrowView";
 import { InspectorView } from "./invite/InspectorView";
 import { LenderView } from "./invite/LenderView";
-import { SellerView } from "./invite/SellerView";
+import { ListingCommandCenter } from "./invite/listing/ListingCommandCenter";
+import { SellerWorkspace } from "./invite/seller/SellerWorkspace";
 import { themeFor } from "./invite/roleThemes";
+import { usePoll } from "./invite/shared/usePoll";
 import { DOC_TYPES, RoleViewProps, Task, Workspace } from "./invite/types";
 
 const ROLE_VIEWS: Record<string, (p: RoleViewProps) => JSX.Element> = {
-  buyer: BuyerView, seller: SellerView, escrow: EscrowView,
-  inspector: InspectorView, lender: LenderView, agent: AgentView,
+  escrow: EscrowView, inspector: InspectorView, lender: LenderView,
 };
 
 const API: string = import.meta.env.VITE_API_BASE ?? "http://localhost:8000";
@@ -99,6 +100,7 @@ export function InviteView({ token }: { token: string }) {
     }
   }, [papi]);
   useEffect(() => { void load(); }, [load]);
+  usePoll(() => { void load(); }); // §7 live-sync: re-project from the SOR
 
   async function cycle(t: Task) {
     setBusy(true);
@@ -149,6 +151,23 @@ export function InviteView({ token }: { token: string }) {
       <div className="inv-load-txt">Preparing your workspace…</div>
     </div>
   );
+
+  // Buyer and seller each get the full-viewport rich workspace (their own scoped
+  // shell + shared pine/sage identity); other roles keep their bespoke views.
+  if (ws.archetype === "buyer") {
+    return <BuyerWorkspace ws={ws} papi={papi} reload={load} busy={busy} cycle={cycle} />;
+  }
+  if (ws.archetype === "seller") {
+    return <SellerWorkspace ws={ws} papi={papi} reload={load} busy={busy} cycle={cycle} />;
+  }
+  // Agents get the cross-deal command center (whole book), not a single-deal
+  // workspace. Buyer's agent and listing agent share the archetype but get their
+  // own re-pointed surface; both fetch /agent|/listing with this same token.
+  if (ws.archetype === "agent") {
+    return ws.me.role === "listing_agent"
+      ? <ListingCommandCenter papi={papi} />
+      : <AgentCommandCenter papi={papi} />;
+  }
 
   const theme = themeFor(ws.archetype);
   const prop = ws.property;

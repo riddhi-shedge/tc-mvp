@@ -626,6 +626,23 @@ class MasterRepo(Protocol):
         content_base64: str, doc_type: str, actor: str,
     ) -> dict[str, Any]: ...
 
+    def record_deposit_verified(self, *, transaction_id: str, party_id: str, actor: str) -> None:
+        """A buyer self-attests they've verified wire instructions out of band and
+        sent their deposit. Recorded as an audit event (read back into the buyer
+        workspace); no money/wiring data is stored."""
+        ...
+
+    def record_disclosure_attested(self, *, transaction_id: str, party_id: str, kind: str, actor: str) -> None:
+        """A seller attests a specific CA disclosure (TDS/SPQ/NHD/…) is accurate and
+        delivered. Recorded as an audit event keyed by disclosure `kind`; the seller
+        workspace reads it back as that disclosure's delivered state."""
+        ...
+
+    def record_disbursement_verified(self, *, transaction_id: str, party_id: str, actor: str) -> None:
+        """A seller self-attests they verified their proceeds-disbursement account out
+        of band. Audit event only — no account/routing data is stored (Rule 1)."""
+        ...
+
     def approve_and_send(
         self,
         *,
@@ -637,6 +654,17 @@ class MasterRepo(Protocol):
         mailer: Any,
         followup_days: int,
     ) -> dict[str, Any] | None: ...
+
+    def record_message_approved(
+        self, *, transaction_id: str, message_id: str, actor: str,
+        subject: str | None, body: str | None,
+    ) -> dict[str, Any] | None:
+        """Rule 3 for the agent command center: record the agent's explicit approval
+        of an AI-drafted message and log it to the deal, applying any inline edits.
+        Unlike approve_and_send this does NOT invoke a mailer — the command center is
+        not wired to outbound delivery, so it records the approval and logs it rather
+        than claiming to email. Returns the updated message, or None if not found."""
+        ...
 
     def send_invite(
         self, *, transaction_id: str, party_id: str, to: str, subject: str, body: str,
@@ -2042,6 +2070,24 @@ class SupabaseRepo:
         )
         return doc
 
+    def record_deposit_verified(self, *, transaction_id: str, party_id: str, actor: str) -> None:
+        self._audit(
+            transaction_id=transaction_id, actor=actor, action="party.deposit_verified",
+            entity_type="party", entity_id=party_id, details={"party_id": party_id},
+        )
+
+    def record_disclosure_attested(self, *, transaction_id: str, party_id: str, kind: str, actor: str) -> None:
+        self._audit(
+            transaction_id=transaction_id, actor=actor, action="party.disclosure_attested",
+            entity_type="party", entity_id=party_id, details={"party_id": party_id, "kind": kind},
+        )
+
+    def record_disbursement_verified(self, *, transaction_id: str, party_id: str, actor: str) -> None:
+        self._audit(
+            transaction_id=transaction_id, actor=actor, action="party.disbursement_verified",
+            entity_type="party", entity_id=party_id, details={"party_id": party_id},
+        )
+
     def approve_and_send(
         self,
         *,
@@ -2157,6 +2203,36 @@ class SupabaseRepo:
             }
         ).execute()
         return {"message": sent, "approval": approval}
+
+    def record_message_approved(
+        self, *, transaction_id: str, message_id: str, actor: str,
+        subject: str | None, body: str | None,
+    ) -> dict[str, Any] | None:
+        rows = (
+            self._db.table("messages").select("*")
+            .eq("id", message_id).eq("transaction_id", transaction_id).execute().data
+        )
+        if not rows:
+            return None
+        msg = rows[0]
+        if msg["status"] not in ("draft", "approved"):
+            raise MessageNotSendable
+        final_subject = subject if subject is not None else msg["subject"]
+        final_body = body if body is not None else msg["body"]
+        self._db.table("approvals").insert(
+            {"transaction_id": transaction_id, "message_id": message_id, "approved_by": actor}
+        ).execute()
+        updated = (
+            self._db.table("messages").update({
+                "status": "approved", "subject": final_subject, "body": final_body,
+                "approved_by": actor, "approved_at": datetime.now(timezone.utc).isoformat(),
+            }).eq("id", message_id).execute().data[0]
+        )
+        self._audit(
+            transaction_id=transaction_id, actor=actor, action="message.approved",
+            entity_type="message", entity_id=message_id, details={"logged": True},
+        )
+        return updated
 
     def send_invite(
         self, *, transaction_id: str, party_id: str, to: str, subject: str, body: str,

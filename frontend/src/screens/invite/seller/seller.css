@@ -1,0 +1,48 @@
+/* Seller workspace — reuses the .bw design system (buyer.css) verbatim; only the
+   seller-specific components live here: the "Selling" tag, the payoff hero chips,
+   the read-only deal-health monitor, the net sheet, and repair/credit requests. */
+
+.bw-tag{ display:inline-flex; align-items:center; font-size:11px; font-weight:600; letter-spacing:.4px;
+  text-transform:uppercase; color:var(--sage-deep); background:var(--sage-bg); border-radius:999px; padding:.15rem .55rem; margin-left:.5rem; }
+
+/* hero payoff chips (replace the buyer's single keys countdown) */
+.bw-hero-chips{ display:flex; gap:1.2rem; flex:none; text-align:right; }
+.bw-chip-n{ font-family:var(--bw-serif); font-size:1.55rem; line-height:1; font-variant-numeric:tabular-nums; }
+.bw-chip-n.small{ font-size:1.3rem; }
+.bw-chip-l{ font-size:11px; opacity:.9; margin-top:.15rem; }
+
+/* deal-health monitor — the buyer's steps, read-only + visibly inert */
+.bw-health-top{ display:flex; align-items:center; justify-content:space-between; gap:1rem; margin-bottom:.3rem; }
+.bw-meter{ font-size:12px; font-weight:700; padding:.2rem .6rem; border-radius:999px; }
+.bw-meter.on_track{ background:var(--sage-bg); color:var(--sage-deep); }
+.bw-meter.watch{ background:var(--amber-bg); color:#6f4e12; }
+.bw-meter.at_risk{ background:var(--clay-bg); color:#7c3623; }
+.bw-inert-note{ font-size:12.5px; color:var(--ink-3); font-style:italic; margin:.2rem 0 .7rem; }
+.bw-ms{ display:flex; align-items:center; gap:.7rem; padding:.55rem 0; border-top:1px solid var(--line); cursor:default; }
+.bw-ms:first-of-type{ border-top:0; }
+.bw-ms-ic{ width:22px; height:22px; flex:none; border-radius:50%; display:grid; place-items:center; }
+.bw-ms-ic.complete{ background:var(--sage); color:#fff; }
+.bw-ms-ic.in_progress{ background:var(--amber-bg); color:var(--amber); border:1.5px solid var(--amber-line); }
+.bw-ms-ic.pending{ background:var(--surface-2); color:var(--ink-3); border:1.5px solid var(--line-2); }
+.bw-ms-ic.at_risk{ background:var(--clay-bg); color:var(--clay); border:1.5px solid var(--clay-line); }
+.bw-ms-l{ flex:1; min-width:0; font-weight:500; }
+.bw-ms-detail{ font-size:12px; color:var(--ink-2); margin-top:.1rem; }
+
+/* net sheet (uses the amber .bw-money card) */
+.bw-net-toggle{ display:inline-flex; align-items:center; gap:.35rem; background:none; border:0; color:#6f4e12; font-weight:600; font-size:13px; padding:.2rem 0; }
+.bw-net-toggle .bw-chev{ transition:transform .18s ease; }
+.bw-net-toggle.open .bw-chev{ transform:rotate(180deg); }
+.bw-net-lines{ margin-top:.6rem; border-top:1px solid var(--amber-line); }
+.bw-net-line{ display:flex; justify-content:space-between; gap:1rem; padding:.4rem 0; border-bottom:1px solid var(--amber-line); font-size:13px; color:#6f4e12; }
+.bw-net-line .amt{ font-variant-numeric:tabular-nums; font-weight:600; }
+.bw-net-line.debit .amt{ color:#7c3623; }
+.bw-net-line.total{ border-bottom:0; padding-top:.6rem; font-weight:700; color:#5c400f; }
+.bw-net-note{ font-size:12px; color:#6f4e12; margin-top:.5rem; }
+
+/* repair / credit request card */
+.bw-req{ border:1px solid var(--amber-line); background:var(--amber-bg); border-radius:var(--radius); padding:1rem 1.1rem; margin-bottom:.7rem; }
+.bw-req-h{ display:flex; align-items:center; gap:.6rem; font-weight:600; color:#6f4e12; }
+.bw-req-amt{ font-family:var(--bw-serif); font-size:1.4rem; color:#5c400f; font-variant-numeric:tabular-nums; }
+.bw-req-impact{ background:var(--surface); border:1px solid var(--amber-line); border-radius:9px; padding:.55rem .7rem; font-size:13px; color:#6f4e12; margin:.5rem 0; }
+.bw-req-actions{ display:flex; gap:.5rem; flex-wrap:wrap; }
+.bw-req-state{ display:inline-flex; align-items:center; gap:.35rem; font-weight:600; color:var(--sage-deep); }

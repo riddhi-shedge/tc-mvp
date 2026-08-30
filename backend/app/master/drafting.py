@@ -74,6 +74,10 @@ PURPOSES: dict[str, str] = {
     "received, escrow opened, on track to close.",
     "intro": "Introduce yourself as the transaction coordinator and offer to be the point "
     "of contact for paperwork and deadlines on this transaction.",
+    "offer_comparison": "Summarize the received offers side by side for the seller in "
+    "plain language — laying out the tradeoffs (price, financing strength, contingencies, "
+    "close timing, certainty) so the seller can decide. Do NOT recommend or pick a winner; "
+    "the seller chooses. Use only the offer facts provided in the note.",
     "general": "A brief, professional, deal-specific status check-in relevant to this "
     "recipient's role on the transaction.",
 }
