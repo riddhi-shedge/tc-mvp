@@ -10,6 +10,7 @@ from __future__ import annotations
 import logging
 import os
 import re
+import threading
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timedelta, timezone
@@ -693,6 +694,21 @@ ATTACHMENT_BUCKET = "ingestion-attachments"
 # ThreadLocalSupabase, so per-call executors would pay client + TLS setup on
 # every request. Sized to fetch one deal's tables in a single wave.
 _FETCH_POOL = ThreadPoolExecutor(max_workers=12, thread_name_prefix="repo-fetch")
+
+# Per-message locks serializing approve/send within this process (Rule 3: two
+# concurrent approvals of the same draft must not both reach the mailer). The
+# draft->approved DB update is additionally a compare-and-swap for cross-process
+# safety. Lock objects are tiny and message ids finite; no eviction needed.
+_MSG_LOCKS: dict[str, threading.Lock] = {}
+_MSG_LOCKS_GUARD = threading.Lock()
+
+
+def _message_lock(message_id: str) -> threading.Lock:
+    with _MSG_LOCKS_GUARD:
+        lock = _MSG_LOCKS.get(message_id)
+        if lock is None:
+            lock = _MSG_LOCKS[message_id] = threading.Lock()
+        return lock
 
 
 def _task_meta(
@@ -2118,7 +2134,28 @@ class SupabaseRepo:
         send. On send failure (guard off, allowlist miss, transient error) the
         message stays `approved` and this same endpoint RETRIES it (no second
         Approval — the human already approved). The ONLY place a message
-        transitions to `sent`."""
+        transitions to `sent`.
+
+        Concurrency: the whole approve+send section is serialized per message
+        (in-process lock), and the draft->approved flip is a compare-and-swap —
+        two simultaneous approvals of one draft can never both reach the mailer."""
+        with _message_lock(message_id):
+            return self._approve_and_send_locked(
+                transaction_id=transaction_id, message_id=message_id, actor=actor,
+                subject=subject, body=body, mailer=mailer, followup_days=followup_days,
+            )
+
+    def _approve_and_send_locked(
+        self,
+        *,
+        transaction_id: str,
+        message_id: str,
+        actor: str,
+        subject: str | None,
+        body: str | None,
+        mailer: Any,
+        followup_days: int,
+    ) -> dict[str, Any] | None:
         rows = (
             self._db.table("messages")
             .select("*")
@@ -2142,20 +2179,12 @@ class SupabaseRepo:
         final_body = body if body is not None else msg["body"]
 
         if msg["status"] == "draft":
-            approval = (
-                self._db.table("approvals")
-                .insert(
-                    {
-                        "transaction_id": transaction_id,
-                        "message_id": message_id,
-                        "approved_by": actor,
-                    }
-                )
-                .execute()
-                .data[0]
-            )
-            try:
-                self._db.table("messages").update(
+            # Atomic claim: flip draft->approved only if still a draft, so a
+            # concurrent approval in another process can't double-record or
+            # double-send. Losing the swap means someone else owns this message.
+            claimed = (
+                self._db.table("messages")
+                .update(
                     {
                         "status": "approved",
                         "subject": final_subject,
@@ -2163,10 +2192,33 @@ class SupabaseRepo:
                         "approved_by": actor,
                         "approved_at": datetime.now(timezone.utc).isoformat(),
                     }
-                ).eq("id", message_id).execute()
+                )
+                .eq("id", message_id)
+                .eq("status", "draft")
+                .execute()
+                .data
+            )
+            if not claimed:
+                raise MessageNotSendable
+            try:
+                approval = (
+                    self._db.table("approvals")
+                    .insert(
+                        {
+                            "transaction_id": transaction_id,
+                            "message_id": message_id,
+                            "approved_by": actor,
+                        }
+                    )
+                    .execute()
+                    .data[0]
+                )
             except Exception:
-                # Compensate: don't leave an orphaned Approval on a failed flip.
-                self._db.table("approvals").delete().eq("id", approval["id"]).execute()
+                # Compensate: release the claim so the approval can be retried —
+                # never leave an approved message with no Approval record.
+                self._db.table("messages").update({"status": "draft"}).eq(
+                    "id", message_id
+                ).execute()
                 raise
             self._audit(
                 transaction_id=transaction_id,
@@ -2181,6 +2233,15 @@ class SupabaseRepo:
                 self._db.table("messages").update(
                     {"subject": final_subject, "body": final_body}
                 ).eq("id", message_id).execute()
+            # The Approval was recorded when the human first approved; return it.
+            existing = (
+                self._db.table("approvals")
+                .select("*")
+                .eq("message_id", message_id)
+                .execute()
+                .data
+            )
+            approval = existing[0] if existing else None
 
         # The send — the only outbound path. Failure leaves it approved (retryable).
         sent_result = mailer.send(to=recipient, subject=final_subject, body=final_body)
@@ -2222,31 +2283,49 @@ class SupabaseRepo:
         self, *, transaction_id: str, message_id: str, actor: str,
         subject: str | None, body: str | None,
     ) -> dict[str, Any] | None:
-        rows = (
-            self._db.table("messages").select("*")
-            .eq("id", message_id).eq("transaction_id", transaction_id).execute().data
-        )
-        if not rows:
-            return None
-        msg = rows[0]
-        if msg["status"] not in ("draft", "approved"):
-            raise MessageNotSendable
-        final_subject = subject if subject is not None else msg["subject"]
-        final_body = body if body is not None else msg["body"]
-        self._db.table("approvals").insert(
-            {"transaction_id": transaction_id, "message_id": message_id, "approved_by": actor}
-        ).execute()
-        updated = (
-            self._db.table("messages").update({
-                "status": "approved", "subject": final_subject, "body": final_body,
-                "approved_by": actor, "approved_at": datetime.now(timezone.utc).isoformat(),
-            }).eq("id", message_id).execute().data[0]
-        )
-        self._audit(
-            transaction_id=transaction_id, actor=actor, action="message.approved",
-            entity_type="message", entity_id=message_id, details={"logged": True},
-        )
-        return updated
+        with _message_lock(message_id):
+            rows = (
+                self._db.table("messages").select("*")
+                .eq("id", message_id).eq("transaction_id", transaction_id).execute().data
+            )
+            if not rows:
+                return None
+            msg = rows[0]
+            if msg["status"] not in ("draft", "approved"):
+                raise MessageNotSendable
+            final_subject = subject if subject is not None else msg["subject"]
+            final_body = body if body is not None else msg["body"]
+
+            if msg["status"] == "approved":
+                # Idempotent re-approve (e.g. a double-click): apply edits only —
+                # the Approval and audit were recorded on the first transition.
+                return (
+                    self._db.table("messages").update(
+                        {"subject": final_subject, "body": final_body}
+                    ).eq("id", message_id).execute().data[0]
+                )
+
+            # Atomic claim (draft->approved), cross-process safe like approve_and_send.
+            claimed = (
+                self._db.table("messages").update({
+                    "status": "approved", "subject": final_subject, "body": final_body,
+                    "approved_by": actor, "approved_at": datetime.now(timezone.utc).isoformat(),
+                }).eq("id", message_id).eq("status", "draft").execute().data
+            )
+            if not claimed:
+                raise MessageNotSendable
+            try:
+                self._db.table("approvals").insert(
+                    {"transaction_id": transaction_id, "message_id": message_id, "approved_by": actor}
+                ).execute()
+            except Exception:
+                self._db.table("messages").update({"status": "draft"}).eq("id", message_id).execute()
+                raise
+            self._audit(
+                transaction_id=transaction_id, actor=actor, action="message.approved",
+                entity_type="message", entity_id=message_id, details={"logged": True},
+            )
+            return claimed[0]
 
     def send_invite(
         self, *, transaction_id: str, party_id: str, to: str, subject: str, body: str,

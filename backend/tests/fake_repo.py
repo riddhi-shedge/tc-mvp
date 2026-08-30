@@ -739,12 +739,15 @@ class InMemoryRepo:
             return None
         if message["status"] not in ("draft", "approved"):
             raise MessageNotSendable
+        first_approval = message["status"] == "draft"
         message.update({
-            "status": "approved",
             "subject": subject if subject is not None else message["subject"],
             "body": body if body is not None else message["body"],
-            "approved_by": actor, "approved_at": _now(),
         })
+        if not first_approval:
+            # Idempotent re-approve: edits only — the Approval was already recorded.
+            return message
+        message.update({"status": "approved", "approved_by": actor, "approved_at": _now()})
         self.approvals.append({
             "id": str(uuid.uuid4()), "transaction_id": transaction_id,
             "message_id": message_id, "approved_by": actor, "approved_at": _now(),
