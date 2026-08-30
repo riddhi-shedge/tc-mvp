@@ -2539,7 +2539,10 @@ class SupabaseRepo:
                 {"details": blob, "enriched_at": datetime.now(timezone.utc).isoformat()}
             ).eq("transaction_id", transaction_id).execute()
         except Exception:
-            pass
+            # Cache write is best-effort (the column may predate its migration) —
+            # but never silently: without this line a permanently failing cache
+            # means re-enriching on every view with no trace of why.
+            _log.info("property enrichment cache write failed for txn=%s", transaction_id)
         return blob
 
     def get_full_state(self, transaction_id: str) -> dict[str, Any] | None:
