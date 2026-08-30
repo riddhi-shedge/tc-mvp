@@ -11,6 +11,7 @@ import logging
 import os
 import re
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Protocol
 
@@ -679,6 +680,12 @@ class MasterRepo(Protocol):
 # Ingestion's private attachment bucket (documents' storage_path lives here).
 # Named locally so the master doesn't import ingestion internals.
 ATTACHMENT_BUCKET = "ingestion-attachments"
+
+# Persistent pool for fanning out independent reads. Long-lived on purpose: each
+# worker thread lazily creates (then keeps) its own Supabase client via
+# ThreadLocalSupabase, so per-call executors would pay client + TLS setup on
+# every request. Sized to fetch one deal's tables in a single wave.
+_FETCH_POOL = ThreadPoolExecutor(max_workers=12, thread_name_prefix="repo-fetch")
 
 
 def _task_meta(
@@ -2532,25 +2539,27 @@ class SupabaseRepo:
         txns = self._db.table("transactions").select("*").eq("id", transaction_id).execute().data
         if not txns:
             return None
-        props = (
-            self._db.table("properties")
-            .select("*")
-            .eq("transaction_id", transaction_id)
-            .execute()
-            .data
-        )
-        state: dict[str, Any] = {
-            "transaction": txns[0],
-            "property": props[0] if props else None,
-        }
-        for table in _CHILD_TABLES:
-            state[table] = (
+
+        # The 12 remaining reads are independent — issue them concurrently instead
+        # of serially (each is a ~250ms REST round-trip to hosted Supabase, so the
+        # serial version cost ~4s per deal; measured 2026-08-30).
+        def _fetch(table: str) -> tuple[str, list[dict[str, Any]]]:
+            rows = (
                 self._db.table(table)
                 .select("*")
                 .eq("transaction_id", transaction_id)
                 .execute()
                 .data
             )
+            return table, rows
+
+        state: dict[str, Any] = {"transaction": txns[0]}
+        for table, rows in _FETCH_POOL.map(_fetch, ("properties", *_CHILD_TABLES)):
+            if table == "properties":
+                state["property"] = rows[0] if rows else None
+            else:
+                state[table] = rows
+
         state["timeline_gate"] = _deadline_gate_state(state["extracted_fields"])
         state["effective_fields"] = _effective_fields(
             state["extracted_fields"],
