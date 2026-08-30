@@ -1268,15 +1268,8 @@ def party_verify_disbursement(
 # The agent's token authenticates; aggregation runs service-role across every deal.
 
 def _all_deal_states(repo: MasterRepo) -> list[dict[str, Any]]:
-    states: list[dict[str, Any]] = []
-    for t in repo.list_transactions():
-        tid = t.get("id") or t.get("transaction_id")
-        if not tid:
-            continue
-        st = repo.get_full_state(tid)
-        if st:
-            states.append(st)
-    return states
+    # Batch-loaded: one IN-query per table for the whole book, not 13 per deal.
+    return repo.list_full_states()
 
 
 def _agent_me(states: list[dict[str, Any]], party_id: str) -> dict[str, Any]:

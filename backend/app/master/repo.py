@@ -543,6 +543,12 @@ class MasterRepo(Protocol):
 
     def get_full_state(self, transaction_id: str) -> dict[str, Any] | None: ...
 
+    def list_full_states(self) -> list[dict[str, Any]]:
+        """Full state for every transaction, batch-loaded (one query per table via
+        IN-filters rather than one per table per deal). Powers the cross-deal
+        agent/listing portfolio views. Same per-deal shape as get_full_state."""
+        ...
+
     def get_or_enrich_property(self, transaction_id: str) -> dict[str, Any] | None:
         """Cached address enrichment (facts/photo/deep-links) for the property
         card; None when unavailable. Populated in the enrichment phase."""
@@ -2566,3 +2572,46 @@ class SupabaseRepo:
             _source_rank_map(state["payloads"], state["documents"]),
         )
         return state
+
+    def list_full_states(self) -> list[dict[str, Any]]:
+        txns = (
+            self._db.table("transactions").select("*").order("created_at", desc=True).execute().data
+        )
+        if not txns:
+            return []
+        ids = [t["id"] for t in txns]
+
+        # One IN-query per table for the whole book (13 total, issued in one
+        # concurrent wave) instead of 13 per deal — the per-deal loop cost ~4s x
+        # N deals (~29s for 7 deals; measured 2026-08-30).
+        def _fetch(table: str) -> tuple[str, list[dict[str, Any]]]:
+            rows = (
+                self._db.table(table)
+                .select("*")
+                .in_("transaction_id", ids)
+                .execute()
+                .data
+            )
+            return table, rows
+
+        by_table: dict[str, dict[str, list[dict[str, Any]]]] = {}
+        for table, rows in _FETCH_POOL.map(_fetch, ("properties", *_CHILD_TABLES)):
+            grouped: dict[str, list[dict[str, Any]]] = {}
+            for row in rows:
+                grouped.setdefault(row.get("transaction_id"), []).append(row)
+            by_table[table] = grouped
+
+        states: list[dict[str, Any]] = []
+        for txn in txns:
+            tid = txn["id"]
+            props = by_table["properties"].get(tid) or []
+            state: dict[str, Any] = {"transaction": txn, "property": props[0] if props else None}
+            for table in _CHILD_TABLES:
+                state[table] = by_table[table].get(tid, [])
+            state["timeline_gate"] = _deadline_gate_state(state["extracted_fields"])
+            state["effective_fields"] = _effective_fields(
+                state["extracted_fields"],
+                _source_rank_map(state["payloads"], state["documents"]),
+            )
+            states.append(state)
+        return states

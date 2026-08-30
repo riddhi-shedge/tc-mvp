@@ -1298,6 +1298,10 @@ class InMemoryRepo:
         # cached enrichment; None by default (graceful address-only card).
         return getattr(self, "property_enrichment", {}).get(transaction_id)
 
+    def list_full_states(self) -> list[dict[str, Any]]:
+        states = (self.get_full_state(tid) for tid in self.transactions)
+        return [s for s in states if s is not None]
+
     def get_full_state(self, transaction_id: str) -> dict[str, Any] | None:
         txn = self.transactions.get(transaction_id)
         if txn is None:
