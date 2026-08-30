@@ -45,6 +45,7 @@ export interface Portfolio {
   radar: DeadlineItem[];
   activity: AIActivityEvent[];
   weekly: CoPilotWeekly;
+  approvalItems?: ApprovalItem[]; // shipped with the portfolio — one book-load per poll
 }
 
 export interface Party { id: string; name: string | null; role: string; phone: string | null }

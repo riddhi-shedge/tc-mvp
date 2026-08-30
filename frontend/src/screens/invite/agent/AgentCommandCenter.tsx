@@ -36,17 +36,18 @@ export function AgentCommandCenter({ papi }: { papi: Papi }) {
   const [drafting, setDrafting] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
-  const loadPortfolio = useCallback(async () => {
-    try { setPortfolio(await papi<Portfolio>("/agent/portfolio")); }
-    catch (e) { setErr(e instanceof Error ? e.message : "Couldn't load your book."); }
-  }, [papi]);
-  const loadApprovals = useCallback(async () => {
-    try { setApprovals((await papi<{ items: ApprovalItem[] }>("/agent/approvals")).items); }
-    catch { /* keep prior */ }
+  // One request loads the book AND the queue (the portfolio ships approvalItems),
+  // so each load/poll costs a single whole-book read instead of two.
+  const loadAll = useCallback(async () => {
+    try {
+      const p = await papi<Portfolio>("/agent/portfolio");
+      setPortfolio(p);
+      if (p.approvalItems) setApprovals(p.approvalItems);
+    } catch (e) { setErr(e instanceof Error ? e.message : "Couldn't load your book."); }
   }, [papi]);
 
-  useEffect(() => { void loadPortfolio(); void loadApprovals(); }, [loadPortfolio, loadApprovals]);
-  usePoll(() => { void loadPortfolio(); void loadApprovals(); }); // §7 live-sync
+  useEffect(() => { void loadAll(); }, [loadAll]);
+  usePoll(() => { void loadAll(); }); // §7 live-sync
   useEffect(() => {
     if (view === "clients" && clients === null) {
       papi<{ clients: ClientRow[] }>("/agent/clients").then((d) => setClients(d.clients)).catch(() => setClients([]));
@@ -77,19 +78,19 @@ export function AgentCommandCenter({ papi }: { papi: Papi }) {
         method: "POST",
         body: JSON.stringify({ transaction_id: item.dealId, body: editedBody ?? null }),
       });
-    } catch (e) { setErr(e instanceof Error ? e.message : "Approve failed."); void loadApprovals(); void loadPortfolio(); }
+    } catch (e) { setErr(e instanceof Error ? e.message : "Approve failed."); void loadAll(); }
   }
   async function dismiss(item: ApprovalItem) {
     setApprovals((prev) => prev.filter((a) => a.id !== item.id));
     setPortfolio((p) => p && { ...p, stats: { ...p.stats, needYouToday: Math.max(0, p.stats.needYouToday - 1) } });
     try { await papi(`/agent/approvals/${item.id}/dismiss`, { method: "POST", body: JSON.stringify({ transaction_id: item.dealId }) }); }
-    catch (e) { setErr(e instanceof Error ? e.message : "Dismiss failed."); void loadApprovals(); }
+    catch (e) { setErr(e instanceof Error ? e.message : "Dismiss failed."); void loadAll(); }
   }
   async function refreshCopilot() {
     setDrafting(true); setErr(null);
     try {
       await papi("/agent/copilot/refresh", { method: "POST", body: JSON.stringify({ limit: 8 }) });
-      await Promise.all([loadApprovals(), loadPortfolio()]);
+      await loadAll();
     } catch (e) { setErr(e instanceof Error ? e.message : "Co-pilot drafting is unavailable right now."); }
     finally { setDrafting(false); }
   }

@@ -30,15 +30,16 @@ export function ListingCommandCenter({ papi }: { papi: Papi }) {
   const [drafting, setDrafting] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
-  const loadPf = useCallback(async () => {
-    try { setPf(await papi<ListingPortfolio>("/listing/portfolio")); }
-    catch (e) { setErr(e instanceof Error ? e.message : "Couldn't load your book."); }
+  // One request loads the book AND the queue (the portfolio ships approvalItems).
+  const loadAll = useCallback(async () => {
+    try {
+      const p = await papi<ListingPortfolio & { approvalItems?: ApprovalItem[] }>("/listing/portfolio");
+      setPf(p);
+      if (p.approvalItems) setApprovals(p.approvalItems);
+    } catch (e) { setErr(e instanceof Error ? e.message : "Couldn't load your book."); }
   }, [papi]);
-  const loadApprovals = useCallback(async () => {
-    try { setApprovals((await papi<{ items: ApprovalItem[] }>("/agent/approvals")).items); } catch { /* keep */ }
-  }, [papi]);
-  useEffect(() => { void loadPf(); void loadApprovals(); }, [loadPf, loadApprovals]);
-  usePoll(() => { void loadPf(); void loadApprovals(); }); // §7 live-sync
+  useEffect(() => { void loadAll(); }, [loadAll]);
+  usePoll(() => { void loadAll(); }); // §7 live-sync
   useEffect(() => {
     if (view === "sellers" && sellers === null) papi<{ sellers: SellerRow[] }>("/listing/sellers").then((d) => setSellers(d.sellers)).catch(() => setSellers([]));
   }, [view, sellers, papi]);
@@ -61,23 +62,23 @@ export function ListingCommandCenter({ papi }: { papi: Papi }) {
     setApprovals((p) => p.filter((a) => a.id !== item.id));
     setPf((p) => p && { ...p, stats: { ...p.stats, needYouToday: Math.max(0, p.stats.needYouToday - 1) } });
     try { await papi(`/agent/approvals/${item.id}/approve`, { method: "POST", body: JSON.stringify({ transaction_id: item.dealId, body: editedBody ?? null }) }); }
-    catch (e) { setErr(e instanceof Error ? e.message : "Approve failed."); void loadApprovals(); }
+    catch (e) { setErr(e instanceof Error ? e.message : "Approve failed."); void loadAll(); }
   }
   async function dismiss(item: ApprovalItem) {
     setApprovals((p) => p.filter((a) => a.id !== item.id));
     setPf((p) => p && { ...p, stats: { ...p.stats, needYouToday: Math.max(0, p.stats.needYouToday - 1) } });
     try { await papi(`/agent/approvals/${item.id}/dismiss`, { method: "POST", body: JSON.stringify({ transaction_id: item.dealId }) }); }
-    catch (e) { setErr(e instanceof Error ? e.message : "Dismiss failed."); void loadApprovals(); }
+    catch (e) { setErr(e instanceof Error ? e.message : "Dismiss failed."); void loadAll(); }
   }
   async function draftComparison(listingId: string) {
     setDrafting(true); setErr(null);
-    try { await papi(`/listing/offers/${listingId}/draft-comparison`, { method: "POST" }); await Promise.all([loadApprovals(), loadPf()]); }
+    try { await papi(`/listing/offers/${listingId}/draft-comparison`, { method: "POST" }); await loadAll(); }
     catch (e) { setErr(e instanceof Error ? e.message : "Co-pilot drafting is unavailable."); }
     finally { setDrafting(false); }
   }
   async function refreshCopilot() {
     setDrafting(true); setErr(null);
-    try { await papi("/agent/copilot/refresh", { method: "POST", body: JSON.stringify({ limit: 8 }) }); await Promise.all([loadApprovals(), loadPf()]); }
+    try { await papi("/agent/copilot/refresh", { method: "POST", body: JSON.stringify({ limit: 8 }) }); await loadAll(); }
     catch (e) { setErr(e instanceof Error ? e.message : "Co-pilot drafting is unavailable."); }
     finally { setDrafting(false); }
   }

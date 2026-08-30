@@ -1361,7 +1361,13 @@ def agent_portfolio(
 ) -> dict[str, Any]:
     states = _all_deal_states(repo)
     pending = _pending_drafts(states)
-    return build_agent_portfolio(deals=states, me=_agent_me(states, agent.party_id), pending_drafts=len(pending))
+    payload = build_agent_portfolio(
+        deals=states, me=_agent_me(states, agent.party_id), pending_drafts=len(pending)
+    )
+    # Ship the queue with the portfolio: the command center needs both on every
+    # load/poll, and a separate /agent/approvals call re-loads the whole book.
+    payload["approvalItems"] = pending
+    return payload
 
 
 @router.get("/agent/approvals")
@@ -1515,7 +1521,11 @@ def listing_portfolio(
 ) -> dict[str, Any]:
     states = _all_deal_states(repo)
     pending = _pending_drafts(states)
-    return build_listing_portfolio(deals=states, me=_agent_me(states, agent.party_id), pending_drafts=len(pending))
+    payload = build_listing_portfolio(
+        deals=states, me=_agent_me(states, agent.party_id), pending_drafts=len(pending)
+    )
+    payload["approvalItems"] = pending  # same single-load contract as /agent/portfolio
+    return payload
 
 
 @router.get("/listing/sellers")
