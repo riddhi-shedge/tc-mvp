@@ -1601,7 +1601,9 @@ def listing_draft_comparison(
         purpose="offer_comparison", recipient_name=seller.get("name"), recipient_role="seller",
         property_address=(st.get("property") or {}).get("address") or fields.get("property_address"),
         buyer_names=None, seller_names=fields.get("seller_names"),
-        tc_name=_agent_me(_all_deal_states(repo), agent.party_id).get("name"),
+        # Resolve the drafter's name from the deal already in hand — the previous
+        # _all_deal_states() call re-loaded the entire book for one name.
+        tc_name=_agent_me([st], agent.party_id).get("name"),
         key_dates=(), note=f"Offers received: {lines}. Present these neutrally; do not recommend one.",
     )
     try:
