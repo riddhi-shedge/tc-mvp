@@ -15,6 +15,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Protocol
 
+from app.common.dates import ca_today
 from app.common.db import ThreadLocalSupabase
 from app.contracts.compliance import ComplianceResult
 from app.contracts.documents import COUNTER_OFFER_TYPES
@@ -1567,7 +1568,7 @@ class SupabaseRepo:
         )
         if existing:
             raise TimelineAlreadyExists
-        today = date.today()
+        today = ca_today()  # seed due dates from the CA calendar day, not the server's
         deadlines: list[dict[str, Any]] = []
         tasks: list[dict[str, Any]] = []
         try:

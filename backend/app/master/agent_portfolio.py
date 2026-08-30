@@ -16,6 +16,7 @@ import re
 from datetime import date
 from typing import Any
 
+from app.common.dates import ca_today
 from app.master.event_catalog import agent_activity
 
 # DB stage -> the agent-facing DealStage vocabulary.
@@ -25,7 +26,9 @@ _STAGE: dict[str, str] = {
 
 
 def _today() -> date:
-    return date.today()
+    # CA calendar day (Rule 4) — a UTC server's date.today() runs a day ahead
+    # from 4-5pm PT, which would mark deadlines overdue early.
+    return ca_today()
 
 
 def _days_to(iso: str | None) -> int | None:

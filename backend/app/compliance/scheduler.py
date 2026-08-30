@@ -24,6 +24,7 @@ import sys
 from datetime import date
 from typing import Any, Protocol
 
+from app.common.dates import ca_today
 from app.compliance.ca_rules import RuleSet, load_verified_ruleset
 from app.compliance.service import ComplianceMasterClient, run_for_transaction
 
@@ -44,7 +45,7 @@ def run_all(
     if the gate is closed). One deal failing is isolated and reported, never
     aborts the sweep. Returns a per-deal summary."""
     ruleset = rules if rules is not None else load_verified_ruleset()
-    when = as_of or date.today()
+    when = as_of or ca_today()
 
     summary: list[dict[str, Any]] = []
     for txn_id in master.list_active_transactions():
@@ -80,7 +81,7 @@ def main(argv: list[str] | None = None) -> int:
         except Exception as exc:
             print(f"compliance: could not load rules ({type(exc).__name__})")
             return 1
-        when = date.today()
+        when = ca_today()
         failures = 0
         for txn_id in argv:
             try:

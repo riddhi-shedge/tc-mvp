@@ -14,6 +14,7 @@ from __future__ import annotations
 from datetime import date
 from typing import Protocol
 
+from app.common.dates import ca_today
 from app.compliance.ca_rules import RuleSet, load_verified_ruleset
 from app.compliance.drafts import draft_reminders
 from app.compliance.risk_flags import detect_risk_flags
@@ -57,6 +58,8 @@ def run_for_transaction(
     state = master.read_deal_state(transaction_id)
     if state is None:
         raise ValueError(f"transaction {transaction_id} not found")
-    result = compute(state, ruleset, as_of=as_of or date.today())
+    # CA calendar day, not the server's: a UTC host is already "tomorrow" from
+    # 4-5pm PT, which flagged deadlines missed/approaching a day early.
+    result = compute(state, ruleset, as_of=as_of or ca_today())
     master.write_compliance_result(result)
     return result
