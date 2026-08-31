@@ -522,11 +522,12 @@ function HomeSection({ ws }: { ws: Workspace }) {
   const [look, setLook] = useState<"street" | "map">("street");
   if (!prop) return null;
   const d = prop.details ?? {};
-  const facts: [string, IconName, unknown][] = [
-    ["Beds", "home", d.beds], ["Baths", "shield", d.baths], ["Sq ft", "board", d.sqft],
-    ["Built", "clock", d.year_built], ["Lot", "pin", d.lot_size],
+  const fmtN = (v: unknown) => (typeof v === "number" ? v.toLocaleString("en-US") : String(v));
+  const facts: [string, unknown][] = [
+    ["beds", d.beds], ["baths", d.baths], ["sq ft", d.sqft],
+    ["built", d.year_built], ["sq ft lot", d.lot_size],
   ];
-  const shown = facts.filter(([, , v]) => v != null && v !== "");
+  const shown = facts.filter(([, v]) => v != null && v !== "");
   const embeds = prop.embeds ?? {};
   const hasEmbeds = !!(embeds.street || embeds.map);
   const warrantyBy = ws.fields.home_warranty_issued_by;
@@ -542,13 +543,14 @@ function HomeSection({ ws }: { ws: Workspace }) {
       <h2>The home</h2>
 
       {shown.length > 0 ? (
-        <div className="bw-facts">
-          {shown.map(([label, icon, v]) => (
-            <div key={label} className="bw-fact">
-              <Icon name={icon} size={14} />
-              <b>{String(v)}</b> {label.toLowerCase()}
+        <div className="bw-facts" role="list" aria-label="Home facts">
+          {shown.map(([label, v]) => (
+            <div key={label} className="bw-fact" role="listitem">
+              <span className="bw-fact-n">{fmtN(v)}</span>
+              <span className="bw-fact-l">{label}</span>
             </div>
           ))}
+          {d.property_type && <div className="bw-fact"><span className="bw-fact-n type">{String(d.property_type)}</span></div>}
         </div>
       ) : (
         <p className="muted" style={{ margin: "0 0 .8rem", fontSize: 13 }}>
