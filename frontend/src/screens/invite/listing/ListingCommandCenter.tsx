@@ -4,7 +4,7 @@ import { Icon, IconName } from "../../../lib/icons";
 import { humanize, initials } from "../helpers";
 import "../agent/agent.css";
 import { usePoll } from "../shared/usePoll";
-import { ActivityList, ApprovalQueue, DealOverlay, RadarView, RiskPill } from "../agent/AgentCommandCenter";
+import { ActivityList, ApprovalQueue, DealOverlay, Greeting, RadarView, RiskPill } from "../agent/AgentCommandCenter";
 import { ApprovalItem, DealDetail } from "../agent/types";
 import {
   BuyerSideHealth, LISTING_STATUS_LABEL, ListingPortfolio, ListingSummary,
@@ -119,6 +119,7 @@ export function ListingCommandCenter({ papi }: { papi: Papi }) {
         <main className="aw-canvas">
           {view === "today" && (
             <>
+              <Greeting name={me.name} stats={`${stats.liveListings} live listing${stats.liveListings === 1 ? "" : "s"} · ${stats.needYouToday} decision${stats.needYouToday === 1 ? "" : "s"} waiting on you`} />
               <ListingStats stats={stats} onStat={(k) => k === "offers" ? setView("offers") : k === "escrow" ? (setView("listings"), setFilter("in_escrow")) : k === "need" ? setView("today") : setView("listings")} />
               {withOffers.length > 0 && (
                 <div className="aw-card" style={{ padding: ".7rem .8rem", marginBottom: "1rem", borderColor: "var(--ai-line)", background: "var(--ai-bg)" }}>

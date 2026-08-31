@@ -212,3 +212,9 @@ table.aw-table{ width:100%; border-collapse:collapse; font-size:12.5px; }
 .aw-cc-talk-h{ font-size:var(--t-xs); font-weight:700; letter-spacing:.05em; text-transform:uppercase; color:var(--ink-3); margin-bottom:.3rem; }
 .aw-cc-talk-row{ display:flex; gap:.5rem; font-size:var(--t-m); padding:.15rem 0; align-items:flex-start; }
 .aw-cc-actions{ display:flex; gap:.45rem; flex-wrap:wrap; }
+
+/* greeting */
+.aw-greet{ margin-bottom: .8rem; }
+.aw-greet-h{ font-size: 1.35rem; font-weight: 650; letter-spacing: -.01em; }
+.aw-greet-h .serif{ font-family: var(--aw-serif); font-weight: 600; color: var(--sage-deep); }
+.aw-greet-sub{ font-size: var(--t-s, 12px); color: var(--ink-2); margin-top: 2px; }

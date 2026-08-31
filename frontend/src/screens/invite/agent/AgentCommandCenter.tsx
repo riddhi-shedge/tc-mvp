@@ -159,6 +159,7 @@ export function AgentCommandCenter({ papi }: { papi: Papi }) {
         <main className="aw-canvas">
           {view === "today" && (
             <>
+              <Greeting name={me.name} stats={`${stats.activeDeals} active deal${stats.activeDeals === 1 ? "" : "s"} · ${stats.needYouToday} decision${stats.needYouToday === 1 ? "" : "s"} waiting on you`} />
               <StatsBar stats={stats} onStat={(k) =>
                 k === "need" ? go("today") : k === "risk" ? go("pipeline", "at_risk") : k === "closing" ? go("pipeline", "closing") : go("pipeline")} />
               <div className="aw-h"><h1>Needs you today</h1>
@@ -215,6 +216,20 @@ export function AgentCommandCenter({ papi }: { papi: Papi }) {
       {detail && <DealOverlay detail={detail} onClose={() => setDetail(null)} />}
       {cmdOpen && <CommandPalette deals={deals} approvals={approvals} onClose={() => setCmdOpen(false)}
         onOpenDeal={openDeal} onGo={go} onRefresh={() => { setCmdOpen(false); void refreshCopilot(); }} />}
+    </div>
+  );
+}
+
+export function Greeting({ name, stats }: { name: string | null; stats: string }) {
+  const h = new Date().getHours();
+  const greet = h < 12 ? "Good morning" : h < 18 ? "Good afternoon" : "Good evening";
+  const first = (name ?? "").trim().split(/\s+/)[0] || "there";
+  return (
+    <div className="aw-greet">
+      <h1 className="aw-greet-h">{greet}, <span className="serif">{first}</span></h1>
+      <div className="aw-greet-sub">
+        {new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })} · {stats}
+      </div>
     </div>
   );
 }
