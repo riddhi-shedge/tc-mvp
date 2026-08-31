@@ -84,6 +84,13 @@ def build_attention(
         addr = _address(st)
         parties = {p["id"]: p for p in st.get("parties") or []}
         messages = {m["id"]: m for m in st.get("messages") or []}
+        # AI-drafted messages carry their reasoning in the drafted audit event —
+        # surfaced on the row so Rule-3 review sees the "why" beside the body.
+        drafted_why = {
+            r.get("entity_id"): (r.get("details") or {}).get("why")
+            for r in st.get("audit_log") or []
+            if r.get("action") == "message.drafted"
+        }
 
         # 1. Drafts awaiting approval — the Rule-3 queue. Full body + recipient
         # ride along so the review-before-send happens right in the queue row.
@@ -99,6 +106,7 @@ def build_attention(
                           + (f" ({rec.get('role', '').replace('_', ' ')})" if rec.get("role") else ""),
                 "recipientName": rec.get("name"), "recipientRole": rec.get("role"),
                 "body": m.get("body") or "",
+                "why": drafted_why.get(m["id"]),
                 "date": (m.get("created_at") or "")[:10] or None,
                 "urgency": "later",
             })

@@ -117,6 +117,7 @@ export interface AttentionItem {
   date: string | null;
   urgency: "overdue" | "today" | "soon" | "later";
   body?: string;
+  why?: string | null; // the co-pilot's reasoning, for Rule-3 review beside the body
   recipientName?: string | null;
   recipientRole?: string | null;
   messageId?: string | null;
