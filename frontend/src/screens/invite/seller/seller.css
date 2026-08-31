@@ -46,3 +46,11 @@
 .bw-req-impact{ background:var(--surface); border:1px solid var(--amber-line); border-radius:9px; padding:.55rem .7rem; font-size:13px; color:#6f4e12; margin:.5rem 0; }
 .bw-req-actions{ display:flex; gap:.5rem; flex-wrap:wrap; }
 .bw-req-state{ display:inline-flex; align-items:center; gap:.35rem; font-weight:600; color:var(--sage-deep); }
+
+/* move-out runway */
+.bw-move{ display:flex; gap:.9rem; padding:.6rem 0; border-top:1px solid var(--line); align-items:flex-start; }
+.bw-move:first-of-type{ border-top:0; }
+.bw-move-date{ flex:none; min-width:64px; font-weight:650; color:var(--sage-deep); font-size:13.5px; padding-top:1px; }
+.bw-move-l{ font-weight:600; color:var(--ink); font-size:14px; }
+.bw-move-n{ font-size:13px; color:var(--ink-2); margin-top:.1rem; }
+.bw-stays-row b{ color:var(--ink); font-weight:650; }

@@ -41,14 +41,27 @@ export function SellerWorkspace({ ws, papi, reload, busy, cycle }: Props) {
   const s = deal.summary;
   const escrowPhone = deal.team.find((m) => m.role === "escrow")?.phone
     ?? deal.team.find((m) => m.role === "title")?.phone ?? null;
+  const moveOut = {
+    walkthrough: ws.deadlines.find((d) => /walk/i.test(d.name)) ?? null,
+    close: ws.deadlines.find((d) => /escrow|clos/i.test(d.name)) ?? null,
+    possession: ws.deadlines.find((d) => /possession/i.test(d.name)) ?? null,
+  };
+  // Team split: the people working FOR the seller vs everyone else; hide self.
+  const myTeam = deal.team.filter((m) => SELLER_TEAM_ROLES.has(m.role));
+  const others = deal.team.filter(
+    (m) => !SELLER_TEAM_ROLES.has(m.role) && !(m.name === ws.me.name && m.role === ws.me.role),
+  );
+  const setView_go = (id: string) => { document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" }); };
 
   const nav = useMemo(
     () => [
-      { id: "sw-overview", label: "Overview", icon: "home" as IconName },
+      { id: "sw-overview", label: "Overview", icon: "board" as IconName },
       { id: "sw-health", label: "Deal health", icon: "flag" as IconName },
+      { id: "sw-home", label: "Your home", icon: "home" as IconName },
       { id: "sw-disclosures", label: "Disclosures", icon: "doc" as IconName },
       ...(deal.netSheet ? [{ id: "sw-proceeds", label: "Proceeds", icon: "money" as IconName }] : []),
       { id: "sw-requests", label: "Requests", icon: "inbox" as IconName },
+      { id: "sw-moveout", label: "Move-out", icon: "key" as IconName },
     ],
     [deal.netSheet],
   );
@@ -112,16 +125,40 @@ export function SellerWorkspace({ ws, papi, reload, busy, cycle }: Props) {
                       <div className="bw-chip-l">est. proceeds</div>
                     </div>
                   )}
-                  {s.daysToClose != null && s.daysToClose >= 0 && (
+                  {s.daysToClose != null && s.daysToClose >= 0 ? (
                     <div>
                       <div className="bw-chip-n small">{s.daysToClose}</div>
                       <div className="bw-chip-l">{s.daysToClose === 1 ? "day to close" : "days to close"}</div>
                     </div>
-                  )}
+                  ) : s.closeDate ? (
+                    <div>
+                      <div className="bw-chip-n small" style={{ fontSize: "1.05rem", lineHeight: 1.3 }}>{fmtDate(s.closeDate).replace(/, \d{4}$/, "")}</div>
+                      <div className="bw-chip-l">{s.phase === "closed" ? "sold" : "closing date"}</div>
+                    </div>
+                  ) : null}
                 </div>
               </div>
             </div>
             <StatusLine level={s.status.level} detail={s.status.nextActionLabel} />
+
+            {/* The seller's loop, made literal: will it close · what do I walk
+                away with · when do I hand over the keys. */}
+            <div className="bw-answers" aria-label="Your three answers">
+              <button type="button" className="bw-ans" onClick={() => setView_go("sw-health")}>
+                <span className="bw-ans-k">Will it close?</span>
+                <span className="bw-ans-v">
+                  {deal.dealHealth ? (deal.dealHealth.meter === "on_track" ? <><Icon name="checkCircle" size={13} /> On track</> : deal.dealHealth.meter === "watch" ? "Watch closely" : "At risk") : "—"}
+                </span>
+              </button>
+              <button type="button" className="bw-ans" onClick={() => setView_go(deal.netSheet ? "sw-proceeds" : "sw-health")}>
+                <span className="bw-ans-k">What do I walk away with?</span>
+                <span className="bw-ans-v">{deal.netSheet ? `${usd(deal.netSheet.estimatedNetProceedsCents)} est.` : "—"}</span>
+              </button>
+              <button type="button" className="bw-ans" onClick={() => setView_go("sw-moveout")}>
+                <span className="bw-ans-k">When do I move out?</span>
+                <span className="bw-ans-v">{moveOut.possession?.due_date ? fmtDate(moveOut.possession.due_date).replace(/, \d{4}$/, "") : moveOut.close?.due_date ? fmtDate(moveOut.close.due_date).replace(/, \d{4}$/, "") : "With closing"}</span>
+              </button>
+            </div>
           </section>
 
           {/* Deal health — the seller-specific monitor, read-only + inert */}
@@ -131,6 +168,7 @@ export function SellerWorkspace({ ws, papi, reload, busy, cycle }: Props) {
               {deal.dealHealth && <span className={`bw-meter ${deal.dealHealth.meter}`}>{deal.dealHealth.meter === "on_track" ? "On track" : deal.dealHealth.meter === "watch" ? "Watch" : "At risk"}</span>}
             </div>
             <PhaseTimeline phase={s.phase} />
+            <p className="bw-now">{SELLER_NOW[s.phase]}</p>
             <p className="bw-inert-note" style={{ marginTop: ".8rem" }}>You can't act on these — they're the buyer's steps. Shown so you always know where the deal stands.</p>
             {!deal.dealHealth || deal.dealHealth.milestones.length === 0
               ? <div className="bw-empty">The buyer's progress will appear here as escrow moves.</div>
@@ -145,6 +183,9 @@ export function SellerWorkspace({ ws, papi, reload, busy, cycle }: Props) {
                 </ul>
               )}
           </section>
+
+          {/* The home they're selling — framed for leaving it, not falling for it */}
+          <SellerHomeSection ws={ws} />
 
           {/* Disclosures — the seller's spine */}
           <section id="sw-disclosures" className="bw-sec bw-card" style={{ scrollMarginTop: 72 }}>
@@ -176,6 +217,9 @@ export function SellerWorkspace({ ws, papi, reload, busy, cycle }: Props) {
                 ))}
           </section>
 
+          {/* Move-out runway — the seller's endpoint: walkthrough, closing, keys */}
+          <MoveOutSection moveOut={moveOut} possessionTerms={ws.fields.possession_date ?? null} />
+
           {/* Tasks */}
           <section className="bw-sec bw-card" style={{ scrollMarginTop: 72 }}>
             <h2>Just your to-dos</h2>
@@ -188,9 +232,10 @@ export function SellerWorkspace({ ws, papi, reload, busy, cycle }: Props) {
         <aside className="bw-aside" aria-label="Your team and activity">
           <div className="bw-card">
             <h2>Your team</h2>
-            {deal.team.length === 0
+            <p className="muted" style={{ margin: "-.3rem 0 .5rem", fontSize: 12.5 }}>The people working for you on this sale.</p>
+            {myTeam.length === 0
               ? <div className="bw-empty">Your team will appear here.</div>
-              : deal.team.map((m, i) => (
+              : myTeam.map((m, i) => (
                   <div className="bw-member" key={m.id ?? i}>
                     <span className="bw-member-ava">{initials(m.name, m.role)}</span>
                     <div style={{ minWidth: 0 }}>
@@ -200,6 +245,20 @@ export function SellerWorkspace({ ws, papi, reload, busy, cycle }: Props) {
                     {m.phone && <a className="bw-call" href={`tel:${m.phone}`}><Icon name="phone" size={12} /> Call</a>}
                   </div>
                 ))}
+            {others.length > 0 && (
+              <>
+                <div className="bw-team-sub">Also on this deal</div>
+                {others.map((m, i) => (
+                  <div className="bw-member quiet" key={m.id ?? `o${i}`}>
+                    <span className="bw-member-ava">{initials(m.name, m.role)}</span>
+                    <div style={{ minWidth: 0 }}>
+                      <div className="bw-member-name">{m.name ?? humanize(m.role)}</div>
+                      <div className="bw-member-role">{humanize(m.role)}</div>
+                    </div>
+                  </div>
+                ))}
+              </>
+            )}
           </div>
           <div className="bw-card">
             <h2>Recent activity</h2>
@@ -369,6 +428,7 @@ function NetProceeds({ net, escrowPhone, papi, reload }: { net: NetSheet; escrow
       <h2>What you'll walk away with</h2>
       <div className="bw-money-amt">{usd(net.estimatedNetProceedsCents)}</div>
       <div className="bw-money-meta"><b>Estimated</b>{net.beforeMortgagePayoff ? ", before your mortgage payoff" : ""} — a live estimate, not a guaranteed figure.</div>
+      <div className="bw-money-meta" style={{ marginTop: 4 }}>Once the sale records, <Define>escrow</Define> typically sends your proceeds the same or next business day.</div>
 
       <button type="button" className={`bw-net-toggle ${openLines ? "open" : ""}`} aria-expanded={openLines} onClick={() => setOpenLines((o) => !o)}>
         {openLines ? "Hide" : "Show"} the numbers <span className="bw-chev"><Icon name="chevron" size={14} /></span>
@@ -458,5 +518,150 @@ function RequestCard({ r, currentProceeds }: { r: import("./types").BuyerRequest
         </div>
       )}
     </div>
+  );
+}
+
+// The seller's service team; buyers and the buyer's agent are counterparties.
+const SELLER_TEAM_ROLES = new Set(["listing_agent", "broker", "escrow", "title", "attorney"]);
+
+// Narrate the machine per phase, seller-voiced. Static CA copy.
+const SELLER_NOW: Record<SellerPhase, JSX.Element> = {
+  offer: <>The offer is signed and <Define>escrow</Define> is being opened. Your side's next job is the disclosure paperwork.</>,
+  escrow_open: <><Define>Escrow</Define> is open and holding the buyer's deposit. Your disclosures are the main thing moving right now.</>,
+  disclosures: <>Your <Define>disclosure</Define> paperwork is the main thing moving right now — the buyer's clock starts when they receive it.</>,
+  buyer_contingencies: <>The buyer is doing their checking — inspections, loan, <Define>appraisal</Define>. Watch the deal-health panel above; most of this happens on their side.</>,
+  closing: <>The finish line: the buyer's final <Define>walkthrough</Define>, signing, funding, and recording. Keep packing.</>,
+  closed: <>Recorded and complete — the sale is done. Anything left here is wrap-up.</>,
+};
+
+function SellerHomeSection({ ws }: { ws: import("../types").Workspace }) {
+  const prop = ws.property;
+  const [look, setLook] = useState<"street" | "map">("street");
+  if (!prop) return null;
+  const d = prop.details ?? {};
+  const fmtN = (v: unknown) => (typeof v === "number" ? v.toLocaleString("en-US") : String(v));
+  const facts: [string, unknown][] = [
+    ["beds", d.beds], ["baths", d.baths], ["sq ft", d.sqft], ["built", d.year_built], ["sq ft lot", d.lot_size],
+  ];
+  const shown = facts.filter(([, v]) => v != null && v !== "");
+  const embeds = prop.embeds ?? {};
+  const hasEmbeds = !!(embeds.street || embeds.map);
+  const leaving = prop.included_items || ws.fields.items_included || null;
+  const taking = prop.excluded_items || ws.fields.items_excluded || null;
+  const links = prop.deep_links ?? {};
+
+  return (
+    <section id="sw-home" className="bw-sec bw-card" style={{ scrollMarginTop: 72 }}>
+      <h2>Your home</h2>
+      {shown.length > 0 && (
+        <div className="bw-facts" role="list" aria-label="Home facts">
+          {shown.map(([label, v]) => (
+            <div key={label} className="bw-fact" role="listitem">
+              <span className="bw-fact-n">{fmtN(v)}</span>
+              <span className="bw-fact-l">{label}</span>
+            </div>
+          ))}
+          {d.property_type && <div className="bw-fact"><span className="bw-fact-n type">{String(d.property_type)}</span></div>}
+        </div>
+      )}
+
+      {(leaving || taking) && (
+        <div className="bw-stays">
+          <div className="bw-stays-h">What stays · what goes with you</div>
+          {leaving && (
+            <div className="bw-stays-row ok">
+              <Icon name="check" size={14} />
+              <span><b>Stays with the home:</b> {leaving}</span>
+            </div>
+          )}
+          {taking && (
+            <div className="bw-stays-row not">
+              <Icon name="key" size={14} />
+              <span><b>Goes with you:</b> {taking} — remember these on moving day.</span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {hasEmbeds && (
+        <div className="bw-look">
+          <div className="bw-look-tabs" role="tablist" aria-label="Look around">
+            {embeds.street && (
+              <button type="button" role="tab" aria-selected={look === "street"}
+                className={`bw-look-tab ${look === "street" ? "on" : ""}`} onClick={() => setLook("street")}>
+                <Icon name="pin" size={13} /> Street view
+              </button>
+            )}
+            {embeds.map && (
+              <button type="button" role="tab" aria-selected={look === "map"}
+                className={`bw-look-tab ${look === "map" ? "on" : ""}`} onClick={() => setLook("map")}>
+                <Icon name="board" size={13} /> Satellite
+              </button>
+            )}
+          </div>
+          <iframe
+            key={look}
+            className="bw-look-frame"
+            src={look === "street" ? (embeds.street ?? embeds.map) : (embeds.map ?? embeds.street)}
+            title={look === "street" ? "Street view of your home" : "Satellite view of your home"}
+            loading="lazy"
+            allowFullScreen
+            referrerPolicy="no-referrer-when-downgrade"
+          />
+        </div>
+      )}
+
+      {links.zillow && (
+        <div className="bw-links">
+          <a className="bw-btn bw-btn-g" href={links.zillow} target="_blank" rel="noreferrer">
+            <Icon name="external" size={13} /> See your home the way buyers see it
+          </a>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function MoveOutSection({
+  moveOut, possessionTerms,
+}: {
+  moveOut: { walkthrough: { name: string; due_date: string } | null; close: { name: string; due_date: string } | null; possession: { name: string; due_date: string } | null };
+  possessionTerms: string | null;
+}) {
+  const steps = [
+    moveOut.walkthrough && {
+      date: moveOut.walkthrough.due_date, label: "Buyer's final walkthrough",
+      note: "The home should look the way the contract promises — agreed repairs done, included items in place.",
+    },
+    moveOut.close && {
+      date: moveOut.close.due_date, label: "Closing & recording",
+      note: "Signing, funding, and the county recording the sale. This is the day it becomes official.",
+    },
+    moveOut.possession && {
+      date: moveOut.possession.due_date, label: "Keys handed over",
+      note: possessionTerms ? `Per your contract: ${possessionTerms}.` : "Possession transfers to the buyer.",
+    },
+  ].filter(Boolean) as { date: string; label: string; note: string }[];
+
+  return (
+    <section id="sw-moveout" className="bw-sec bw-card" style={{ scrollMarginTop: 72 }}>
+      <h2>Your move-out</h2>
+      <p className="muted" style={{ margin: "-.3rem 0 .8rem", fontSize: 13 }}>
+        The last three dates of this sale — and the ones that matter most for your actual life.
+      </p>
+      {steps.length === 0 ? (
+        <div className="bw-empty">Your closing dates will appear here once the timeline is set.</div>
+      ) : (
+        steps.map((st, i) => (
+          <div className="bw-move" key={i}>
+            <span className="bw-move-date tnum">{fmtDate(st.date).replace(/, \d{4}$/, "")}</span>
+            <div className="bw-move-main">
+              <div className="bw-move-l">{st.label}</div>
+              <div className="bw-move-n">{st.note}</div>
+            </div>
+          </div>
+        ))
+      )}
+    </section>
   );
 }
