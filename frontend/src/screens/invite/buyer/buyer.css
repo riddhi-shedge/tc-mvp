@@ -170,3 +170,27 @@
   .bw-hero-addr{ font-size:1.25rem; }
 }
 @media(prefers-reduced-motion:reduce){ .bw *{ transition:none !important; animation:none !important; } }
+
+/* ── UX pass: three-answer strip, phase narration, documents, team split ── */
+.bw-answers{ display:grid; grid-template-columns:repeat(3,1fr); gap:.6rem; margin-top:.7rem; }
+.bw-ans{ text-align:left; background:var(--surface); border:1px solid var(--line); border-radius:var(--radius);
+  padding:.6rem .75rem; display:flex; flex-direction:column; gap:.15rem; cursor:pointer; }
+.bw-ans:hover{ border-color:var(--line-2); background:var(--surface-2); }
+.bw-ans-k{ font-size:11px; font-weight:700; letter-spacing:.05em; text-transform:uppercase; color:var(--ink-3); }
+.bw-ans-v{ font-family:var(--bw-serif); font-size:1rem; color:var(--ink); display:flex; align-items:center; gap:.3rem; }
+.bw-ans-v svg{ color:var(--sage); }
+@media(max-width:640px){ .bw-answers{ grid-template-columns:1fr; } }
+
+.bw-now{ margin:.7rem 0 0; font-size:13.5px; color:var(--ink-2); background:var(--sage-bg);
+  border-left:2px solid var(--sage); border-radius:6px; padding:.55rem .7rem; }
+.bw-keys-n.date{ font-size:1.05rem; line-height:1.3; }
+
+.bw-doc{ display:flex; align-items:center; gap:.6rem; padding:.45rem 0; border-top:1px solid var(--line); font-size:13.5px; }
+.bw-doc:first-child{ border-top:0; }
+.bw-doc-ic{ width:28px; height:28px; flex:none; border-radius:8px; background:var(--sage-bg); color:var(--sage-deep); display:grid; place-items:center; }
+.bw-upload{ display:flex; gap:.6rem; align-items:center; flex-wrap:wrap; }
+.bw-upload select{ font:inherit; font-size:13px; color:var(--ink); background:var(--surface-2); border:1px solid var(--line-2); border-radius:9px; padding:.45rem .6rem; }
+.bw-btn.off{ opacity:.6; pointer-events:none; }
+
+.bw-team-sub{ font-size:11px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:var(--ink-3); margin:.8rem 0 .2rem; padding-top:.6rem; border-top:1px solid var(--line); }
+.bw-member.quiet .bw-member-ava{ background:var(--surface-2); color:var(--ink-3); }

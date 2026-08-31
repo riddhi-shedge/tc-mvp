@@ -30,6 +30,31 @@ const CONT_TERMS: Record<ContingencyKind, string[]> = {
 };
 const prefersReduced = () => typeof matchMedia !== "undefined" && matchMedia("(prefers-reduced-motion: reduce)").matches;
 
+// "What's happening now" — narrate the machine even when the buyer has nothing
+// to do (an inert page reads as "something's wrong" to an anxious first-timer).
+// Static CA copy, jargon tap-to-definable.
+const PHASE_NOW: Record<DealPhase, JSX.Element> = {
+  offer: <>Your offer is accepted and the paperwork is being opened. Nothing is needed from you today.</>,
+  escrow_open: <><Define>escrow</Define> is holding the deal together while your lender works on the loan. Nothing is needed from you today unless a task appears above.</>,
+  contingencies: <>This is the checking period — inspections and the loan get finished, and your <Define>contingencies</Define> protect you while they do.</>,
+  closing: <>The finish line: final <Define>walkthrough</Define>, signing, and funding. Your team will tell you exactly where to be and when.</>,
+  keys: <>Closing is complete — the home is yours. Anything left here is wrap-up.</>,
+};
+
+// The buyer's service team (callable); principals and the listing side appear
+// separately under "Also on this deal" — they're parties, not your team.
+const TEAM_ROLES = new Set([
+  "buyer_agent", "broker", "escrow", "title", "lender", "loan_officer",
+  "inspector_general", "inspector_termite", "inspector_roof", "inspector_sewer", "appraiser",
+]);
+
+// Buyer-relevant upload types (subset of the shared DOC_TYPES).
+const BUYER_DOC_TYPES = [
+  { v: "proof_of_funds", label: "Proof of funds" },
+  { v: "disclosure", label: "Signed disclosure" },
+  { v: "other", label: "Other document" },
+];
+
 export function BuyerWorkspace({ ws, papi, reload, busy, cycle }: Props) {
   const deal = useMemo(() => buildBuyerDeal(ws), [ws]);
   const hasMoney = !!deal.deposit;
@@ -39,11 +64,41 @@ export function BuyerWorkspace({ ws, papi, reload, busy, cycle }: Props) {
       { id: "bw-timeline", label: "Timeline", icon: "flag" as IconName },
       { id: "bw-tasks", label: "Your tasks", icon: "checkCircle" as IconName },
       { id: "bw-contingencies", label: "Protections", icon: "shield" as IconName },
+      { id: "bw-docs", label: "Documents", icon: "doc" as IconName },
       ...(hasMoney ? [{ id: "bw-money", label: "Your deposit", icon: "money" as IconName }] : []),
     ],
     [hasMoney],
   );
   const [active, setActive] = useState(nav[0].id);
+  const [docType, setDocType] = useState("proof_of_funds");
+  const [uploading, setUploading] = useState(false);
+  const [uploadMsg, setUploadMsg] = useState<string | null>(null);
+
+  function onFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploading(true); setUploadMsg(null);
+    const reader = new FileReader();
+    reader.onload = async () => {
+      try {
+        const b64 = (reader.result as string).split(",", 2)[1] ?? "";
+        await papi("/party/documents", { method: "POST", body: JSON.stringify({ filename: file.name, content_base64: b64, doc_type: docType }) });
+        setUploadMsg("Received — your coordinator has it.");
+        await reload();
+      } catch (err) {
+        setUploadMsg(err instanceof Error ? err.message : "Upload failed — try again.");
+      } finally {
+        setUploading(false);
+      }
+    };
+    reader.readAsDataURL(file);
+  }
+
+  // Team split (finding #4): callable service roles vs everyone else; hide self.
+  const team = deal.team.filter((m) => TEAM_ROLES.has(m.role));
+  const others = deal.team.filter(
+    (m) => !TEAM_ROLES.has(m.role) && !(m.name === ws.me.name && m.role === ws.me.role),
+  );
 
   useEffect(() => {
     const obs = new IntersectionObserver(
@@ -95,31 +150,69 @@ export function BuyerWorkspace({ ws, papi, reload, busy, cycle }: Props) {
               style={s.heroPhotoUrl ? { backgroundImage: `url(${s.heroPhotoUrl})` } : undefined}
             >
               {!s.heroPhotoUrl && <div className="bw-hero-ph"><Icon name="home" size={34} /></div>}
-              {s.photoCount > 0 && <span className="bw-photos">{s.photoCount} photo{s.photoCount === 1 ? "" : "s"}</span>}
+              {s.photoCount > 1 && <span className="bw-photos">{s.photoCount} photos</span>}
               <div className="bw-hero-scrim" />
               <div className="bw-hero-cap">
                 <div>
                   <div className="bw-hero-eyebrow">Your future home</div>
                   <div className="bw-hero-addr">{s.propertyAddress}</div>
                 </div>
-                {s.daysToKeys != null && s.daysToKeys >= 0 && (
+                {s.daysToKeys != null && s.daysToKeys >= 0 ? (
                   <div className="bw-keys">
                     <div className="bw-keys-n">{s.daysToKeys}</div>
                     <div className="bw-keys-l">{s.daysToKeys === 1 ? "day to keys" : "days to keys"}</div>
                   </div>
-                )}
+                ) : s.phase === "keys" ? (
+                  <div className="bw-keys">
+                    <div className="bw-keys-n date">🎉</div>
+                    <div className="bw-keys-l">closing complete</div>
+                  </div>
+                ) : s.estimatedKeysDate ? (
+                  <div className="bw-keys">
+                    <div className="bw-keys-n date">{fmtDate(s.estimatedKeysDate).replace(/, \d{4}$/, "")}</div>
+                    <div className="bw-keys-l">est. keys — date passed, ask your agent</div>
+                  </div>
+                ) : null}
               </div>
             </div>
 
             <StatusLine level={s.status.level} detail={s.status.nextActionLabel} />
+
+            {/* The three-question loop, made literal: one answer each, one tap to
+                the section that backs it up. Always above the fold. */}
+            <div className="bw-answers" aria-label="Your three answers">
+              <button type="button" className="bw-ans" onClick={() => goTo("bw-timeline")}>
+                <span className="bw-ans-k">Where are we?</span>
+                <span className="bw-ans-v">{PHASES.find((p) => p.key === s.phase)?.label ?? "In progress"}</span>
+              </button>
+              <button type="button" className="bw-ans" onClick={() => goTo("bw-tasks")}>
+                <span className="bw-ans-k">What do I owe?</span>
+                <span className="bw-ans-v">
+                  {deal.tasks.filter((t) => !t.done).length > 0
+                    ? `${deal.tasks.filter((t) => !t.done).length} thing${deal.tasks.filter((t) => !t.done).length > 1 ? "s" : ""} need${deal.tasks.filter((t) => !t.done).length > 1 ? "" : "s"} you`
+                    : "Nothing right now"}
+                </span>
+              </button>
+              <button type="button" className="bw-ans" onClick={() => goTo(hasMoney ? "bw-money" : "bw-timeline")}>
+                <span className="bw-ans-k">Is my money safe?</span>
+                <span className="bw-ans-v">
+                  {deal.deposit
+                    ? deal.deposit.verifiedByBuyer
+                      ? <><Icon name="checkCircle" size={13} /> {deal.deposit.amountLabel} verified</>
+                      : `${deal.deposit.amountLabel} — verify by phone`
+                    : "No deposit on file"}
+                </span>
+              </button>
+            </div>
           </section>
 
           {/* Timeline — read-only, must not look tappable */}
           <section id="bw-timeline" className="bw-sec bw-card" style={{ scrollMarginTop: 72 }} aria-label="Where your deal stands">
             <h2>Where your deal stands</h2>
             <PhaseTimeline phase={s.phase} />
+            <p className="bw-now">{PHASE_NOW[s.phase]}</p>
             {s.estimatedKeysDate && (
-              <p className="muted" style={{ marginTop: ".7rem", fontSize: 13 }}>
+              <p className="muted" style={{ marginTop: ".4rem", fontSize: 13 }}>
                 Estimated keys on <b>{fmtDate(s.estimatedKeysDate)}</b>. Dates can shift — your team will keep this current.
               </p>
             )}
@@ -144,6 +237,38 @@ export function BuyerWorkspace({ ws, papi, reload, busy, cycle }: Props) {
               : deal.contingencies.map((c) => <ContingencyCard key={c.id} c={c} />)}
           </section>
 
+          {/* Documents — the buyer can deliver what's asked of them (finding #3) */}
+          <section id="bw-docs" className="bw-sec bw-card" style={{ scrollMarginTop: 72 }}>
+            <h2>Your documents</h2>
+            <p className="muted" style={{ margin: "-.3rem 0 .8rem", fontSize: 13 }}>
+              Anything you send goes only to your coordinator — other parties never see it.
+            </p>
+            {ws.my_documents.length > 0 && (
+              <div style={{ marginBottom: ".8rem" }}>
+                {ws.my_documents.map((d) => (
+                  <div className="bw-doc" key={d.id}>
+                    <span className="bw-doc-ic"><Icon name="doc" size={15} /></span>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontWeight: 600 }}>{humanize(d.doc_type ?? "document")}</div>
+                      {d.created_at && <div className="muted" style={{ fontSize: 12 }}>Sent {fmtDate(d.created_at)}</div>}
+                    </div>
+                    <span className="bw-cont-pill done">Received</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="bw-upload">
+              <select value={docType} onChange={(e) => setDocType(e.target.value)} aria-label="Document type">
+                {BUYER_DOC_TYPES.map((d) => <option key={d.v} value={d.v}>{d.label}</option>)}
+              </select>
+              <label className={`bw-btn bw-btn-g ${uploading ? "off" : ""}`}>
+                <Icon name="attach" size={14} /> {uploading ? "Sending…" : "Send a document"}
+                <input type="file" hidden disabled={uploading} onChange={onFile} />
+              </label>
+            </div>
+            {uploadMsg && <p className="muted" style={{ fontSize: 13, marginTop: ".5rem" }}>{uploadMsg}</p>}
+          </section>
+
           {/* Money — verification only, wire-fraud friction */}
           {deal.deposit && (
             <section id="bw-money" className="bw-sec" style={{ scrollMarginTop: 72 }}>
@@ -155,9 +280,10 @@ export function BuyerWorkspace({ ws, papi, reload, busy, cycle }: Props) {
         <aside className="bw-aside" aria-label="Your team and activity">
           <div className="bw-card">
             <h2>Your team</h2>
-            {deal.team.length === 0
+            <p className="muted" style={{ margin: "-.3rem 0 .5rem", fontSize: 12.5 }}>The people working for you on this purchase.</p>
+            {team.length === 0
               ? <div className="bw-empty">Your team will appear here.</div>
-              : deal.team.map((m, i) => (
+              : team.map((m, i) => (
                   <div className="bw-member" key={m.id ?? i}>
                     <span className="bw-member-ava">{initials(m.name, m.role)}</span>
                     <div style={{ minWidth: 0 }}>
@@ -169,6 +295,20 @@ export function BuyerWorkspace({ ws, papi, reload, busy, cycle }: Props) {
                     )}
                   </div>
                 ))}
+            {others.length > 0 && (
+              <>
+                <div className="bw-team-sub">Also on this deal</div>
+                {others.map((m, i) => (
+                  <div className="bw-member quiet" key={m.id ?? `o${i}`}>
+                    <span className="bw-member-ava">{initials(m.name, m.role)}</span>
+                    <div style={{ minWidth: 0 }}>
+                      <div className="bw-member-name">{m.name ?? humanize(m.role)}</div>
+                      <div className="bw-member-role">{humanize(m.role)}</div>
+                    </div>
+                  </div>
+                ))}
+              </>
+            )}
           </div>
 
           <div className="bw-card">
@@ -331,8 +471,8 @@ function MoneyStep({ deposit, papi, reload }: { deposit: NonNullable<ReturnType<
       <h2>Your earnest-money deposit</h2>
       <div className="bw-money-amt">{deposit.amountLabel}</div>
       <div className="bw-money-meta">
-        {deposit.payeeLabel ? <>Held by <b>{deposit.payeeLabel}</b>. </> : null}
-        {deposit.dueDate ? <>Due by <b>{fmtDate(deposit.dueDate)}</b>.</> : null}
+        Your <Define>earnest money</Define>{deposit.payeeLabel ? <> is held in <Define>escrow</Define> by <b>{deposit.payeeLabel}</b>.</> : " goes to escrow."}
+        {deposit.dueDate ? <> Due by <b>{fmtDate(deposit.dueDate)}</b>.</> : null}
       </div>
 
       {step === "idle" ? (
