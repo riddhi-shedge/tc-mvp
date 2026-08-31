@@ -687,6 +687,10 @@ button.secondary.sm { padding: 0.28rem 0.55rem; font-size: 0.76rem; }
   color: var(--gold-700); background: var(--gold-100); padding: 0.08rem 0.42rem; border-radius: 6px; margin-left: 0.4rem; }
 .xr-vpill { font-size: 0.62rem; font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase; color: var(--amber-700);
   background: var(--amber-100); padding: 0.08rem 0.34rem; border-radius: 5px; }
+.xr-src { display: inline-flex; align-items: center; gap: 0.25rem; font-size: 0.7rem; font-weight: 650;
+  color: var(--ink-2); background: transparent; border: 1px solid var(--line); border-radius: 6px;
+  padding: 0.08rem 0.42rem; margin-left: 0.4rem; cursor: pointer; }
+.xr-src:hover { color: var(--gold-700); border-color: var(--gold-500); }
 .xr-dot { width: 7px; height: 7px; border-radius: 50%; flex: 0 0 auto; display: inline-block; }
 .xr-dot.ok { background: var(--green-600); }
 .xr-dot.low { background: var(--amber-600); }

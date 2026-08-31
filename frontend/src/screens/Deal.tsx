@@ -568,6 +568,7 @@ export function Deal({ id, onBack }: { id: string; onBack: () => void }) {
       <ExtractionReview
         state={state}
         busy={busy}
+        onOpenSource={openDoc}
         onConfirmAll={() =>
           void run(
             () =>

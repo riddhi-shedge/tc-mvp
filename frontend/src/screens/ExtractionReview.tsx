@@ -90,11 +90,14 @@ export function ExtractionReview({
   busy,
   onConfirmAll,
   onVerify,
+  onOpenSource,
 }: {
   state: FullState;
   busy: boolean;
   onConfirmAll: () => void;
   onVerify: (field: ExtractedField, value: string) => void;
+  /** P6: open the document a value was extracted from (signed URL, new tab). */
+  onOpenSource?: (documentId: string) => void;
 }) {
   const [edits, setEdits] = useState<Record<string, string>>({});
   const fields = state.extracted_fields;
@@ -180,9 +183,17 @@ export function ExtractionReview({
     ...(leftover.length ? [{ key: "other", label: "· Other details", items: leftover }] : []),
   ].filter((g) => g.items.length > 0);
 
+  // P6 provenance: field -> payload -> the document it was extracted from. The
+  // whole chain already existed in the SOR; this makes it one click. "I don't
+  // confirm a number I can't see the source of."
+  const docForPayload = new Map((state.payloads ?? []).map((p) => [p.id, p.document_id]));
+  const sourceDoc = (f: (typeof fields)[number]): string | null =>
+    (f.payload_id && docForPayload.get(f.payload_id)) || null;
+
   const row = (f: (typeof fields)[number]) => {
     const low = f.confidence < CONF_THRESHOLD;
     const date = resolved(f.name);
+    const src = onOpenSource ? sourceDoc(f) : null;
     return (
       <div key={f.id} className={`xr-row ${low ? "verify" : ""}`}>
         <span className="xr-t">
@@ -194,6 +205,15 @@ export function ExtractionReview({
           {f.value}
           {supersededFrom(f.name) && <span className="xr-super"> · was {supersededFrom(f.name)}</span>}
           {date && <span className="xr-datechip"><Icon name="calendar" size={12} /> {date}</span>}
+          {src && (
+            <button
+              className="xr-src"
+              title="Open the document this value was extracted from"
+              onClick={() => onOpenSource?.(src)}
+            >
+              <Icon name="doc" size={12} /> source
+            </button>
+          )}
         </span>
       </div>
     );

@@ -146,6 +146,7 @@ export interface ExtractedField {
   confidence: number;
   confirmed: boolean;
   deadline_driving: boolean;
+  payload_id?: string | null; // provenance: the payload (and thus document) this value came from
 }
 
 export interface ExtractionErrorDetail {
@@ -403,6 +404,8 @@ export interface FullState {
   transaction: { id: string; status: string };
   property: { address: string } | null;
   timeline_gate?: TimelineGate;
+  // Provenance chain: extracted_fields.payload_id -> payloads.document_id -> signed URL.
+  payloads?: { id: string; document_id: string }[];
   parties: DealParty[];
   documents: DealDocument[];
   extracted_fields: ExtractedField[];
