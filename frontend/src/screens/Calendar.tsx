@@ -3,6 +3,7 @@ import { api, CalendarDeadline, OpenTask } from "../lib/api";
 import { fmtDate } from "../lib/format";
 import { toast } from "../lib/ui";
 import { Icon } from "../lib/icons";
+import { Runway } from "./Runway";
 
 const DAY_MS = 86_400_000;
 const CAP_MIN = 120; // planning capacity per day (minutes) for auto-schedule
@@ -162,6 +163,14 @@ export function Calendar({ onOpenDeal }: { onOpenDeal: (id: string) => void }) {
             </button>
           )}
         </div>
+      </div>
+
+      <div className="cal-runway card" style={{ padding: "10px 13px", marginBottom: 14 }}>
+        <div className="pk-sect">Runway — every deal, next 10 business days</div>
+        <Runway
+          items={deadlines.map((d) => ({ name: d.name.replace(/ (ends|due|delivery).*$/i, ""), due_date: d.due_date, tag: (d.property_address ?? "").split(",")[0].replace(/^\d+ /, "") }))}
+          maxPerDay={4}
+        />
       </div>
 
       <div className="cal-grid">
