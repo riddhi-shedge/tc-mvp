@@ -197,14 +197,13 @@
 .bw-member.quiet .bw-member-ava{ background:var(--surface-2); color:var(--ink-3); }
 
 /* ── "The home" — facts, look-around embeds, what stays, warranty ── */
-.bw-facts{ display:flex; flex-wrap:wrap; align-items:baseline; margin:0 0 1rem; }
-.bw-fact{ display:flex; align-items:baseline; gap:.35rem; padding:0 1.1rem; border-left:1px solid var(--line-2); }
-.bw-fact:first-child{ padding-left:0; border-left:0; }
-.bw-fact-n{ font-family:var(--bw-serif); font-size:1.35rem; font-weight:550; color:var(--ink);
-  font-variant-numeric:tabular-nums; line-height:1.2; }
-.bw-fact-n.type{ font-size:1.05rem; font-style:italic; color:var(--ink-2); }
-.bw-fact-l{ font-size:11px; letter-spacing:.05em; text-transform:uppercase; color:var(--ink-3); font-weight:600; }
-@media(max-width:640px){ .bw-fact{ padding:0 .7rem; } .bw-fact-n{ font-size:1.15rem; } }
+/* one quiet line: "3 beds · 3 baths · 1,431 sq ft · built 1977 · Condo" */
+.bw-facts{ display:flex; flex-wrap:wrap; align-items:baseline; row-gap:.25rem; margin:0 0 .9rem; font-size:14px; color:var(--ink-2); }
+.bw-fact{ display:inline-flex; align-items:baseline; gap:.3rem; }
+.bw-fact + .bw-fact::before{ content:"·"; margin:0 .55rem; color:var(--ink-3); }
+.bw-fact-n{ font-weight:650; color:var(--ink); font-variant-numeric:tabular-nums; }
+.bw-fact-n.type{ font-weight:500; color:var(--ink-2); }
+.bw-fact-l{ color:var(--ink-2); }
 .bw-look{ margin-bottom:1rem; }
 .bw-look-tabs{ display:flex; gap:.4rem; margin-bottom:.5rem; }
 .bw-look-tab{ display:inline-flex; align-items:center; gap:.35rem; font-size:13px; font-weight:600;
