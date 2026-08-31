@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import timedelta
 
+from app.common.dates import ca_today
 from app.master.agent_portfolio import (
     build_agent_portfolio,
     build_listing_portfolio,
@@ -19,7 +20,9 @@ from app.master.agent_portfolio import (
 
 
 def _iso(days_from_today: int) -> str:
-    return (date.today() + timedelta(days=days_from_today)).isoformat()
+    # Anchor to the CA calendar day — deadline math evaluates in America/Los_Angeles,
+    # so a server-local date.today() here would drift by ±1 day on non-PT machines.
+    return (ca_today() + timedelta(days=days_from_today)).isoformat()
 
 
 def _state(*, tid: str, stage: str = "cont", deadlines=None, parties=None, messages=None, audit=None, fields=None) -> dict:

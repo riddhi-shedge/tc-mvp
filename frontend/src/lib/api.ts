@@ -105,6 +105,32 @@ export interface OpenTask {
   assigned_party_id: string | null;
 }
 
+// The TC decision queue (P1): every pending decision across the book. Draft rows
+// carry the full body + recipient so Rule-3 review happens right in the queue.
+export interface AttentionItem {
+  kind: "draft" | "reminder" | "gate" | "risk";
+  id: string;
+  dealId: string;
+  address: string;
+  title: string;
+  detail: string;
+  date: string | null;
+  urgency: "overdue" | "today" | "soon" | "later";
+  body?: string;
+  recipientName?: string | null;
+  recipientRole?: string | null;
+  messageId?: string | null;
+  fields?: string[];
+  severity?: string;
+}
+export interface AttentionData {
+  counts: { drafts: number; remindersDue: number; gateBlockedDeals: number; riskFlags: number };
+  total: number;
+  items: AttentionItem[];
+  horizon: { dealId: string; address: string; label: string | null; date: string; days: number | null; urgency: string }[];
+  horizonCutoff: string;
+}
+
 // Pipeline stages, left-to-right (mirror of repo.DEAL_STAGES).
 export const DEAL_STAGES: { id: string; name: string }[] = [
   { id: "new", name: "New offer" },

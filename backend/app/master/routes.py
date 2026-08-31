@@ -28,6 +28,7 @@ from app.master.agent_portfolio import (
     deal_summary,
     draft_targets,
 )
+from app.master.attention import build_attention
 from app.master.party_views import _seller_deal_health
 from app.common.zdr import ZdrNotConfirmed
 from app.contracts.compliance import ComplianceResult
@@ -274,6 +275,18 @@ def open_tasks(
 ) -> list[dict[str, Any]]:
     """Open tasks across non-archived deals — the Home work queue."""
     return repo.list_open_tasks()
+
+
+@router.get("/transactions/attention")
+def attention_queue(
+    tc: TCUser = Depends(require_tc),
+    repo: MasterRepo = Depends(get_repo),
+) -> dict[str, Any]:
+    """The TC's decision queue (P1): every pending decision across the book —
+    drafts awaiting approval, due follow-up reminders, timeline-gate blockers,
+    unresolved risk flags — plus the CA-business-day deadline horizon. Pending
+    inbox items stay on the ingestion side; the frontend adds that count."""
+    return build_attention(repo.list_full_states())
 
 
 class StageRequest(BaseModel):

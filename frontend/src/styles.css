@@ -924,6 +924,37 @@ button.secondary.sm { padding: 0.28rem 0.55rem; font-size: 0.76rem; }
 .hm-date { font-size: 12px; color: var(--ink-2); min-width: 50px; font-weight: 600; }
 .hm-ck { width: 16px; height: 16px; border: 1.5px solid var(--line-2); border-radius: 5px; flex: 0 0 auto; }
 .hm-empty { padding: 16px 13px; color: var(--muted); font-size: 12.5px; text-align: center; }
+
+/* The decision queue (P1) — triage strip + queue rows with inline Rule-3 review. */
+.hm-triage { display: flex; flex-wrap: wrap; gap: 8px; }
+.hm-tchip { display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; font-weight: 550;
+  color: var(--ink-2); background: var(--surface); border: 1px solid var(--line); border-radius: 20px;
+  padding: 6px 12px; cursor: pointer; }
+.hm-tchip:disabled { cursor: default; }
+.hm-tchip:hover:not(:disabled) { background: var(--hover); }
+.hm-tchip.on { border-color: var(--gold-500); box-shadow: 0 0 0 1px var(--gold-500); color: var(--ink); }
+.hm-tchip .hm-tn { font-weight: 700; font-size: 13px; min-width: 18px; height: 18px; padding: 0 5px;
+  border-radius: 10px; display: inline-flex; align-items: center; justify-content: center;
+  background: var(--line); color: var(--ink-2); }
+.hm-tchip.gold .hm-tn { background: var(--gold-100); color: var(--gold-700); }
+.hm-tchip.amber .hm-tn { background: var(--amber-100); color: var(--amber-700); }
+.hm-tchip.red .hm-tn { background: var(--red-100); color: var(--red-700); }
+
+.hm-q { border-bottom: 1px solid var(--line); }
+.hm-q:last-child { border-bottom: 0; }
+.hm-q .hm-row { border-bottom: 0; }
+.hm-q.hot { box-shadow: inset 3px 0 0 var(--red-600); }
+.hm-qic { width: 28px; height: 28px; flex: 0 0 auto; border-radius: 8px; display: grid; place-items: center; }
+.hm-qic.draft { background: var(--gold-100); color: var(--gold-700); }
+.hm-qic.reminder { background: var(--amber-100); color: var(--amber-700); }
+.hm-qic.gate { background: var(--amber-100); color: var(--amber-700); }
+.hm-qic.risk { background: var(--red-100); color: var(--red-700); }
+.hm-qact { display: flex; gap: 6px; align-items: center; flex: 0 0 auto; }
+.hm-qx { padding: 4px 13px 13px 53px; }
+.hm-qxto { font-size: 12.5px; color: var(--ink-2); margin-bottom: 6px; }
+.hm-qxbody { width: 100%; font: inherit; font-size: 13px; line-height: 1.5; color: var(--ink);
+  background: var(--surface-2, var(--surface)); border: 1px solid var(--line); border-radius: 8px;
+  padding: 9px 11px; resize: vertical; }
 .pill-red, .pill-amber, .pill-plain { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 20px; white-space: nowrap; flex: 0 0 auto; }
 .pill-red { background: var(--red-100); color: var(--red-700); }
 .pill-amber { background: var(--amber-100); color: var(--amber-700); }

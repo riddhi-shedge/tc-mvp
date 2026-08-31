@@ -320,6 +320,7 @@ function TcApp() {
                 setCollapsed(true);
               }}
               onOpenRail={() => setRailOpen(true)}
+              onOpenInbox={() => setView({ name: "inbox" })}
             />
           )}
           {view.name === "quarter" && <Quarter />}
