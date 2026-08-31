@@ -219,13 +219,21 @@ def test_unknown_role_falls_back_to_default_view():
 
 
 def test_embed_links_gated_on_key_and_address(monkeypatch):
-    from app.enrichment.property_data import embed_links
+    from app.enrichment import property_data
 
     monkeypatch.delenv("GOOGLE_MAPS_API_KEY", raising=False)
-    assert embed_links("1 Main St, Fresno, CA") == {}  # no key -> feature hidden
+    assert property_data.embed_links("1 Main St, Fresno, CA") == {}  # no key -> hidden
     monkeypatch.setenv("GOOGLE_MAPS_API_KEY", "synthetic-key")
-    assert embed_links(None) == {}  # no address -> hidden
-    out = embed_links("1 Main St, Fresno, CA")
+    assert property_data.embed_links(None) == {}  # no address -> hidden
+
+    # pano resolved -> streetview embeds by pano id (addresses are rejected by
+    # the Embed API's streetview mode); no network in tests.
+    monkeypatch.setattr(property_data, "_street_pano", lambda a: ("PANO123", 36.7, -119.8))
+    out = property_data.embed_links("1 Main St, Fresno, CA")
     assert set(out) == {"street", "map"}
-    assert "streetview" in out["street"] and "synthetic-key" in out["street"]
+    assert "pano=PANO123" in out["street"] and "synthetic-key" in out["street"]
     assert "maptype=satellite" in out["map"]
+
+    # no panorama at the address -> map still ships, street is omitted
+    monkeypatch.setattr(property_data, "_street_pano", lambda a: (None, None, None))
+    assert set(property_data.embed_links("1 Main St, Fresno, CA")) == {"map"}

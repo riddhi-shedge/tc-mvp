@@ -9,6 +9,7 @@ Public-record + street imagery only; no document content, no Rule-5 data.
 
 from __future__ import annotations
 
+import functools
 import logging
 import os
 import urllib.parse
@@ -51,21 +52,47 @@ def deep_links(address: str) -> dict[str, str]:
     }
 
 
+@functools.lru_cache(maxsize=256)
+def _street_pano(address: str) -> tuple[str | None, float | None, float | None]:
+    """Resolve the nearest Street View panorama (pano id + lat/lng) for an address
+    via the Street View metadata endpoint — the same (already-enabled) API family
+    as the static photo, so no extra Google product needs turning on. The Embed
+    API's streetview mode rejects address strings; it wants pano or lat/lng.
+    Process-lifetime cache: one metadata call per address per deploy."""
+    key = os.environ.get("GOOGLE_MAPS_API_KEY")
+    if not key:
+        return (None, None, None)
+    q = urllib.parse.quote(address)
+    data = _http_json(
+        f"https://maps.googleapis.com/maps/api/streetview/metadata?location={q}&key={key}"
+    )
+    if not data or data.get("status") != "OK":
+        return (None, None, None)
+    loc = data.get("location") or {}
+    return (data.get("pano_id"), loc.get("lat"), loc.get("lng"))
+
+
 def embed_links(address: str | None) -> dict[str, str]:
     """Interactive Maps Embed API iframes (street-view panorama + satellite map)
-    for the buyer's 'look around your home' moment. Computed fresh per request —
-    never cached — so a key rotation takes effect immediately. The key appears in
-    the iframe URL by design (that is how the Embed API works client-side);
-    restrict it to your app's referrers in the Google Cloud console. Empty dict
-    when no address or no key — the UI hides the feature."""
+    for the buyer's 'look around your home' moment. Built fresh per request —
+    never cached in the DB — so a key rotation takes effect immediately. The key
+    appears in the iframe URL by design (that is how the Embed API works
+    client-side); restrict it to your app's referrers in the Google Cloud
+    console. Empty dict when no address or no key — the UI hides the feature;
+    if no panorama exists for the address, only the map ships."""
     key = os.environ.get("GOOGLE_MAPS_API_KEY")
     if not address or not key:
         return {}
     q = urllib.parse.quote(address)
-    return {
-        "street": f"https://www.google.com/maps/embed/v1/streetview?key={key}&location={q}",
+    out = {
         "map": f"https://www.google.com/maps/embed/v1/place?key={key}&q={q}&maptype=satellite&zoom=18",
     }
+    pano, lat, lng = _street_pano(address)
+    if pano:
+        out["street"] = f"https://www.google.com/maps/embed/v1/streetview?key={key}&pano={pano}"
+    elif lat is not None and lng is not None:
+        out["street"] = f"https://www.google.com/maps/embed/v1/streetview?key={key}&location={lat},{lng}"
+    return out
 
 
 def fetch_facts(address: str) -> dict[str, Any] | None:
