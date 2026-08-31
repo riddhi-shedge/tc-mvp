@@ -8,16 +8,19 @@ from ingestion is HITL and arrives with Phase 3.
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 import os
 import re
 import secrets
 import subprocess
 import sys
+from datetime import datetime, timezone
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 
 from app.common.auth import PartyUser, TCUser, require_agent_portfolio, require_party, require_tc
@@ -276,6 +279,83 @@ def open_tasks(
 ) -> list[dict[str, Any]]:
     """Open tasks across non-archived deals — the Home work queue."""
     return repo.list_open_tasks()
+
+
+# ---- P4: deadline .ics feed — deadlines land in the calendar the TC lives in --
+
+def _calendar_feed_token() -> str | None:
+    """The feed's bearer secret. CALENDAR_FEED_TOKEN wins if set; otherwise it is
+    derived (HMAC) from the service-role key so production needs zero setup. The
+    feed is read-only deadline data; the token gates it like a private ICS URL."""
+    explicit = os.environ.get("CALENDAR_FEED_TOKEN")
+    if explicit:
+        return explicit
+    secret = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
+    if not secret:
+        return None
+    return hmac.new(secret.encode(), b"terra-calendar-feed", hashlib.sha256).hexdigest()[:32]
+
+
+def _ics_escape(s: str) -> str:
+    return s.replace("\\", "\\\\").replace(";", "\\;").replace(",", "\\,").replace("\n", "\\n")
+
+
+@router.get("/calendar.ics")
+def calendar_ics(
+    key: str | None = None,
+    repo: MasterRepo = Depends(get_repo),
+) -> Response:
+    """Token-authenticated ICS feed of every active deal's deadlines — subscribe
+    once from Google/Apple Calendar. Read-only; no PII beyond address + deadline
+    names; stable UIDs so a recomputed date UPDATES the event instead of duplicating."""
+    token = _calendar_feed_token()
+    if token is None:
+        raise HTTPException(status_code=503, detail="Calendar feed is not configured")
+    if not key or not secrets.compare_digest(key, token):
+        raise HTTPException(status_code=401, detail="Invalid feed key")
+
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    lines = [
+        "BEGIN:VCALENDAR", "VERSION:2.0",
+        "PRODID:-//Terra//TC deadlines//EN",
+        "X-WR-CALNAME:Terra — deal deadlines",
+        "CALSCALE:GREGORIAN",
+    ]
+    for d in repo.list_active_deadlines():
+        due = (d.get("due_date") or "").replace("-", "")[:8]
+        if not due:
+            continue
+        addr = (d.get("property_address") or "").split(",")[0]
+        uid = hashlib.sha1(f"{d['transaction_id']}|{d['name']}".encode()).hexdigest()[:16]
+        summary = _ics_escape(f"{d['name']}{f' — {addr}' if addr else ''}")
+        lines += [
+            "BEGIN:VEVENT",
+            f"UID:{uid}@terra-tc",
+            f"DTSTAMP:{stamp}",
+            f"DTSTART;VALUE=DATE:{due}",
+            f"SUMMARY:{summary}",
+            "TRANSP:TRANSPARENT",
+            "END:VEVENT",
+        ]
+    lines.append("END:VCALENDAR")
+    return Response(
+        content="\r\n".join(lines) + "\r\n",
+        media_type="text/calendar; charset=utf-8",
+        headers={"Content-Disposition": 'inline; filename="terra-deadlines.ics"'},
+    )
+
+
+@router.get("/transactions/calendar/feed-url")
+def calendar_feed_url(
+    request: Request,
+    tc: TCUser = Depends(require_tc),
+) -> dict[str, Any]:
+    """The subscribe URL (with its token) for the TC to paste into their calendar
+    app. TC-auth here; the feed itself is gated by the token alone."""
+    token = _calendar_feed_token()
+    if token is None:
+        return {"available": False, "url": None}
+    return {"available": True, "url": f"{str(request.base_url).rstrip('/')}/calendar.ics?key={token}"}
 
 
 @router.get("/transactions/attention")

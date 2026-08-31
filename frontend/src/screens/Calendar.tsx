@@ -131,6 +131,22 @@ export function Calendar({ onOpenDeal }: { onOpenDeal: (id: string) => void }) {
           <div className="muted">Every deadline across your deals, plus a plan for your work queue.</div>
         </div>
         <div className="row" style={{ gap: "0.5rem", flex: "0 0 auto" }}>
+          <button
+            className="secondary"
+            title="Copy a subscribe URL for Google/Apple Calendar — deadlines stay in sync"
+            onClick={() =>
+              void api
+                .get<{ available: boolean; url: string | null }>("/transactions/calendar/feed-url")
+                .then(async (r) => {
+                  if (!r.available || !r.url) return toast("Calendar feed isn't configured on the server", { error: true });
+                  await navigator.clipboard.writeText(r.url);
+                  toast("Feed URL copied — paste it into Google/Apple Calendar (subscribe by URL)");
+                })
+                .catch((e) => toast(e instanceof Error ? e.message : "Couldn't fetch the feed URL", { error: true }))
+            }
+          >
+            ⚓ Subscribe
+          </button>
           <button className="secondary" onClick={() => { const d = startOfToday(); d.setDate(1); setCursor(d); }}>Today</button>
           {Object.keys(schedule).length === 0 ? (
             <button className="gold" onClick={autoSchedule} title="Place every open task onto the calendar by urgency, due date, and estimated time">
