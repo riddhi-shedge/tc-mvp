@@ -78,6 +78,11 @@ def build_context(state: dict[str, Any]) -> str:
         out.append("\nOPEN RISK FLAGS:")
         out += [f"- ({r.get('severity')}) {r.get('description')}" for r in risks]
 
+    notes = state.get("deal_notes", [])
+    if notes:
+        out.append("\nTC'S OWN NOTES on this deal (their working context — treat as authoritative intent):")
+        out += [f"- {n.get('body')}" for n in notes]
+
     return "\n".join(out)
 
 

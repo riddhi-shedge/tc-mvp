@@ -50,6 +50,7 @@ class InMemoryRepo:
         self.approvals: list[dict[str, Any]] = []
         self.risk_flags: list[dict[str, Any]] = []
         self.reminders: list[dict[str, Any]] = []
+        self.deal_notes: list[dict[str, Any]] = []
         self.audit_log: list[dict[str, Any]] = []
         # transaction_id -> {"locked_at", "token"} (mirrors compliance_apply_lock).
         self.compliance_locks: dict[str, dict[str, Any]] = {}
@@ -1304,6 +1305,35 @@ class InMemoryRepo:
     def list_full_states(self) -> list[dict[str, Any]]:
         states = (self.get_full_state(tid) for tid in self.transactions)
         return [s for s in states if s is not None]
+
+    def list_deal_notes(self, transaction_id: str) -> list[dict[str, Any]] | None:
+        return [n for n in self.deal_notes if n["transaction_id"] == transaction_id]
+
+    def add_deal_note(self, *, transaction_id: str, body: str, color: str, actor: str) -> dict[str, Any]:
+        note = {
+            "id": str(uuid.uuid4()), "transaction_id": transaction_id,
+            "body": body, "color": color, "created_at": _now(),
+        }
+        self.deal_notes.append(note)
+        self._audit(
+            transaction_id=transaction_id, actor=actor, action="note.added",
+            entity_type="deal_note", entity_id=note["id"], details={},
+        )
+        return note
+
+    def delete_deal_note(self, *, transaction_id: str, note_id: str, actor: str) -> bool:
+        before = len(self.deal_notes)
+        self.deal_notes = [
+            n for n in self.deal_notes
+            if not (n["id"] == note_id and n["transaction_id"] == transaction_id)
+        ]
+        if len(self.deal_notes) == before:
+            return False
+        self._audit(
+            transaction_id=transaction_id, actor=actor, action="note.deleted",
+            entity_type="deal_note", entity_id=note_id, details={},
+        )
+        return True
 
     def get_full_state(self, transaction_id: str) -> dict[str, Any] | None:
         txn = self.transactions.get(transaction_id)

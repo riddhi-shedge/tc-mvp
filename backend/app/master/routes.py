@@ -289,6 +289,55 @@ def attention_queue(
     return build_attention(repo.list_full_states())
 
 
+# ---- Deal notes (P3): TC-only, SOR-backed — never served to parties ----------
+
+class NoteRequest(BaseModel):
+    body: str = Field(min_length=1, max_length=4000)
+    color: str = Field(default="y", max_length=2)
+
+
+@router.get("/transactions/{transaction_id}/notes")
+def list_notes(
+    transaction_id: str,
+    tc: TCUser = Depends(require_tc),
+    repo: MasterRepo = Depends(get_repo),
+) -> dict[str, Any]:
+    notes = repo.list_deal_notes(transaction_id)
+    if notes is None:
+        # Pre-migration: report unavailable rather than 500 — the UI says so.
+        return {"available": False, "notes": []}
+    return {"available": True, "notes": notes}
+
+
+@router.post("/transactions/{transaction_id}/notes", status_code=201)
+def add_note(
+    transaction_id: str,
+    body: NoteRequest,
+    tc: TCUser = Depends(require_tc),
+    repo: MasterRepo = Depends(get_repo),
+) -> dict[str, Any]:
+    try:
+        return repo.add_deal_note(
+            transaction_id=transaction_id, body=body.body.strip(), color=body.color, actor=tc.actor
+        )
+    except Exception:
+        raise HTTPException(
+            status_code=503, detail="Notes need the deal_notes migration applied."
+        ) from None
+
+
+@router.delete("/transactions/{transaction_id}/notes/{note_id}")
+def delete_note(
+    transaction_id: str,
+    note_id: str,
+    tc: TCUser = Depends(require_tc),
+    repo: MasterRepo = Depends(get_repo),
+) -> dict[str, Any]:
+    if not repo.delete_deal_note(transaction_id=transaction_id, note_id=note_id, actor=tc.actor):
+        raise HTTPException(status_code=404, detail="Note not found")
+    return {"deleted": True}
+
+
 class StageRequest(BaseModel):
     stage: str = Field(min_length=1)
 
@@ -1135,6 +1184,9 @@ def ask_deal(
     state = repo.get_full_state(transaction_id)
     if state is None:
         raise HTTPException(status_code=404, detail="Transaction not found")
+    # The TC's own notes join the grounded context (P3) — TC-authored working
+    # text on their own deal, same retention posture as the rest of the state.
+    state["deal_notes"] = repo.list_deal_notes(transaction_id) or []
     context = build_context(state)
     try:
         answer = assistant.answer(context=context, question=body.question.strip())

@@ -556,6 +556,16 @@ class MasterRepo(Protocol):
         card; None when unavailable. Populated in the enrichment phase."""
         ...
 
+    def list_deal_notes(self, transaction_id: str) -> list[dict[str, Any]] | None:
+        """The TC's notes on a deal (P3 — SOR-backed, never shown to parties).
+        None means the deal_notes table isn't provisioned yet (pre-migration);
+        [] means provisioned but empty."""
+        ...
+
+    def add_deal_note(self, *, transaction_id: str, body: str, color: str, actor: str) -> dict[str, Any]: ...
+
+    def delete_deal_note(self, *, transaction_id: str, note_id: str, actor: str) -> bool: ...
+
     def confirm_fields(self, *, transaction_id: str, field_ids: list[str], actor: str) -> int: ...
 
     def add_manual_field(
@@ -2698,3 +2708,51 @@ class SupabaseRepo:
             )
             states.append(state)
         return states
+
+    # -- deal notes (P3): TC-only, SOR-backed --------------------------------
+    def list_deal_notes(self, transaction_id: str) -> list[dict[str, Any]] | None:
+        try:
+            return (
+                self._db.table("deal_notes")
+                .select("*")
+                .eq("transaction_id", transaction_id)
+                .order("created_at")
+                .execute()
+                .data
+            )
+        except Exception:
+            # Pre-migration graceful degradation (same posture as enrichment):
+            # the table may not exist yet — notes report unavailable, not a 500.
+            _log.info("deal_notes unavailable for txn=%s (migration applied?)", transaction_id)
+            return None
+
+    def add_deal_note(self, *, transaction_id: str, body: str, color: str, actor: str) -> dict[str, Any]:
+        note = (
+            self._db.table("deal_notes")
+            .insert({"transaction_id": transaction_id, "body": body, "color": color})
+            .execute()
+            .data[0]
+        )
+        # Audit the event, never the content (Rule-5 logging discipline).
+        self._audit(
+            transaction_id=transaction_id, actor=actor, action="note.added",
+            entity_type="deal_note", entity_id=note["id"], details={},
+        )
+        return note
+
+    def delete_deal_note(self, *, transaction_id: str, note_id: str, actor: str) -> bool:
+        gone = (
+            self._db.table("deal_notes")
+            .delete()
+            .eq("id", note_id)
+            .eq("transaction_id", transaction_id)
+            .execute()
+            .data
+        )
+        if not gone:
+            return False
+        self._audit(
+            transaction_id=transaction_id, actor=actor, action="note.deleted",
+            entity_type="deal_note", entity_id=note_id, details={},
+        )
+        return True
