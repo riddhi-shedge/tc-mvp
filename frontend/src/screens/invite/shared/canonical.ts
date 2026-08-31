@@ -134,6 +134,8 @@ export const AUTHORITY: Record<string, readonly PartyRole[] | readonly ("system"
   "contingency.remove": ["buyer", "buyer_agent"],
   "repair.resolve": ["seller"],                  // never ai/system
   "money.verify_out_of_band": ["buyer", "seller"],
+  "money.verify_deposit": ["buyer"],          // refinement: the EMD payer
+  "money.verify_disbursement": ["seller"],    // refinement: the proceeds receiver
   "approval.approve_send": ["buyer_agent", "listing_agent"],
   "deadline.write": ["system"],
   "health.write": ["system"],

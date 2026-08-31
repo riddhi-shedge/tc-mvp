@@ -20,6 +20,10 @@ AUTHORITY: dict[str, frozenset[str]] = {
     "contingency.remove": frozenset({"buyer", "buyer_agent"}),
     "repair.resolve": frozenset({"seller"}),                     # recorded seller authorization
     "money.verify_out_of_band": frozenset({"buyer", "seller"}),  # the paying/receiving principal
+    # App-level refinements of the row above — §5 says "the paying/RECEIVING
+    # principal": the EMD payer is the buyer; the proceeds receiver is the seller.
+    "money.verify_deposit": frozenset({"buyer"}),
+    "money.verify_disbursement": frozenset({"seller"}),
     "approval.approve_send": frozenset({"buyer_agent", "listing_agent"}),
     "outbound.message": frozenset({"buyer_agent", "listing_agent"}),  # rule #3, via ApprovalItem
     "deadline.write": frozenset({"system"}),                     # compliance service only
@@ -59,6 +63,22 @@ def can_originate(write: str, role: str, *, owner_role: str | None = None) -> bo
 def require_originate(write: str, role: str, *, owner_role: str | None = None) -> None:
     if not can_originate(write, role, owner_role=owner_role):
         raise UnauthorizedWrite(f"{role} may not originate {write}")
+
+
+# Draft purposes that CONVEY a principal's decision (accepting an offer,
+# resolving a repair request). None exist as flows yet; the guard makes the
+# §6.3 invariant executable the day one does.
+DECISION_PURPOSES: frozenset[str] = frozenset({"offer_response", "repair_response"})
+
+
+def validate_draft_purpose(purpose: str, reflects_decision_id: str | None) -> None:
+    """§6.3: a draft conveying a principal's decision MUST link the recorded
+    authorization it represents. Raises for decision-carrying purposes without one."""
+    if purpose in DECISION_PURPOSES and not reflects_decision_id:
+        raise UnauthorizedWrite(
+            f"draft purpose '{purpose}' conveys a principal decision and requires "
+            "reflectsPrincipalDecisionId (a recorded authorization)"
+        )
 
 
 def requires_principal_decision(write: str) -> bool:

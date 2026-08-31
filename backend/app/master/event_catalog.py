@@ -60,8 +60,8 @@ CATALOG: dict[str, _Entry] = {
     "message.sent": _Entry(None, "system", True, True, None, "A message went out on your deal", "An outbound message was sent", "autonomous"),
     "message.replied": _Entry(None, "system", True, True, None, "A reply came in on your deal", "Logged a reply — follow-up cleared", "autonomous"),
     "field.confirmed": _Entry(None, "system", True, True, None, "Deal details were confirmed", "Confirmed a deal term", "autonomous"),
-    "party.created": _Entry(None, "system", True, True, None, "Someone joined your deal team", "Added a party to the deal", "autonomous"),
-    "transaction.stage": _Entry("escrow_opened", "system", True, True, None, "Your deal moved to a new stage", "Advanced the deal to a new stage", "autonomous"),
+    "party.added": _Entry(None, "system", True, True, None, "Someone joined your deal team", "Added a party to the deal", "autonomous"),
+    "transaction.staged": _Entry("escrow_opened", "system", True, True, None, "Your deal moved to a new stage", "Advanced the deal to a new stage", "autonomous"),
     "party.deposit_verified": _Entry(
         "emd_received", "buyer", True, True,
         "You confirmed your earnest-money deposit", "The buyer confirmed their earnest-money deposit",
@@ -74,6 +74,19 @@ CATALOG: dict[str, _Entry] = {
         None, "seller", True, True,
         "You confirmed your proceeds account", "The seller confirmed their proceeds account",
         "Seller confirmed their proceeds account", "autonomous"),
+    "task.status_changed": _Entry(None, "system", True, True, None, "A to-do on your deal was updated", "Task status changed", "autonomous"),
+    "task.created": _Entry(None, "system", False, True, None, "", "Created a task on the deal", "autonomous"),
+    "task.assigned": _Entry(None, "system", False, True, None, "", "Assigned a task to a party", "autonomous"),
+    "risk_flag.resolved": _Entry(None, "system", True, True, None, "A concern on your deal was cleared", "Resolved a risk flag", "autonomous"),
+    "field.added_manually": _Entry(None, "system", True, True, None, "Deal details were updated", "Added a deal term manually", "autonomous"),
+    "timeline.stub_generated": _Entry(None, "system", True, True, None, "Your timeline was drafted", "Generated the starter timeline", "autonomous"),
+    "transaction.canceled": _Entry("deal_cancelled", "system", True, True, None, "The deal was canceled", "Deal canceled", "autonomous"),
+    "transaction.reactivated": _Entry(None, "system", True, True, None, "The deal was reactivated", "Deal reactivated", "autonomous"),
+    "transaction.created": _Entry(None, "system", False, True, None, "", "Deal created in the SOR", "autonomous"),
+    "party.invite_sent": _Entry(None, "system", False, True, None, "", "Sent a workspace invite", "autonomous"),
+    "party.updated": _Entry(None, "system", False, True, None, "", "Updated a party's details", "autonomous"),
+    "message.discarded": _Entry(None, "system", False, True, None, "", "Dismissed a draft without sending", "autonomous"),
+    "reminder.dismissed": _Entry(None, "system", False, True, None, "", "Dismissed a follow-up reminder", "autonomous"),
     # AI/agent operational events — never shown to principals (they don't see the
     # co-pilot's internal drafting), only in the agent feed.
     "message.drafted": _Entry(None, "ai", False, True, None, "", "Drafted an outbound message for your approval", "needs_you"),
@@ -81,8 +94,22 @@ CATALOG: dict[str, _Entry] = {
 }
 
 
+# Prefix rules for action FAMILIES (e.g. risk_flag.counter / .inspection / …):
+# exact CATALOG entries win; a family match covers the rest.
+_PREFIXES: list[tuple[str, _Entry]] = [
+    ("risk_flag.", _Entry(None, "system", False, True, None, "", "Flagged a risk for your review", "needs_you")),
+]
+
+
+def _lookup(action: str) -> _Entry | None:
+    hit = CATALOG.get(action)
+    if hit:
+        return hit
+    return next((e for pfx, e in _PREFIXES if action.startswith(pfx)), None)
+
+
 def event_type(action: str) -> str | None:
-    entry = CATALOG.get(action)
+    entry = _lookup(action)
     return entry.event if entry else None
 
 
@@ -95,7 +122,7 @@ def principal_activity(audit_log: list[dict[str, Any]], viewer_role: str, limit:
     principal shouldn't see (the co-pilot's internal ops) never appear."""
     out: list[dict[str, Any]] = []
     for row in _sorted(audit_log):
-        entry = CATALOG.get(row.get("action") or "")
+        entry = _lookup(row.get("action") or "")
         if not entry or not entry.principal:
             continue
         text = entry.self_text if (entry.actor == viewer_role and entry.self_text) else entry.other_text
@@ -110,7 +137,7 @@ def agent_activity(audit_log: list[dict[str, Any]], deal_id: str | None = None, 
     canonical event type and actor role attached (contract §2.8 / §4)."""
     out: list[dict[str, Any]] = []
     for row in _sorted(audit_log):
-        entry = CATALOG.get(row.get("action") or "")
+        entry = _lookup(row.get("action") or "")
         if not entry or not entry.agent:
             continue
         out.append({

@@ -37,6 +37,7 @@ from app.master.agent_portfolio import (
     draft_targets,
 )
 from app.master.attention import build_attention
+from app.master.authority import UnauthorizedWrite, require_originate
 from app.master.event_catalog import agent_activity
 from app.master.party_views import _seller_deal_health
 from app.common.zdr import ZdrNotConfirmed
@@ -1426,6 +1427,7 @@ def party_verify_deposit(
     """The buyer self-attests they verified wire instructions out of band (by phone)
     and sent their deposit. NO wiring/account data is accepted or stored (Rule 2) —
     only the attestation, recorded to the audit log and shown back in their workspace."""
+    _require_party_write(repo, party, "money.verify_deposit")
     repo.record_deposit_verified(
         transaction_id=party.transaction_id, party_id=party.party_id, actor=party.actor
     )
@@ -1445,6 +1447,7 @@ def party_attest_disclosure(
     """The seller attests a specific CA disclosure is accurate, complete, and
     delivered (an informed, gated attestation — never auto-completed). Recorded to
     the audit log and read back as that disclosure's delivered state."""
+    _require_party_write(repo, party, "disclosure.complete")
     repo.record_disclosure_attested(
         transaction_id=party.transaction_id, party_id=party.party_id,
         kind=body.kind.strip(), actor=party.actor,
@@ -1459,10 +1462,26 @@ def party_verify_disbursement(
 ) -> dict[str, Any]:
     """The seller self-attests they verified their proceeds-disbursement account out
     of band (by phone). NO account/routing data is accepted or stored (Rule 1)."""
+    _require_party_write(repo, party, "money.verify_disbursement")
     repo.record_disbursement_verified(
         transaction_id=party.transaction_id, party_id=party.party_id, actor=party.actor
     )
     return {"verified": True}
+
+
+def _require_party_write(repo: MasterRepo, party: PartyUser, write: str) -> None:
+    """§5 write-authority, enforced dynamically: the signed token names the party;
+    their SOR role must be authorized to originate this write. Defense in depth —
+    the UIs never offer the wrong action, but a token could be replayed against
+    any /party endpoint without this."""
+    row = repo.get_party(party_id=party.party_id, transaction_id=party.transaction_id)
+    role = (row or {}).get("role") or ""
+    try:
+        require_originate(write, role)
+    except UnauthorizedWrite:
+        raise HTTPException(
+            status_code=403, detail=f"Your role isn't authorized for this action ({write})."
+        ) from None
 
 
 # ---- Buyer's-agent command center: cross-deal portfolio (the whole book) ------
