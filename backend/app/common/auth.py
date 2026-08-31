@@ -16,10 +16,12 @@ Set REQUIRE_MFA=false only in local experiments; it defaults to true.
 
 from __future__ import annotations
 
+import hashlib
 import os
 import threading
 import time
 from dataclasses import dataclass
+from typing import Callable
 
 import httpx
 import jwt
@@ -127,14 +129,71 @@ class PartyUser:
         return f"party:{self.party_id}"
 
 
+# ---- Permanent invite tokens (pi_…) -----------------------------------------
+# Opaque credentials stored HASHED in party_invites, permanent until revoked
+# (re-minting revokes the prior link). Resolved via a pluggable lookup so tests
+# inject the fake repo; production lazily builds a service-role resolver.
+
+INVITE_TOKEN_PREFIX = "pi_"
+_invite_resolver: "Callable[[str], dict | None] | None" = None
+
+
+def set_invite_resolver(fn: "Callable[[str], dict | None]") -> None:
+    global _invite_resolver
+    _invite_resolver = fn
+
+
+def _resolve_invite(token: str) -> PartyUser | None:
+    token_hash = hashlib.sha256(token.encode()).hexdigest()
+    resolver = _invite_resolver
+    if resolver is None:
+        url = os.environ.get("SUPABASE_URL")
+        key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
+        if not url or not key:
+            return None
+        from supabase import create_client
+
+        client = create_client(url, key)
+
+        def resolver(h: str):  # type: ignore[misc]
+            rows = (
+                client.table("party_invites")
+                .select("party_id, transaction_id, tier")
+                .eq("token_hash", h)
+                .is_("revoked_at", "null")
+                .limit(1)
+                .execute()
+                .data
+            )
+            return rows[0] if rows else None
+
+    try:
+        row = resolver(token_hash)
+    except Exception:
+        return None  # infra failure reads as unauthorized, never a 500 leak
+    if not row:
+        return None
+    return PartyUser(
+        party_id=str(row["party_id"]),
+        transaction_id=str(row["transaction_id"]),
+        tier=str(row.get("tier") or "receiving_end"),
+    )
+
+
 def require_party(
     credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
 ) -> PartyUser:
-    """A scoped party session: any authenticated token carrying app_metadata.
-    party_id + transaction_id. The party can only ever touch their own deal — the
-    transaction_id is taken from the (signed, admin-set) token, never the client."""
+    """A scoped party session: EITHER a permanent invite token (pi_…, resolved
+    against its stored hash) or a Supabase session JWT carrying app_metadata.
+    party_id + transaction_id. Either way the party can only ever touch their own
+    deal — the binding comes from the credential, never the client."""
     if credentials is None:
         raise _unauthorized("Missing bearer token")
+    if credentials.credentials.startswith(INVITE_TOKEN_PREFIX):
+        user = _resolve_invite(credentials.credentials)
+        if user is None:
+            raise _unauthorized("Invite link is invalid or was revoked")
+        return user
     try:
         claims = _decode(credentials.credentials)
     except jwt.InvalidTokenError:

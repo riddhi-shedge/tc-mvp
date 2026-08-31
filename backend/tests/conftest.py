@@ -145,6 +145,10 @@ def client(
     assistant: FakeAssistant,
 ):
     app.dependency_overrides[get_repo] = lambda: repo
+    # permanent invite tokens (pi_…) resolve against the fake's invite store
+    from app.common.auth import set_invite_resolver
+
+    set_invite_resolver(repo.resolve_party_invite)
     app.dependency_overrides[get_inbox_repo] = lambda: inbox
     app.dependency_overrides[get_master_client] = lambda: FakeMasterClient(repo)
     app.dependency_overrides[get_extractor] = lambda: extractor

@@ -51,6 +51,7 @@ class InMemoryRepo:
         self.risk_flags: list[dict[str, Any]] = []
         self.reminders: list[dict[str, Any]] = []
         self.deal_notes: list[dict[str, Any]] = []
+        self.party_invites: list[dict[str, Any]] = []
         self.audit_log: list[dict[str, Any]] = []
         # transaction_id -> {"locked_at", "token"} (mirrors compliance_apply_lock).
         self.compliance_locks: dict[str, dict[str, Any]] = {}
@@ -721,6 +722,26 @@ class InMemoryRepo:
         self._audit(
             transaction_id=transaction_id, actor=actor, action="party.disbursement_verified",
             entity_type="party", entity_id=party_id, details={"party_id": party_id},
+        )
+
+    def create_party_invite(self, *, transaction_id, party_id, tier, token_hash, actor) -> None:
+        for inv in self.party_invites:
+            if inv["party_id"] == party_id and inv["revoked_at"] is None:
+                inv["revoked_at"] = _now()
+        self.party_invites.append({
+            "transaction_id": transaction_id, "party_id": party_id, "tier": tier,
+            "token_hash": token_hash, "revoked_at": None,
+        })
+        self._audit(
+            transaction_id=transaction_id, actor=actor, action="party.invite_link_created",
+            entity_type="party", entity_id=party_id, details={},
+        )
+
+    def resolve_party_invite(self, token_hash: str) -> dict[str, Any] | None:
+        return next(
+            ({"party_id": i["party_id"], "transaction_id": i["transaction_id"], "tier": i["tier"]}
+             for i in self.party_invites if i["token_hash"] == token_hash and i["revoked_at"] is None),
+            None,
         )
 
     def record_reply_detected(self, *, provider_message_ids: list[str]) -> list[dict[str, Any]]:

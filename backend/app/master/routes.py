@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import logging
 import os
 import re
 import secrets
@@ -87,6 +88,7 @@ from app.master.repo import (
 _BACKEND_DIR = Path(__file__).resolve().parents[2]
 
 router = APIRouter()
+_log = logging.getLogger(__name__)
 
 
 @lru_cache(maxsize=1)
@@ -773,19 +775,14 @@ def create_party_access_token(
             status_code=409,
             detail="Invite links are for receiving-end vendors and agents/broker only.",
         )
-    try:
-        result = issuer.issue(
-            party_id=party_id, transaction_id=transaction_id, email=None, tier=token_tier
-        )
-    except AccessIssuerNotConfigured as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from None
-    except AccessIssuanceFailed:
-        # Generic detail — never surface the raw provider exception (Rule 5).
-        raise HTTPException(status_code=502, detail="Could not issue access token") from None
+    token = _mint_party_link_token(
+        repo, issuer, transaction_id=transaction_id, party_id=party_id,
+        tier=token_tier, actor=tc.actor,
+    )
     repo.record_access_token_issued(
         transaction_id=transaction_id, party_id=party_id, actor=tc.actor
     )
-    return result
+    return {"party_id": party_id, "access_token": token}
 
 
 class InviteEmailRequest(BaseModel):
@@ -820,16 +817,11 @@ def email_party_invite(
         raise HTTPException(
             status_code=422, detail="This party has no email yet — add one on the Parties tab first."
         )
-    try:
-        result = issuer.issue(
-            party_id=party_id, transaction_id=transaction_id, email=None, tier=token_tier
-        )
-    except AccessIssuerNotConfigured as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from None
-    except AccessIssuanceFailed:
-        raise HTTPException(status_code=502, detail="Could not issue access token") from None
-
-    link = f"{body.base_url.split('#')[0]}#invite={result['access_token']}"
+    token = _mint_party_link_token(
+        repo, issuer, transaction_id=transaction_id, party_id=party_id,
+        tier=token_tier, actor=tc.actor,
+    )
+    link = f"{body.base_url.split('#')[0]}#invite={token}"
     state = repo.get_full_state(transaction_id) or {}
     address = (state.get("property") or {}).get("address") or "the transaction"
     tc_name = os.environ.get("TC_NAME") or "your transaction coordinator"
@@ -1467,6 +1459,32 @@ def party_verify_disbursement(
         transaction_id=party.transaction_id, party_id=party.party_id, actor=party.actor
     )
     return {"verified": True}
+
+
+def _mint_party_link_token(
+    repo: MasterRepo, issuer: PartyAccessIssuer, *,
+    transaction_id: str, party_id: str, tier: str, actor: str,
+) -> str:
+    """A PERMANENT invite credential (pi_…): random token handed out once, only
+    its sha256 stored; re-minting revokes the party's previous links. Falls back
+    to the legacy ~1h Supabase session token if party_invites isn't provisioned
+    yet (pre-migration), so invites never hard-break."""
+    token = "pi_" + secrets.token_urlsafe(32)
+    try:
+        repo.create_party_invite(
+            transaction_id=transaction_id, party_id=party_id, tier=tier,
+            token_hash=hashlib.sha256(token.encode()).hexdigest(), actor=actor,
+        )
+        return token
+    except Exception:
+        _log.info("party_invites unavailable (migration applied?) — falling back to session token")
+    try:
+        result = issuer.issue(party_id=party_id, transaction_id=transaction_id, email=None, tier=tier)
+    except AccessIssuerNotConfigured as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from None
+    except AccessIssuanceFailed:
+        raise HTTPException(status_code=502, detail="Could not issue access token") from None
+    return result["access_token"]
 
 
 def _require_party_write(repo: MasterRepo, party: PartyUser, write: str) -> None:

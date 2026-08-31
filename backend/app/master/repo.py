@@ -670,6 +670,19 @@ class MasterRepo(Protocol):
         Returns the matched messages ({id, transaction_id})."""
         ...
 
+    def create_party_invite(
+        self, *, transaction_id: str, party_id: str, tier: str, token_hash: str, actor: str
+    ) -> None:
+        """Store a PERMANENT invite credential (hash only — the raw token exists
+        exactly once, in the link handed to the TC). Revokes the party's previous
+        invites first, so re-minting rotates the old link dead."""
+        ...
+
+    def resolve_party_invite(self, token_hash: str) -> dict[str, Any] | None:
+        """{party_id, transaction_id, tier} for a live (non-revoked) invite hash;
+        None when unknown/revoked. Raises only on infrastructure failure."""
+        ...
+
     def approve_and_send(
         self,
         *,
@@ -2167,6 +2180,34 @@ class SupabaseRepo:
             )
             matched.append({"id": msg["id"], "transaction_id": msg["transaction_id"]})
         return matched
+
+    def create_party_invite(
+        self, *, transaction_id: str, party_id: str, tier: str, token_hash: str, actor: str
+    ) -> None:
+        self._db.table("party_invites").update(
+            {"revoked_at": datetime.now(timezone.utc).isoformat()}
+        ).eq("party_id", party_id).is_("revoked_at", "null").execute()
+        self._db.table("party_invites").insert(
+            {"transaction_id": transaction_id, "party_id": party_id,
+             "tier": tier, "token_hash": token_hash}
+        ).execute()
+        # Audited as an event only — never the token or its hash (Rule 5).
+        self._audit(
+            transaction_id=transaction_id, actor=actor, action="party.invite_link_created",
+            entity_type="party", entity_id=party_id, details={},
+        )
+
+    def resolve_party_invite(self, token_hash: str) -> dict[str, Any] | None:
+        rows = (
+            self._db.table("party_invites")
+            .select("party_id, transaction_id, tier")
+            .eq("token_hash", token_hash)
+            .is_("revoked_at", "null")
+            .limit(1)
+            .execute()
+            .data
+        )
+        return rows[0] if rows else None
 
     def approve_and_send(
         self,

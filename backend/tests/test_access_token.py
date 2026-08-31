@@ -31,7 +31,7 @@ def test_access_token_requires_auth(client, tc_headers):
     assert r.status_code == 401
 
 
-def test_access_token_delegates_to_issuer_and_audits(client, tc_headers, party_access_issuer, repo):
+def test_access_token_mints_permanent_invite_and_audits(client, tc_headers, party_access_issuer, repo):
     txn_id = _txn(client, tc_headers)
     party_id = _party(client, tc_headers, txn_id)
     r = client.post(
@@ -40,17 +40,57 @@ def test_access_token_delegates_to_issuer_and_audits(client, tc_headers, party_a
     assert r.status_code == 201
     body = r.json()
     assert body["party_id"] == party_id
-    assert body["access_token"] == f"fake-token-{party_id}"
-    # The issuer was called with this exact party + transaction.
-    assert party_access_issuer.calls == [
-        {"party_id": party_id, "transaction_id": txn_id, "email": None, "tier": "receiving_end"}
-    ]
+    # Permanent opaque credential — NOT a Supabase session; issuer untouched.
+    assert body["access_token"].startswith("pi_")
+    assert party_access_issuer.calls == []
+    # Stored hashed, never raw (Rule 5), and resolvable back to the party.
+    import hashlib
+
+    h = hashlib.sha256(body["access_token"].encode()).hexdigest()
+    assert all(body["access_token"] not in str(i) for i in repo.party_invites)
+    resolved = repo.resolve_party_invite(h)
+    assert resolved == {"party_id": party_id, "transaction_id": txn_id, "tier": "receiving_end"}
     # Rule 5: issuing a live credential is audited (never the token itself).
     audit = [a for a in repo.audit_log if a["action"] == "party.access_token_issued"]
     assert len(audit) == 1 and audit[0]["entity_id"] == party_id
 
 
-def test_access_token_issued_for_every_party_scoped_tier(client, tc_headers, party_access_issuer):
+def test_access_token_falls_back_to_session_pre_migration(client, tc_headers, party_access_issuer, repo, monkeypatch):
+    """Before the party_invites migration is applied, invites keep working via
+    the legacy ~1h Supabase session token."""
+    txn_id = _txn(client, tc_headers)
+    party_id = _party(client, tc_headers, txn_id)
+
+    def boom(**kw):
+        raise RuntimeError("relation party_invites does not exist")
+
+    monkeypatch.setattr(repo, "create_party_invite", boom)
+    r = client.post(f"/transactions/{txn_id}/parties/{party_id}/access-token", headers=tc_headers)
+    assert r.status_code == 201
+    assert r.json()["access_token"] == f"fake-token-{party_id}"
+    assert len(party_access_issuer.calls) == 1
+
+
+def test_permanent_link_works_and_reminting_revokes_the_old_one(client, tc_headers, repo):
+    """The whole point: the pi_ link opens the party workspace with no expiry —
+    and minting a new link kills the previous one (rotation)."""
+    txn_id = _txn(client, tc_headers)
+    party_id = _party(client, tc_headers, txn_id)
+    first = client.post(f"/transactions/{txn_id}/parties/{party_id}/access-token", headers=tc_headers).json()["access_token"]
+    ws = client.get("/party/workspace", headers={"Authorization": f"Bearer {first}"})
+    assert ws.status_code == 200 and ws.json()["me"]["role"]
+
+    second = client.post(f"/transactions/{txn_id}/parties/{party_id}/access-token", headers=tc_headers).json()["access_token"]
+    assert second != first
+    assert client.get("/party/workspace", headers={"Authorization": f"Bearer {second}"}).status_code == 200
+    # the old link is dead
+    dead = client.get("/party/workspace", headers={"Authorization": f"Bearer {first}"})
+    assert dead.status_code == 401 and "revoked" in dead.json()["detail"].lower()
+    # garbage pi_ tokens are unauthorized, not errors
+    assert client.get("/party/workspace", headers={"Authorization": "Bearer pi_garbage"}).status_code == 401
+
+
+def test_access_token_issued_for_every_party_scoped_tier(client, tc_headers, party_access_issuer, repo):
     """Every party now gets their own scoped workspace token. A lender (not an
     agent/broker) gets one at the locked 'receiving_end' DB tier."""
     txn_id = _txn(client, tc_headers)
@@ -63,7 +103,11 @@ def test_access_token_issued_for_every_party_scoped_tier(client, tc_headers, par
         f"/transactions/{txn_id}/parties/{lender_id}/access-token", headers=tc_headers
     )
     assert r.status_code == 201
-    assert party_access_issuer.calls[-1]["tier"] == "receiving_end"
+    # tier now travels on the stored invite, not a session issuance
+    import hashlib
+
+    h = hashlib.sha256(r.json()["access_token"].encode()).hexdigest()
+    assert repo.resolve_party_invite(h)["tier"] == "receiving_end"
 
 
 def test_access_token_unknown_party_is_404(client, tc_headers, party_access_issuer):
