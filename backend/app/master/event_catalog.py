@@ -58,6 +58,7 @@ CATALOG: dict[str, _Entry] = {
     "document.party_uploaded": _Entry(None, "system", True, True, None, "A document was uploaded", "Filed an uploaded document", "autonomous"),
     "compliance.run": _Entry(None, "system", True, True, None, "Your timeline was updated", "Refreshed the deadline timeline", "autonomous"),
     "message.sent": _Entry(None, "system", True, True, None, "A message went out on your deal", "An outbound message was sent", "autonomous"),
+    "message.replied": _Entry(None, "system", True, True, None, "A reply came in on your deal", "Logged a reply — follow-up cleared", "autonomous"),
     "field.confirmed": _Entry(None, "system", True, True, None, "Deal details were confirmed", "Confirmed a deal term", "autonomous"),
     "party.created": _Entry(None, "system", True, True, None, "Someone joined your deal team", "Added a party to the deal", "autonomous"),
     "transaction.stage": _Entry("escrow_opened", "system", True, True, None, "Your deal moved to a new stage", "Advanced the deal to a new stage", "autonomous"),

@@ -93,6 +93,11 @@ export function Home({
     );
   const dismissReminder = (it: AttentionItem) =>
     act(() => api.del(`/transactions/${it.dealId}/reminders/${it.id}`), "Dismissed");
+  const draftChase = (it: AttentionItem) =>
+    act(
+      () => api.post(`/transactions/${it.dealId}/messages/${it.messageId}/draft-chase`, {}),
+      "Chase drafted — review it in the queue before it sends",
+    );
   const resolveRisk = (it: AttentionItem) =>
     act(() => api.post(`/transactions/${it.dealId}/risk-flags/${it.id}/resolve`, {}), "Resolved");
 
@@ -151,6 +156,7 @@ export function Home({
                   onApprove={approveDraft}
                   onDismiss={dismissReminder}
                   onResolve={resolveRisk}
+                  onChase={draftChase}
                 />
               ))
             )}
@@ -200,7 +206,7 @@ export function Home({
 }
 
 function DecisionRow({
-  it, busy, onOpenDeal, onApprove, onDismiss, onResolve,
+  it, busy, onOpenDeal, onApprove, onDismiss, onResolve, onChase,
 }: {
   it: AttentionItem;
   busy: boolean;
@@ -208,6 +214,7 @@ function DecisionRow({
   onApprove: (it: AttentionItem, edited?: { subject?: string; body?: string }) => void;
   onDismiss: (it: AttentionItem) => void;
   onResolve: (it: AttentionItem) => void;
+  onChase: (it: AttentionItem) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [body, setBody] = useState(it.body ?? "");
@@ -229,7 +236,12 @@ function DecisionRow({
             </button>
           )}
           {it.kind === "reminder" && (
-            <button className="kbtn" disabled={busy} onClick={() => onDismiss(it)}>Dismiss</button>
+            <>
+              {it.messageId && (
+                <button className="kbtn pri" disabled={busy} onClick={() => onChase(it)}>Draft chase</button>
+              )}
+              <button className="kbtn" disabled={busy} onClick={() => onDismiss(it)}>Dismiss</button>
+            </>
           )}
           {it.kind === "risk" && (
             <button className="kbtn" disabled={busy} onClick={() => onResolve(it)}>Resolve</button>

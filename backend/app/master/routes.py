@@ -326,6 +326,53 @@ def add_note(
         ) from None
 
 
+@router.post("/transactions/{transaction_id}/messages/{message_id}/draft-chase", status_code=201)
+def draft_chase(
+    transaction_id: str,
+    message_id: str,
+    tc: TCUser = Depends(require_tc),
+    repo: MasterRepo = Depends(get_repo),
+    drafter: Drafter = Depends(get_drafter),
+) -> dict[str, Any]:
+    """P2: a sent message got no reply — draft the courteous nudge. The chase is a
+    DRAFT like every outbound (Rule 3): it lands in the decision queue for the TC
+    to review and approve; nothing sends here."""
+    state = repo.get_full_state(transaction_id)
+    if state is None:
+        raise HTTPException(status_code=404, detail="Transaction not found")
+    msg = next((m for m in state.get("messages", []) if m["id"] == message_id), None)
+    if msg is None or msg.get("status") != "sent":
+        raise HTTPException(status_code=409, detail="Only a sent message can be chased")
+    if msg.get("replied_at"):
+        raise HTTPException(status_code=409, detail="They already replied — nothing to chase")
+    recipient = next((p for p in state.get("parties", []) if p["id"] == msg.get("party_id")), None)
+    fields = {k: v.get("value") for k, v in (state.get("effective_fields") or {}).items()}
+    ctx = MessageContext(
+        purpose="chase",
+        recipient_name=(recipient or {}).get("name"),
+        recipient_role=(recipient or {}).get("role"),
+        property_address=(state.get("property") or {}).get("address") or fields.get("property_address"),
+        buyer_names=fields.get("buyer_names"), seller_names=fields.get("seller_names"),
+        tc_name=None, key_dates=(),
+        note=f"Earlier message (no reply yet): subject '{msg.get('subject')}', sent {str(msg.get('sent_at') or '')[:10]}.",
+    )
+    try:
+        draft = drafter.draft_message(ctx)
+    except ZdrNotConfirmed as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from None
+    except DraftFailed:
+        raise HTTPException(status_code=502, detail="Drafting is unavailable right now") from None
+    created = repo.create_message(
+        transaction_id=transaction_id, subject=draft.subject, body=draft.body,
+        party_id=msg.get("party_id"), actor=tc.actor, action="message.drafted",
+        details={"why": draft.why, "purpose": "chase", "ai": True,
+                 "recipient_name": (recipient or {}).get("name"),
+                 "recipient_role": (recipient or {}).get("role"),
+                 "chases_message_id": message_id},
+    )
+    return {"message": {"id": created["id"], "subject": created["subject"], "status": created["status"]}}
+
+
 @router.delete("/transactions/{transaction_id}/notes/{note_id}")
 def delete_note(
     transaction_id: str,

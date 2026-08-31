@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import secrets
 from functools import lru_cache
 from typing import Any
@@ -22,6 +23,7 @@ from fastapi.security import HTTPAuthorizationCredentials
 from pydantic import BaseModel, Field
 
 from app.common.auth import TCUser, bearer_scheme, require_tc
+from app.master.routes import get_repo as get_master_repo
 from app.contracts.documents import (
     COUNTER_OFFER_TYPES,
     OTHER_DOC_TYPE,
@@ -104,6 +106,11 @@ class PostmarkAttachment(BaseModel):
     Content: str | None = None  # base64; used only for the storage upload
 
 
+class PostmarkHeader(BaseModel):
+    Name: str = ""
+    Value: str = ""
+
+
 class PostmarkInbound(BaseModel):
     From: str = ""
     FromFull: PostmarkAddress | None = None
@@ -112,6 +119,28 @@ class PostmarkInbound(BaseModel):
     OriginalRecipient: str = ""
     Subject: str | None = None
     Attachments: list[PostmarkAttachment] = Field(default_factory=list)
+    Headers: list[PostmarkHeader] = Field(default_factory=list)
+
+
+# Postmark's outbound MessageID (stored as messages.provider_message_id) appears
+# in the delivered mail's Message-ID header as <id@mtasv.net>; a reply carries it
+# back in In-Reply-To / References. Extract each token's local part (the id) —
+# format-agnostic, so provider id changes can't silently break matching.
+_MSGID_RE = re.compile(r"<([^<>@\s]+)@[^<>\s]+>")
+
+
+def _referenced_message_ids(headers: list[PostmarkHeader]) -> list[str]:
+    refs: list[str] = []
+    for h in headers:
+        if h.Name.lower() in ("in-reply-to", "references"):
+            refs += _MSGID_RE.findall(h.Value)
+    # dedupe, order kept; offer both original and lowercase forms for matching
+    out: list[str] = []
+    for r in dict.fromkeys(refs):
+        out.append(r)
+        if r.lower() != r:
+            out.append(r.lower())
+    return out
 
 
 def _ingest_email_attachment(
@@ -172,6 +201,7 @@ def postmark_inbound_webhook(
     token: str | None = Query(default=None),
     x_webhook_token: str | None = Header(default=None),
     inbox: InboxRepo = Depends(get_inbox_repo),
+    master_repo: Any = Depends(get_master_repo),
 ) -> dict[str, Any]:
     expected = os.environ.get("POSTMARK_WEBHOOK_TOKEN")
     deal_address = os.environ.get("POSTMARK_INBOUND_ADDRESS")
@@ -192,6 +222,20 @@ def postmark_inbound_webhook(
         return {"ignored": True}
 
     from_email = (body.FromFull.Email if body.FromFull else "") or body.From
+
+    # P2 reply detection — best-effort, never blocks ingestion. If this inbound
+    # references a message the SOR sent (In-Reply-To/References ↔
+    # provider_message_id), mark it replied: the follow-up reminder clears and
+    # the "no reply" chase drops off the TC's decision queue. Only the fact of
+    # the reply touches the SOR; its content stays here in ingestion.
+    refs = _referenced_message_ids(body.Headers)
+    replied: list[dict[str, Any]] = []
+    if refs:
+        try:
+            replied = master_repo.record_reply_detected(provider_message_ids=refs)
+        except Exception:
+            _log.info("reply detection failed (non-fatal)")
+
     # One inbox item PER attachment — an email with a PA + counter + disclosure must
     # not silently lose all but the first (BUG-19). A no-attachment email still
     # queues one (needs_manual) item so it's visible.
@@ -215,6 +259,7 @@ def postmark_inbound_webhook(
         "id": first["id"],
         "status": first["status"],
         "items": items,
+        "replied_to": [m["id"] for m in replied],
         **({"duplicate": True} if first.get("duplicate") else {}),
     }
 

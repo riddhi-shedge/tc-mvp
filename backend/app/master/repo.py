@@ -662,6 +662,14 @@ class MasterRepo(Protocol):
         of band. Audit event only — no account/routing data is stored (Rule 1)."""
         ...
 
+    def record_reply_detected(self, *, provider_message_ids: list[str]) -> list[dict[str, Any]]:
+        """P2: inbound mail referenced message(s) the SOR sent (In-Reply-To /
+        References ↔ provider_message_id). Marks each matched sent message
+        replied, clears its pending follow-up reminders (the chase is over), and
+        audits the event — content-free; the reply body stays in ingestion.
+        Returns the matched messages ({id, transaction_id})."""
+        ...
+
     def approve_and_send(
         self,
         *,
@@ -2127,6 +2135,38 @@ class SupabaseRepo:
             transaction_id=transaction_id, actor=actor, action="party.disbursement_verified",
             entity_type="party", entity_id=party_id, details={"party_id": party_id},
         )
+
+    def record_reply_detected(self, *, provider_message_ids: list[str]) -> list[dict[str, Any]]:
+        ids = [i for i in provider_message_ids if i]
+        if not ids:
+            return []
+        rows = (
+            self._db.table("messages")
+            .select("id, transaction_id, provider_message_id, replied_at")
+            .in_("provider_message_id", ids)
+            .eq("status", "sent")
+            .execute()
+            .data
+        )
+        matched: list[dict[str, Any]] = []
+        now = datetime.now(timezone.utc).isoformat()
+        for msg in rows:
+            if not msg.get("replied_at"):
+                try:
+                    self._db.table("messages").update({"replied_at": now}).eq("id", msg["id"]).execute()
+                except Exception:
+                    # replied_at may predate its migration — the reminder-clear and
+                    # audit below still record the fact; never break ingestion.
+                    _log.info("replied_at write failed for message=%s (migration applied?)", msg["id"])
+            # The chase is over: clear pending follow-up reminders for this message.
+            self._db.table("reminders").delete().eq("message_id", msg["id"]).execute()
+            self._audit(
+                transaction_id=msg["transaction_id"], actor="system:ingestion",
+                action="message.replied", entity_type="message", entity_id=msg["id"],
+                details={},
+            )
+            matched.append({"id": msg["id"], "transaction_id": msg["transaction_id"]})
+        return matched
 
     def approve_and_send(
         self,

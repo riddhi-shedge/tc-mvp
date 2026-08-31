@@ -723,6 +723,22 @@ class InMemoryRepo:
             entity_type="party", entity_id=party_id, details={"party_id": party_id},
         )
 
+    def record_reply_detected(self, *, provider_message_ids: list[str]) -> list[dict[str, Any]]:
+        ids = {i for i in provider_message_ids if i}
+        matched: list[dict[str, Any]] = []
+        for msg in self.messages.values():
+            if msg.get("status") != "sent" or msg.get("provider_message_id") not in ids:
+                continue
+            if not msg.get("replied_at"):
+                msg["replied_at"] = _now()
+            self.reminders = [r for r in self.reminders if r.get("message_id") != msg["id"]]
+            self._audit(
+                transaction_id=msg["transaction_id"], actor="system:ingestion",
+                action="message.replied", entity_type="message", entity_id=msg["id"], details={},
+            )
+            matched.append({"id": msg["id"], "transaction_id": msg["transaction_id"]})
+        return matched
+
     def send_invite(
         self, *, transaction_id, party_id, to, subject, body, mailer, actor
     ) -> None:
