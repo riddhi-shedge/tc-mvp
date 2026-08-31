@@ -35,7 +35,7 @@ const prefersReduced = () => typeof matchMedia !== "undefined" && matchMedia("(p
 // Static CA copy, jargon tap-to-definable.
 const PHASE_NOW: Record<DealPhase, JSX.Element> = {
   offer: <>Your offer is accepted and the paperwork is being opened. Nothing is needed from you today.</>,
-  escrow_open: <><Define>escrow</Define> is holding the deal together while your lender works on the loan. Nothing is needed from you today unless a task appears above.</>,
+  escrow_open: <><Define>Escrow</Define> is holding the deal together while your lender works on the loan. Nothing is needed from you today unless a task appears above.</>,
   contingencies: <>This is the checking period — inspections and the loan get finished, and your <Define>contingencies</Define> protect you while they do.</>,
   closing: <>The finish line: final <Define>walkthrough</Define>, signing, and funding. Your team will tell you exactly where to be and when.</>,
   keys: <>Closing is complete — the home is yours. Anything left here is wrap-up.</>,
@@ -552,7 +552,7 @@ function HomeSection({ ws }: { ws: Workspace }) {
         </div>
       ) : (
         <p className="muted" style={{ margin: "0 0 .8rem", fontSize: 13 }}>
-          Home facts (beds, baths, square feet) will appear here once property data is connected.
+          Bed, bath, and size details for this home will appear here soon.
         </p>
       )}
 
