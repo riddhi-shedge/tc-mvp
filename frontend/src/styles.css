@@ -2201,3 +2201,9 @@ button.secondary.sm { padding: 0.28rem 0.55rem; font-size: var(--t-s); }
 .rw-chip.soon { background: var(--status-warn-bg); color: var(--status-warn-fg); }
 .rw-chip.later { background: var(--accent-soft); color: var(--accent-strong); }
 .rw-more { margin-top: 2px; font-size: var(--t-2xs); color: var(--muted); text-align: center; }
+
+/* P-E: per-tab count badges — a tab tells you whether it needs you before you click. */
+.tab-badge { font-size: var(--t-2xs); font-weight: 700; min-width: 16px; height: 16px; padding: 0 5px;
+  border-radius: 8px; display: inline-grid; place-items: center; margin-left: 6px; }
+.tab-badge.warn { background: var(--status-warn-bg); color: var(--status-warn-fg); }
+.tab-badge.danger { background: var(--status-danger-bg); color: var(--status-danger-fg); }

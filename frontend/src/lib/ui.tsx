@@ -3,7 +3,7 @@ import { AnimatePresence, motion } from "framer-motion";
 
 /** Brand-styled animated tabs: a sliding gold-underlined indicator (shared-layout
  *  animation) + a soft fade/slide on content change. */
-export type TabDef = { id: string; label: string; icon?: ReactNode; content: ReactNode };
+export type TabDef = { id: string; label: string; icon?: ReactNode; content: ReactNode; badge?: number; badgeTone?: "warn" | "danger" };
 export function AnimatedTabs({ tabs, initial }: { tabs: TabDef[]; initial?: string }) {
   const [active, setActive] = useState(initial ?? tabs[0]?.id);
   const current = tabs.find((t) => t.id === active) ?? tabs[0];
@@ -26,6 +26,9 @@ export function AnimatedTabs({ tabs, initial }: { tabs: TabDef[]; initial?: stri
             <span className="tab-label">
               {t.icon && <span>{t.icon}</span>}
               {t.label}
+              {t.badge != null && t.badge > 0 && (
+                <span className={`tab-badge ${t.badgeTone ?? "warn"}`}>{t.badge}</span>
+              )}
             </span>
           </button>
         ))}

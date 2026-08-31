@@ -528,6 +528,12 @@ export function Deal({ id, onBack }: { id: string; onBack: () => void }) {
       )}
 
       <AnimatedTabs
+        initial={(() => {
+          // Stage-adaptive default (P-E): early deals open on the confirm/extraction
+          // work, mid-deal on comms, closing/closed on overview.
+          const stage = (state.transaction as { stage?: string }).stage ?? "new";
+          return stage === "new" ? "documents" : stage === "cont" ? "comms" : "overview";
+        })()}
         tabs={[
           {
             id: "overview",
@@ -557,6 +563,8 @@ export function Deal({ id, onBack }: { id: string; onBack: () => void }) {
             id: "documents",
             label: "Documents",
             icon: <Icon name="doc" size={14} />,
+            badge: unconfirmed.length + unresolvedRisks,
+            badgeTone: unresolvedRisks > 0 ? "danger" : "warn",
             content: (
               <>
 
@@ -629,6 +637,8 @@ export function Deal({ id, onBack }: { id: string; onBack: () => void }) {
           },
           {
             id: "comms",
+            badge: drafts.length + dueReminders.length,
+            badgeTone: dueReminders.length > 0 ? "danger" : "warn",
             label: "Communication",
             icon: <Icon name="mail" size={14} />,
             content: (
