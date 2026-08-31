@@ -18,6 +18,7 @@ from typing import Any
 
 from app.common.dates import ca_today
 from app.master.event_catalog import agent_activity
+from app.master.party_views import _contingency_removed
 
 # DB stage -> the agent-facing DealStage vocabulary.
 _STAGE: dict[str, str] = {
@@ -192,6 +193,121 @@ _DRAFT_RULES: list[tuple[str, str, str]] = [
     ("earnest|deposit|emd", "escrow_checkin", "buyer"),
     ("escrow|clos", "escrow_checkin", "escrow"),
 ]
+
+
+# ---- Buyer's-agent working views: schedule, earnings, client context --------
+
+# Buyer-side commission default for the EARNINGS ESTIMATE — display-only, always
+# labeled an estimate; the agent's actual rate lives in their rep agreement.
+_BUYER_COMMISSION_RATE = 0.025
+
+
+def agent_schedule(states: list[dict[str, Any]], horizon_days: int = 21) -> list[dict[str, Any]]:
+    """Where the agent needs to be: every dated deadline + open task across the
+    book — anything overdue (it still needs handling) through the horizon, flat
+    list sorted by date; the frontend groups by day. Read-only facts."""
+    out: list[dict[str, Any]] = []
+    for st in states:
+        txn = st.get("transaction") or {}
+        if (txn.get("stage") or "") == "closed" or (txn.get("status") or "open") != "open":
+            continue
+        fields = _flat_fields(st)
+        client = fields.get("buyer_names") or "Buyer"
+        addr = (st.get("property") or {}).get("address") or fields.get("property_address") or "Property"
+        for d in st.get("deadlines") or []:
+            days = _days_to(d.get("due_date"))
+            if days is None or days > horizon_days:
+                continue
+            out.append({
+                "kind": "deadline", "id": d.get("id"), "dealId": txn.get("id"),
+                "label": d.get("name"), "date": d.get("due_date"), "days": days,
+                "risk": _risk(days), "clientName": client, "propertyAddress": addr,
+            })
+        for t in st.get("tasks") or []:
+            if t.get("status") in ("done", "complete") or not t.get("due_date"):
+                continue
+            days = _days_to(t.get("due_date"))
+            if days is None or days > horizon_days:
+                continue
+            out.append({
+                "kind": "task", "id": t.get("id"), "dealId": txn.get("id"),
+                "label": t.get("title"), "date": t.get("due_date"), "days": days,
+                "risk": _risk(days), "clientName": client, "propertyAddress": addr,
+            })
+    return sorted(out, key=lambda x: (x["date"] or "9999", x["kind"]))
+
+
+def agent_earnings(states: list[dict[str, Any]]) -> dict[str, Any]:
+    """The commission pipeline — every agent's private spreadsheet, drawn from the
+    SOR instead. Estimates only (rate is a default, not their agreement); no money
+    moves here, ever."""
+    rows: list[dict[str, Any]] = []
+    totals = {"inEscrowCents": 0, "closingSoonCents": 0, "closedCents": 0}
+    for st in states:
+        txn = st.get("transaction") or {}
+        if (txn.get("status") or "open") != "open":
+            continue
+        fields = _flat_fields(st)
+        price = _cents(fields.get("purchase_price"))
+        if not price:
+            continue
+        commission = round(price * _BUYER_COMMISSION_RATE)
+        close = next(
+            (d.get("due_date") for d in st.get("deadlines") or []
+             if re.search(r"escrow|clos", d.get("name") or "", re.I)),
+            None,
+        )
+        stage = _STAGE.get(txn.get("stage") or "", "escrow_open")
+        days = _days_to(close)
+        rows.append({
+            "dealId": txn.get("id"),
+            "clientName": fields.get("buyer_names") or "Buyer",
+            "propertyAddress": (st.get("property") or {}).get("address") or fields.get("property_address") or "Property",
+            "priceCents": price, "commissionEstCents": commission,
+            "closeDate": close, "stage": stage,
+        })
+        if stage == "closed":
+            totals["closedCents"] += commission
+        else:
+            totals["inEscrowCents"] += commission
+            if days is not None and 0 <= days <= 30:
+                totals["closingSoonCents"] += commission
+    rows.sort(key=lambda r: (r["stage"] == "closed", r["closeDate"] or "9999"))
+    return {"rows": rows, "totals": totals, "rateNote": f"{_BUYER_COMMISSION_RATE:.1%} buyer-side default — estimate only"}
+
+
+def client_context(st: dict[str, Any]) -> dict[str, Any]:
+    """The pre-call 30-second cram for one buyer client: contingency snapshot,
+    docs on file, next deadline, and plain-English talking points from the event
+    catalog. Everything the agent recites when the client's name lights up."""
+    txn = st.get("transaction") or {}
+    fields = _flat_fields(st)
+    deadlines = sorted(
+        (d for d in st.get("deadlines") or [] if d.get("due_date")),
+        key=lambda d: d["due_date"],
+    )
+    upcoming = [d for d in deadlines if (_days_to(d["due_date"]) or -99) >= 0]
+    nxt = upcoming[0] if upcoming else (deadlines[-1] if deadlines else None)
+
+    contingencies = []
+    for kind, label in (("inspection", "Inspection"), ("appraisal", "Appraisal"), ("loan", "Loan")):
+        present = fields.get(f"{kind}_contingency_present")
+        days_field = fields.get(f"{kind}_contingency_days")
+        if present is None and days_field is None:
+            continue
+        removed = _contingency_removed(fields, kind)
+        contingencies.append({"kind": kind, "label": label, "removed": removed})
+
+    docs = sorted({(d.get("doc_type") or "other") for d in st.get("documents") or []})
+    return {
+        "stage": _STAGE.get(txn.get("stage") or "", "escrow_open"),
+        "priceCents": _cents(fields.get("purchase_price")),
+        "financing": fields.get("financing_type") or ("Cash" if str(fields.get("all_cash")).lower() == "true" else None),
+        "nextDeadline": ({"label": nxt["name"], "date": nxt["due_date"], "risk": _risk(_days_to(nxt["due_date"]))} if nxt else None),
+        "contingencies": contingencies,
+        "docTypes": docs,
+        "talkingPoints": agent_activity(st.get("audit_log") or [], deal_id=txn.get("id"), limit=4),
+    }
 
 
 # ---- Listing-agent surface (near-mirror; listing frame) ---------------------

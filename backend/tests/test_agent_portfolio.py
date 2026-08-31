@@ -190,3 +190,54 @@ def test_build_listing_portfolio_surfaces_offer_listings_first():
     port = build_listing_portfolio(deals=deals, me={"name": "Coco", "role": "listing_agent"}, pending_drafts=1)
     assert port["listings"][0]["id"] == "offers"  # offer listings float to the top
     assert port["stats"]["offersToReview"] == 1
+
+
+# ---- buyer's-agent working views: schedule, earnings, client context ---------
+
+from app.master.agent_portfolio import agent_earnings, agent_schedule, client_context  # noqa: E402
+
+
+def test_agent_schedule_mixes_deadlines_and_tasks_sorted():
+    st = _state(
+        tid="d1", stage="cont", fields=_LISTING_FIELDS,
+        deadlines=[{"id": "dl", "name": "Loan contingency", "due_date": _iso(2)}],
+    )
+    st["tasks"] = [
+        {"id": "t1", "title": "Order inspection", "status": "pending", "due_date": _iso(1)},
+        {"id": "t2", "title": "Done thing", "status": "done", "due_date": _iso(1)},
+        {"id": "t3", "title": "Far thing", "status": "pending", "due_date": _iso(90)},
+    ]
+    items = agent_schedule([st])
+    assert [i["id"] for i in items] == ["t1", "dl"]  # date order; done + beyond-horizon excluded
+    assert items[0]["kind"] == "task" and items[1]["kind"] == "deadline"
+
+
+def test_agent_earnings_estimates_and_totals():
+    open_deal = _state(tid="a", stage="cont", fields={"buyer_names": "B", "purchase_price": "$1,000,000"},
+                       deadlines=[{"id": "c", "name": "Close of escrow", "due_date": _iso(10)}])
+    closed = _state(tid="b", stage="closed", fields={"buyer_names": "C", "purchase_price": "$400,000"})
+    out = agent_earnings([open_deal, closed])
+    row = next(r for r in out["rows"] if r["dealId"] == "a")
+    assert row["commissionEstCents"] == 2_500_000  # 2.5% of $1M
+    assert out["totals"]["inEscrowCents"] == 2_500_000
+    assert out["totals"]["closingSoonCents"] == 2_500_000  # closes in 10 days
+    assert out["totals"]["closedCents"] == 1_000_000  # 2.5% of $400k
+    assert "estimate" in out["rateNote"]
+
+
+def test_client_context_snapshot():
+    st = _state(
+        tid="d1", stage="cont",
+        fields={"buyer_names": "B", "purchase_price": "$800,000",
+                "inspection_contingency_present": "false", "loan_contingency_days": "21",
+                "financing_type": "Conventional"},
+        deadlines=[{"id": "n", "name": "Loan contingency", "due_date": _iso(3)}],
+        audit=[{"id": "e1", "action": "compliance.run", "created_at": _iso(-1) + "T10:00:00Z"}],
+    )
+    st["documents"] = [{"id": "x", "doc_type": "proof_of_funds", "status": "uploaded"}]
+    ctx = client_context(st)
+    assert ctx["nextDeadline"]["label"] == "Loan contingency"
+    conts = {c["kind"]: c["removed"] for c in ctx["contingencies"]}
+    assert conts["inspection"] is True and conts["loan"] is False
+    assert "proof_of_funds" in ctx["docTypes"]
+    assert len(ctx["talkingPoints"]) == 1  # plain-English event feed

@@ -196,3 +196,19 @@ table.aw-table{ width:100%; border-collapse:collapse; font-size:12.5px; }
   .aw-table .col-opt{ display:none; }
 }
 @media(prefers-reduced-motion:reduce){ .aw *{ transition:none !important; animation:none !important; } }
+
+/* client cards: the pre-call cram */
+.aw-cc{ padding:.85rem 1rem; margin-bottom:.7rem; }
+.aw-cc-top{ display:flex; justify-content:space-between; gap:1rem; align-items:flex-start; flex-wrap:wrap; }
+.aw-cc-meta{ display:flex; gap:.7rem; align-items:center; flex-wrap:wrap; font-size:var(--t-s); }
+.aw-cc-row{ display:flex; gap:1rem; align-items:center; flex-wrap:wrap; margin:.55rem 0; }
+.aw-cc-next{ display:inline-flex; gap:.45rem; align-items:center; }
+.aw-cc-conts{ display:inline-flex; gap:.45rem; flex-wrap:wrap; }
+.aw-cdot{ font-size:var(--t-xs); font-weight:650; padding:.1rem .45rem; border-radius:999px; }
+.aw-cdot.done{ background:var(--sage-bg); color:var(--sage-deep); }
+.aw-cdot.open{ background:var(--amber-bg); color:var(--amber); }
+.aw-doc-chip{ font-size:var(--t-xs); font-weight:600; background:var(--surface-2); border:1px solid var(--line); border-radius:999px; padding:.1rem .5rem; color:var(--ink-2); }
+.aw-cc-talk{ background:var(--surface-2); border-radius:8px; padding:.55rem .7rem; margin-bottom:.6rem; }
+.aw-cc-talk-h{ font-size:var(--t-xs); font-weight:700; letter-spacing:.05em; text-transform:uppercase; color:var(--ink-3); margin-bottom:.3rem; }
+.aw-cc-talk-row{ display:flex; gap:.5rem; font-size:var(--t-m); padding:.15rem 0; align-items:flex-start; }
+.aw-cc-actions{ display:flex; gap:.45rem; flex-wrap:wrap; }

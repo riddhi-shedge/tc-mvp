@@ -59,7 +59,33 @@ export interface DealDetail {
   messages: { id: string; subject: string; status: string; reasoning: string | null }[];
 }
 
-export interface ClientRow { dealId: string; clientName: string; propertyAddress: string; parties: Party[] }
+// Client card = roster + the pre-call context (stage, money, contingencies,
+// docs on file, next deadline, plain-English talking points).
+export interface ClientRow {
+  dealId: string;
+  clientName: string;
+  propertyAddress: string;
+  parties: Party[];
+  stage: DealStage;
+  priceCents: number | null;
+  financing: string | null;
+  nextDeadline: { label: string; date: string; risk: RiskLevel } | null;
+  contingencies: { kind: string; label: string; removed: boolean }[];
+  docTypes: string[];
+  talkingPoints: AIActivityEvent[];
+}
+
+export interface ScheduleItem {
+  kind: "deadline" | "task";
+  id: string; dealId: string; label: string; date: string; days: number | null;
+  risk: RiskLevel; clientName: string; propertyAddress: string;
+}
+
+export interface EarningsData {
+  rows: { dealId: string; clientName: string; propertyAddress: string; priceCents: number; commissionEstCents: number; closeDate: string | null; stage: DealStage }[];
+  totals: { inEscrowCents: number; closingSoonCents: number; closedCents: number };
+  rateNote: string;
+}
 
 export const STAGE_LABEL: Record<DealStage, string> = {
   offer_accepted: "Offer accepted", escrow_open: "Escrow open", contingencies: "Contingencies",

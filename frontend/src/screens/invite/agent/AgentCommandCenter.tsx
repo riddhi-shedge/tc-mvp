@@ -5,14 +5,16 @@ import { daysTo, humanize, initials } from "../helpers";
 import { usePoll } from "../shared/usePoll";
 import "./agent.css";
 import {
-  ApprovalItem, ClientRow, DealDetail, DealSummary, Portfolio, RiskLevel, STAGE_LABEL,
+  ApprovalItem, ClientRow, DealDetail, DealSummary, EarningsData, Portfolio, RiskLevel, ScheduleItem, STAGE_LABEL,
 } from "./types";
 
 type Papi = <T,>(path: string, init?: RequestInit) => Promise<T>;
-type View = "today" | "pipeline" | "clients" | "activity" | "radar";
+type View = "today" | "pipeline" | "clients" | "schedule" | "earnings" | "activity" | "radar";
 type PipeFilter = "all" | "at_risk" | "closing";
 
 const RISK_RANK: Record<RiskLevel, number> = { at_risk: 2, watch: 1, ok: 0 };
+const usd = (c: number | null | undefined) =>
+  c == null ? "—" : new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(c / 100);
 
 function riskLabel(risk: RiskLevel, date: string | null): string {
   const n = date ? daysTo(date) : null;
@@ -29,6 +31,8 @@ export function AgentCommandCenter({ papi }: { papi: Papi }) {
   const [portfolio, setPortfolio] = useState<Portfolio | null>(null);
   const [approvals, setApprovals] = useState<ApprovalItem[]>([]);
   const [clients, setClients] = useState<ClientRow[] | null>(null);
+  const [schedule, setSchedule] = useState<ScheduleItem[] | null>(null);
+  const [earnings, setEarnings] = useState<EarningsData | null>(null);
   const [detail, setDetail] = useState<DealDetail | null>(null);
   const [view, setView] = useState<View>("today");
   const [pipeFilter, setPipeFilter] = useState<PipeFilter>("all");
@@ -52,7 +56,13 @@ export function AgentCommandCenter({ papi }: { papi: Papi }) {
     if (view === "clients" && clients === null) {
       papi<{ clients: ClientRow[] }>("/agent/clients").then((d) => setClients(d.clients)).catch(() => setClients([]));
     }
-  }, [view, clients, papi]);
+    if (view === "schedule" && schedule === null) {
+      papi<{ items: ScheduleItem[] }>("/agent/schedule").then((d) => setSchedule(d.items)).catch(() => setSchedule([]));
+    }
+    if (view === "earnings" && earnings === null) {
+      papi<EarningsData>("/agent/earnings").then(setEarnings).catch(() => setEarnings({ rows: [], totals: { inEscrowCents: 0, closingSoonCents: 0, closedCents: 0 }, rateNote: "" }));
+    }
+  }, [view, clients, schedule, earnings, papi]);
 
   // ⌘K
   useEffect(() => {
@@ -86,6 +96,15 @@ export function AgentCommandCenter({ papi }: { papi: Papi }) {
     try { await papi(`/agent/approvals/${item.id}/dismiss`, { method: "POST", body: JSON.stringify({ transaction_id: item.dealId }) }); }
     catch (e) { setErr(e instanceof Error ? e.message : "Dismiss failed."); void loadAll(); }
   }
+  async function draftClientUpdate(dealId: string) {
+    setDrafting(true); setErr(null);
+    try {
+      await papi(`/agent/clients/${dealId}/draft-update`, { method: "POST" });
+      await loadAll();
+      setView("today");
+    } catch (e) { setErr(e instanceof Error ? e.message : "Drafting is unavailable right now."); }
+    finally { setDrafting(false); }
+  }
   async function refreshCopilot() {
     setDrafting(true); setErr(null);
     try {
@@ -109,6 +128,8 @@ export function AgentCommandCenter({ papi }: { papi: Papi }) {
     { id: "pipeline", label: "Pipeline", icon: "board" },
     { id: "today", label: "Today", icon: "inbox", count: stats.needYouToday, hot: stats.needYouToday > 0 },
     { id: "clients", label: "Clients", icon: "users" },
+    { id: "schedule", label: "Schedule", icon: "calendar" },
+    { id: "earnings", label: "Earnings", icon: "money" },
     { id: "activity", label: "AI activity", icon: "sparkle" },
     { id: "radar", label: "Deadline radar", icon: "flag" },
   ];
@@ -153,7 +174,11 @@ export function AgentCommandCenter({ papi }: { papi: Papi }) {
             <PipelineView deals={deals} filter={pipeFilter} setFilter={setPipeFilter} onOpen={openDeal} />
           )}
 
-          {view === "clients" && <ClientsView clients={clients} onOpen={openDeal} />}
+          {view === "clients" && <ClientsView clients={clients} onOpen={openDeal} onDraftUpdate={draftClientUpdate} drafting={drafting} />}
+
+          {view === "schedule" && <ScheduleView items={schedule} onOpen={openDeal} />}
+
+          {view === "earnings" && <EarningsView data={earnings} onOpen={openDeal} />}
 
           {view === "activity" && (
             <>
@@ -362,28 +387,144 @@ export function RadarView({ radar, onOpen }: { radar: Portfolio["radar"]; onOpen
   );
 }
 
-function ClientsView({ clients, onOpen }: { clients: ClientRow[] | null; onOpen: (id: string) => void }) {
+function ClientsView({ clients, onOpen, onDraftUpdate, drafting }: {
+  clients: ClientRow[] | null; onOpen: (id: string) => void; onDraftUpdate: (id: string) => void; drafting: boolean;
+}) {
   if (clients === null) return <div className="aw-empty">Loading clients…</div>;
   return (
     <>
-      <div className="aw-h"><h1>Clients &amp; counterparties</h1><span className="muted">{clients.length}</span></div>
+      <div className="aw-h"><h1>Clients</h1><span className="muted">{clients.length} — everything you recite when their name lights up</span></div>
       {clients.length === 0 ? <div className="aw-empty">No clients yet.</div> : clients.map((c) => (
-        <div className="aw-card" key={c.dealId} style={{ padding: ".8rem .9rem", marginBottom: ".6rem" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: ".6rem", marginBottom: ".5rem" }}>
-            <div><div className="aw-client" style={{ fontSize: "1rem" }}>{c.clientName}</div><div className="aw-addr">{c.propertyAddress}</div></div>
-            <button className="aw-btn aw-btn-g sm" style={{ marginLeft: "auto" }} onClick={() => onOpen(c.dealId)}>Open deal</button>
+        <div className="aw-card aw-cc" key={c.dealId}>
+          <div className="aw-cc-top">
+            <div>
+              <div className="aw-client" style={{ fontSize: "1.05rem" }}>{c.clientName}</div>
+              <div className="aw-addr">{c.propertyAddress}</div>
+            </div>
+            <div className="aw-cc-meta">
+              <span className="aw-stage">{STAGE_LABEL[c.stage] ?? c.stage}</span>
+              {c.priceCents != null && <span className="tnum" style={{ fontWeight: 650 }}>{usd(c.priceCents)}</span>}
+              {c.financing && <span className="muted">{c.financing}</span>}
+            </div>
           </div>
-          <div className="aw-list">
-            {c.parties.map((p) => (
-              <div className="aw-list-row" key={p.id}>
-                <span className="aw-avatar" style={{ width: 24, height: 24, fontSize: 10 }}>{initials(p.name, p.role)}</span>
-                <div style={{ flex: 1, minWidth: 0 }}><div>{p.name ?? humanize(p.role)}</div><div className="aw-addr">{humanize(p.role)}</div></div>
-                {p.phone && <a className="aw-btn aw-btn-g sm" href={`tel:${p.phone}`}><Icon name="phone" size={12} /> {p.phone}</a>}
-              </div>
+
+          <div className="aw-cc-row">
+            {c.nextDeadline && (
+              <span className="aw-cc-next">
+                <RiskPill risk={c.nextDeadline.risk} date={c.nextDeadline.date} />
+                <span className="aw-addr">{c.nextDeadline.label} · {fmtDate(c.nextDeadline.date)}</span>
+              </span>
+            )}
+            {c.contingencies.length > 0 && (
+              <span className="aw-cc-conts" title="Contingencies: removed vs active">
+                {c.contingencies.map((x) => (
+                  <span key={x.kind} className={`aw-cdot ${x.removed ? "done" : "open"}`}>
+                    {x.removed ? "✓" : "○"} {x.label}
+                  </span>
+                ))}
+              </span>
+            )}
+            {c.docTypes.length > 0 && (
+              <span className="aw-cc-docs">
+                {c.docTypes.slice(0, 4).map((d) => <span key={d} className="aw-doc-chip">{humanize(d)}</span>)}
+              </span>
+            )}
+          </div>
+
+          {c.talkingPoints.length > 0 && (
+            <div className="aw-cc-talk">
+              <div className="aw-cc-talk-h">Talking points — before you call</div>
+              {c.talkingPoints.map((t) => (
+                <div key={t.id} className="aw-cc-talk-row">
+                  <span className={`dot ${t.mode}`} style={{ width: 6, height: 6, borderRadius: "50%", background: t.mode === "needs_you" ? "var(--ai)" : "var(--sage)", flex: "none", marginTop: 6 }} />
+                  <span>{t.text}</span>
+                  {t.occurredAt && <span className="aw-addr tnum" style={{ marginLeft: "auto", flex: "none" }}>{fmtDate(t.occurredAt).replace(/, \d{4}$/, "")}</span>}
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div className="aw-cc-actions">
+            <button className="aw-btn aw-btn-p sm" disabled={drafting} onClick={() => onDraftUpdate(c.dealId)}>
+              <Icon name="sparkle" size={12} /> {drafting ? "Drafting…" : "Draft client update"}
+            </button>
+            <button className="aw-btn aw-btn-g sm" onClick={() => onOpen(c.dealId)}>Open deal</button>
+            {c.parties.filter((p) => p.phone).slice(0, 3).map((p) => (
+              <a key={p.id} className="aw-btn aw-btn-g sm" href={`tel:${p.phone}`}>
+                <Icon name="phone" size={11} /> {humanize(p.role).split(" ")[0]}
+              </a>
             ))}
           </div>
         </div>
       ))}
+    </>
+  );
+}
+
+function ScheduleView({ items, onOpen }: { items: ScheduleItem[] | null; onOpen: (id: string) => void }) {
+  if (items === null) return <div className="aw-empty">Loading your schedule…</div>;
+  const groups = new Map<string, ScheduleItem[]>();
+  for (const it of items) {
+    const key = (it.days ?? 99) < 0 ? "Overdue" : it.days === 0 ? "Today" : it.days === 1 ? "Tomorrow" : fmtDate(it.date);
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key)!.push(it);
+  }
+  return (
+    <>
+      <div className="aw-h"><h1>Schedule</h1><span className="muted">every dated obligation across the book, next 3 weeks</span></div>
+      {items.length === 0 ? <div className="aw-empty">Nothing dated on the horizon.</div> :
+        [...groups.entries()].map(([label, its]) => (
+          <div key={label} className="aw-radar-grp">
+            <div className={`label ${label === "Overdue" ? "" : ""}`} style={label === "Overdue" ? { color: "var(--clay)" } : label === "Today" ? { color: "var(--sage-deep)" } : undefined}>
+              {label} · {its.length}
+            </div>
+            {its.map((it) => (
+              <button key={`${it.kind}-${it.id}`} className={`aw-radar-item ${it.risk}`} style={{ width: "100%", textAlign: "left" }} onClick={() => onOpen(it.dealId)}>
+                <span className="aw-radar-date"><Icon name={it.kind === "task" ? "checkCircle" : "calendar"} size={13} /></span>
+                <div className="aw-radar-main">
+                  <div>{it.label}</div>
+                  <div className="aw-addr">{it.clientName} · {it.propertyAddress}</div>
+                </div>
+                <RiskPill risk={it.risk} date={it.date} />
+              </button>
+            ))}
+          </div>
+        ))}
+    </>
+  );
+}
+
+function EarningsView({ data, onOpen }: { data: EarningsData | null; onOpen: (id: string) => void }) {
+  if (data === null) return <div className="aw-empty">Loading earnings…</div>;
+  return (
+    <>
+      <div className="aw-h"><h1>Earnings</h1><span className="muted">{data.rateNote}</span></div>
+      <div className="aw-stats" style={{ gridTemplateColumns: "repeat(3, 1fr)" }}>
+        <div className="aw-stat"><div className="aw-stat-n tnum">{usd(data.totals.inEscrowCents)}</div><div className="aw-stat-l">in escrow (est.)</div></div>
+        <div className="aw-stat"><div className="aw-stat-n tnum">{usd(data.totals.closingSoonCents)}</div><div className="aw-stat-l">closing ≤ 30 days (est.)</div></div>
+        <div className="aw-stat"><div className="aw-stat-n tnum">{usd(data.totals.closedCents)}</div><div className="aw-stat-l">closed (est.)</div></div>
+      </div>
+      {data.rows.length === 0 ? <div className="aw-empty">No priced deals yet.</div> : (
+        <div className="aw-tablewrap">
+          <table className="aw-table">
+            <thead><tr><th>Client &amp; property</th><th className="col-opt">Stage</th><th>Price</th><th>Est. commission</th><th className="col-opt">Close</th></tr></thead>
+            <tbody>
+              {data.rows.map((r) => (
+                <tr key={r.dealId} className="click" onClick={() => onOpen(r.dealId)}>
+                  <td><div className="aw-client">{r.clientName}</div><div className="aw-addr">{r.propertyAddress}</div></td>
+                  <td className="col-opt"><span className="aw-stage">{STAGE_LABEL[r.stage] ?? r.stage}</span></td>
+                  <td className="tnum">{usd(r.priceCents)}</td>
+                  <td className="tnum" style={{ fontWeight: 650 }}>{usd(r.commissionEstCents)}</td>
+                  <td className="col-opt tnum">{r.closeDate ? fmtDate(r.closeDate) : "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      <p className="muted" style={{ fontSize: "var(--t-s, 12px)", marginTop: 8 }}>
+        Estimates use a default buyer-side rate; your actual commission is set by your representation agreement. Display only — nothing here moves money.
+      </p>
     </>
   );
 }

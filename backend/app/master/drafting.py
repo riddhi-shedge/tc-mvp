@@ -74,6 +74,10 @@ PURPOSES: dict[str, str] = {
     "received, escrow opened, on track to close.",
     "intro": "Introduce yourself as the transaction coordinator and offer to be the point "
     "of contact for paperwork and deadlines on this transaction.",
+    "client_update": "Write a warm, plain-language status update to the buyer client: "
+    "where the purchase stands, what was recently completed, what happens next and "
+    "when, and whether anything is needed from them (usually nothing). No jargon; "
+    "reassuring but factual; reference only the dates provided.",
     "chase": "Follow up, briefly and courteously, on a previous message that has "
     "received no reply — reference the earlier ask (see the note), restate the one "
     "thing needed, and make it easy to respond. Never scold; assume good faith.",

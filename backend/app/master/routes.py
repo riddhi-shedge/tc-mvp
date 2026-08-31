@@ -25,9 +25,12 @@ from pydantic import BaseModel, Field
 
 from app.common.auth import PartyUser, TCUser, require_agent_portfolio, require_party, require_tc
 from app.master.agent_portfolio import (
+    agent_earnings,
+    agent_schedule,
     build_agent_portfolio,
     build_listing_portfolio,
     build_offer_comparison,
+    client_context,
     deal_summary,
     draft_targets,
 )
@@ -1579,6 +1582,8 @@ def agent_clients(
     agent: PartyUser = Depends(require_agent_portfolio),
     repo: MasterRepo = Depends(get_repo),
 ) -> dict[str, Any]:
+    """Client cards with the pre-call context: contingency snapshot, docs on
+    file, next deadline, and plain-English talking points from the event log."""
     out = []
     for st in _all_deal_states(repo):
         txn = st.get("transaction") or {}
@@ -1591,8 +1596,72 @@ def agent_clients(
                 {"id": p.get("id"), "name": p.get("name"), "role": p.get("role"), "phone": p.get("phone")}
                 for p in st.get("parties") or [] if p.get("role") != "buyer"
             ],
+            **client_context(st),
         })
     return {"clients": out}
+
+
+@router.get("/agent/schedule")
+def agent_schedule_view(
+    agent: PartyUser = Depends(require_agent_portfolio),
+    repo: MasterRepo = Depends(get_repo),
+) -> dict[str, Any]:
+    """Where the agent needs to be: dated deadlines + open tasks across the book."""
+    return {"items": agent_schedule(_all_deal_states(repo))}
+
+
+@router.get("/agent/earnings")
+def agent_earnings_view(
+    agent: PartyUser = Depends(require_agent_portfolio),
+    repo: MasterRepo = Depends(get_repo),
+) -> dict[str, Any]:
+    """The commission pipeline — ESTIMATES only (default buyer-side rate, clearly
+    labeled); display-only, no money logic touched."""
+    return agent_earnings(_all_deal_states(repo))
+
+
+@router.post("/agent/clients/{transaction_id}/draft-update", status_code=201)
+def agent_draft_client_update(
+    transaction_id: str,
+    agent: PartyUser = Depends(require_agent_portfolio),
+    repo: MasterRepo = Depends(get_repo),
+    drafter: Drafter = Depends(get_drafter),
+) -> dict[str, Any]:
+    """The weekly 'where things stand' note to the buyer client — drafted by the
+    co-pilot from deal state, landing in the approval queue (Rule 3: the agent
+    reviews recipient + full body before anything sends)."""
+    st = repo.get_full_state(transaction_id)
+    if not st:
+        raise HTTPException(status_code=404, detail="Deal not found")
+    buyer = next((p for p in st.get("parties") or [] if p.get("role") == "buyer"), None)
+    if not buyer:
+        raise HTTPException(status_code=409, detail="No buyer client on this deal")
+    fields = {k: v.get("value") for k, v in (st.get("effective_fields") or {}).items()}
+    dates = tuple(
+        (d.get("name"), d.get("due_date"))
+        for d in sorted(st.get("deadlines") or [], key=lambda x: x.get("due_date") or "")[:4]
+        if d.get("due_date")
+    )
+    ctx = MessageContext(
+        purpose="client_update", recipient_name=buyer.get("name"), recipient_role="buyer",
+        property_address=(st.get("property") or {}).get("address") or fields.get("property_address"),
+        buyer_names=fields.get("buyer_names"), seller_names=fields.get("seller_names"),
+        tc_name=_agent_me([st], agent.party_id).get("name"),
+        key_dates=dates, note=None,
+    )
+    try:
+        draft = drafter.draft_message(ctx)
+    except ZdrNotConfirmed as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from None
+    except DraftFailed:
+        raise HTTPException(status_code=502, detail="Drafting is unavailable right now") from None
+    created = repo.create_message(
+        transaction_id=transaction_id, subject=draft.subject, body=draft.body,
+        party_id=buyer.get("id"), actor=agent.actor, action="message.drafted",
+        details={"why": draft.why, "purpose": "client_update", "ai": True,
+                 "recipient_name": buyer.get("name"), "recipient_role": "buyer"},
+    )
+    return {"message": {"id": created["id"], "subject": created["subject"], "status": created["status"]}}
 
 
 @router.get("/agent/deals/{transaction_id}")
