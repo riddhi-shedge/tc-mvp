@@ -2,7 +2,7 @@
    Fraunces for the *home*, Inter for the *process*. Flat, hairline, calm. */
 .bw {
   --paper:#ECEAE2; --surface:#FFFFFF; --surface-2:#F5F3EC;
-  --ink:#212B26; --ink-2:#5A6560; --ink-3:#8A938D;
+  --ink:#212B26; --ink-2:#49524C; --ink-3:#5F6862;
   --line:#DEDBD1; --line-2:#C9C6BA;
   --sage:#4F7A63; --sage-deep:#345544; --sage-bg:#E4EDE6;
   --amber:#9A6B18; --amber-bg:#F4E9D2; --amber-line:#D9C9A0;
@@ -103,15 +103,16 @@
 .bw-cont-head{ display:flex; align-items:center; gap:.7rem; width:100%; text-align:left; padding:.85rem 1rem; background:transparent; border:0; }
 .bw-cont-head:hover{ background:var(--surface); }
 .bw-cont-ic{ width:30px; height:30px; border-radius:8px; background:var(--sage-bg); color:var(--sage-deep); display:grid; place-items:center; flex:none; }
-.bw-cont-name{ font-weight:600; flex:1; }
+.bw-cont-name{ font-weight:650; flex:1; color:var(--ink); }
 .bw-cont-pill{ font-size:12px; font-weight:600; padding:.2rem .55rem; border-radius:999px; background:var(--surface); border:1px solid var(--line); color:var(--ink-2); }
 .bw-cont-pill.warn{ background:var(--amber-bg); color:#6f4e12; } .bw-cont-pill.done{ background:var(--sage-bg); color:var(--sage-deep); }
 .bw-chev{ transition:transform .18s ease; color:var(--ink-3); }
 .bw-cont.open .bw-chev{ transform:rotate(180deg); }
-.bw-cont-body{ padding:0 1rem 1rem; color:var(--ink-2); }
+.bw-cont-body{ padding:0 1rem 1rem; color:var(--ink); }
 .bw-cont-body p{ margin:.5rem 0; }
+.bw-cont-body p.muted{ color:var(--ink-2); }
 .bw-cont-stakes{ background:var(--amber-bg); border:1px solid var(--amber-line); border-radius:9px; padding:.6rem .75rem; color:#6f4e12; }
-.bw-legal{ font-size:12px; color:var(--ink-3); margin-top:.6rem; }
+.bw-legal{ font-size:12px; color:var(--ink-2); margin-top:.6rem; }
 
 /* tap to define */
 .bw-define{ position:relative; }
