@@ -60,7 +60,8 @@ export function BuyerWorkspace({ ws, papi, reload, busy, cycle }: Props) {
   const hasMoney = !!deal.deposit;
   const nav = useMemo(
     () => [
-      { id: "bw-overview", label: "Overview", icon: "home" as IconName },
+      { id: "bw-overview", label: "Overview", icon: "board" as IconName },
+      { id: "bw-home", label: "The home", icon: "home" as IconName },
       { id: "bw-timeline", label: "Timeline", icon: "flag" as IconName },
       { id: "bw-tasks", label: "Your tasks", icon: "checkCircle" as IconName },
       { id: "bw-contingencies", label: "Protections", icon: "shield" as IconName },
@@ -205,6 +206,10 @@ export function BuyerWorkspace({ ws, papi, reload, busy, cycle }: Props) {
               </button>
             </div>
           </section>
+
+          {/* The home itself — the buyer's emotional center: walk the street,
+              count the rooms, know what stays, know who fixes what breaks. */}
+          <HomeSection ws={ws} />
 
           {/* Timeline — read-only, must not look tappable */}
           <section id="bw-timeline" className="bw-sec bw-card" style={{ scrollMarginTop: 72 }} aria-label="Where your deal stands">
@@ -508,5 +513,114 @@ function MoneyStep({ deposit, papi, reload }: { deposit: NonNullable<ReturnType<
         </div>
       )}
     </div>
+  );
+}
+
+
+function HomeSection({ ws }: { ws: Workspace }) {
+  const prop = ws.property;
+  const [look, setLook] = useState<"street" | "map">("street");
+  if (!prop) return null;
+  const d = prop.details ?? {};
+  const facts: [string, IconName, unknown][] = [
+    ["Beds", "home", d.beds], ["Baths", "shield", d.baths], ["Sq ft", "board", d.sqft],
+    ["Built", "clock", d.year_built], ["Lot", "pin", d.lot_size],
+  ];
+  const shown = facts.filter(([, , v]) => v != null && v !== "");
+  const embeds = prop.embeds ?? {};
+  const hasEmbeds = !!(embeds.street || embeds.map);
+  const warrantyBy = ws.fields.home_warranty_issued_by;
+  const warrantyPaid = ws.fields.home_warranty_paid_by;
+  const links = prop.deep_links ?? {};
+  // The property row's included/excluded columns are often empty; the extracted
+  // contract fields carry the real list — prefer whichever has content.
+  const included = prop.included_items || ws.fields.items_included || null;
+  const excluded = prop.excluded_items || ws.fields.items_excluded || null;
+
+  return (
+    <section id="bw-home" className="bw-sec bw-card" style={{ scrollMarginTop: 72 }}>
+      <h2>The home</h2>
+
+      {shown.length > 0 ? (
+        <div className="bw-facts">
+          {shown.map(([label, icon, v]) => (
+            <div key={label} className="bw-fact">
+              <Icon name={icon} size={14} />
+              <b>{String(v)}</b> {label.toLowerCase()}
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="muted" style={{ margin: "0 0 .8rem", fontSize: 13 }}>
+          Home facts (beds, baths, square feet) will appear here once property data is connected.
+        </p>
+      )}
+
+      {hasEmbeds && (
+        <div className="bw-look">
+          <div className="bw-look-tabs" role="tablist" aria-label="Look around">
+            {embeds.street && (
+              <button type="button" role="tab" aria-selected={look === "street"}
+                className={`bw-look-tab ${look === "street" ? "on" : ""}`} onClick={() => setLook("street")}>
+                <Icon name="pin" size={13} /> Street view
+              </button>
+            )}
+            {embeds.map && (
+              <button type="button" role="tab" aria-selected={look === "map"}
+                className={`bw-look-tab ${look === "map" ? "on" : ""}`} onClick={() => setLook("map")}>
+                <Icon name="board" size={13} /> Satellite
+              </button>
+            )}
+          </div>
+          <iframe
+            key={look}
+            className="bw-look-frame"
+            src={look === "street" ? (embeds.street ?? embeds.map) : (embeds.map ?? embeds.street)}
+            title={look === "street" ? "Street view of your home" : "Satellite view of your home"}
+            loading="lazy"
+            allowFullScreen
+            referrerPolicy="no-referrer-when-downgrade"
+          />
+          <p className="muted" style={{ margin: ".4rem 0 0", fontSize: 12 }}>
+            Drag to look around{look === "street" ? " — this is the view from your street" : ""}.
+          </p>
+        </div>
+      )}
+
+      {(included || excluded) && (
+        <div className="bw-stays">
+          <div className="bw-stays-h">What stays with the home</div>
+          {included && (
+            <div className="bw-stays-row ok">
+              <Icon name="check" size={14} />
+              <span>{included}</span>
+            </div>
+          )}
+          {excluded && (
+            <div className="bw-stays-row not">
+              <Icon name="x" size={14} />
+              <span>Not included: {excluded}</span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {warrantyBy && (
+        <div className="bw-warranty">
+          <Icon name="shield" size={15} />
+          <span>
+            You&apos;re covered by a <Define>home warranty</Define> from <b>{warrantyBy}</b>
+            {warrantyPaid === "seller" ? " — the seller is paying for it" : ""}.
+          </span>
+        </div>
+      )}
+
+      {(links.zillow || links.maps) && (
+        <div className="bw-links">
+          {links.zillow && <a className="bw-btn bw-btn-g" href={links.zillow} target="_blank" rel="noreferrer"><Icon name="external" size={13} /> See it on Zillow</a>}
+          {links.maps && <a className="bw-btn bw-btn-g" href={links.maps} target="_blank" rel="noreferrer"><Icon name="pin" size={13} /> Open in Maps</a>}
+        </div>
+      )}
+    </section>
   );
 }

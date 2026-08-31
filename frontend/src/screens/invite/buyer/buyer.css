@@ -195,3 +195,27 @@
 
 .bw-team-sub{ font-size:11px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:var(--ink-3); margin:.8rem 0 .2rem; padding-top:.6rem; border-top:1px solid var(--line); }
 .bw-member.quiet .bw-member-ava{ background:var(--surface-2); color:var(--ink-3); }
+
+/* ── "The home" — facts, look-around embeds, what stays, warranty ── */
+.bw-facts{ display:flex; flex-wrap:wrap; gap:.5rem; margin-bottom:.9rem; }
+.bw-fact{ display:inline-flex; align-items:center; gap:.4rem; font-size:13px; color:var(--ink-2);
+  background:var(--surface-2); border:1px solid var(--line); border-radius:999px; padding:.35rem .75rem; }
+.bw-fact b{ color:var(--ink); font-weight:650; }
+.bw-fact svg{ color:var(--sage); }
+.bw-look{ margin-bottom:1rem; }
+.bw-look-tabs{ display:flex; gap:.4rem; margin-bottom:.5rem; }
+.bw-look-tab{ display:inline-flex; align-items:center; gap:.35rem; font-size:13px; font-weight:600;
+  color:var(--ink-2); background:var(--surface-2); border:1px solid var(--line-2); border-radius:8px; padding:.4rem .7rem; }
+.bw-look-tab.on{ background:var(--sage-bg); border-color:var(--sage); color:var(--sage-deep); }
+.bw-look-frame{ width:100%; height:320px; border:1px solid var(--line-2); border-radius:var(--radius); display:block; }
+@media(max-width:640px){ .bw-look-frame{ height:240px; } }
+.bw-stays{ margin-bottom:.9rem; }
+.bw-stays-h{ font-size:11px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:var(--ink-3); margin-bottom:.4rem; }
+.bw-stays-row{ display:flex; gap:.5rem; align-items:flex-start; font-size:13.5px; padding:.35rem 0; color:var(--ink); }
+.bw-stays-row svg{ flex:none; margin-top:2px; }
+.bw-stays-row.ok svg{ color:var(--sage); }
+.bw-stays-row.not{ color:var(--ink-2); } .bw-stays-row.not svg{ color:var(--clay); }
+.bw-warranty{ display:flex; gap:.5rem; align-items:flex-start; font-size:13.5px; color:var(--sage-deep);
+  background:var(--sage-bg); border-radius:8px; padding:.6rem .75rem; margin-bottom:.9rem; }
+.bw-warranty svg{ flex:none; margin-top:2px; }
+.bw-links{ display:flex; gap:.6rem; flex-wrap:wrap; }

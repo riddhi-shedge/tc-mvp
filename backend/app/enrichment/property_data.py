@@ -51,6 +51,23 @@ def deep_links(address: str) -> dict[str, str]:
     }
 
 
+def embed_links(address: str | None) -> dict[str, str]:
+    """Interactive Maps Embed API iframes (street-view panorama + satellite map)
+    for the buyer's 'look around your home' moment. Computed fresh per request —
+    never cached — so a key rotation takes effect immediately. The key appears in
+    the iframe URL by design (that is how the Embed API works client-side);
+    restrict it to your app's referrers in the Google Cloud console. Empty dict
+    when no address or no key — the UI hides the feature."""
+    key = os.environ.get("GOOGLE_MAPS_API_KEY")
+    if not address or not key:
+        return {}
+    q = urllib.parse.quote(address)
+    return {
+        "street": f"https://www.google.com/maps/embed/v1/streetview?key={key}&location={q}",
+        "map": f"https://www.google.com/maps/embed/v1/place?key={key}&q={q}&maptype=satellite&zoom=18",
+    }
+
+
 def fetch_facts(address: str) -> dict[str, Any] | None:
     """Structured property facts from RentCast (needs RENTCAST_API_KEY). None on
     no key / no data / error."""

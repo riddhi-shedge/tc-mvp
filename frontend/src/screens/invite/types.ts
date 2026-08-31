@@ -9,6 +9,7 @@ export type PropertyView = {
   details?: Record<string, string | number | null> | null;
   photo_url?: string | null;
   deep_links?: Record<string, string> | null;
+  embeds?: Record<string, string> | null; // interactive street-view / satellite iframes
 };
 export type Workspace = {
   me: { name: string | null; role: string; email: string | null; company: string | null; tier: string };

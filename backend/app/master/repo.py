@@ -2631,11 +2631,18 @@ class SupabaseRepo:
             return None  # e.g. migration 20260824000013 not applied yet
         if not rows:
             return None
+        address = rows[0].get("address")
         details = rows[0].get("details")
-        if details and (details.get("facts") or details.get("photo_url")):
-            return _property_view(details)
-        details = self._enrich_and_cache(transaction_id, rows[0].get("address"))
-        return _property_view(details)
+        if not (details and (details.get("facts") or details.get("photo_url"))):
+            details = self._enrich_and_cache(transaction_id, address)
+        view = _property_view(details)
+        if view is not None:
+            # Interactive street-view/satellite embeds: fresh each request (never
+            # cached) so key rotation applies immediately; {} hides the feature.
+            from app.enrichment.property_data import embed_links
+
+            view["embeds"] = embed_links(address)
+        return view
 
     def _enrich_and_cache(self, transaction_id: str, address: str | None) -> dict[str, Any]:
         from app.enrichment.property_data import deep_links, fetch_facts, street_view_image

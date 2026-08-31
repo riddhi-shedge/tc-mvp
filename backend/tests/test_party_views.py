@@ -216,3 +216,16 @@ def test_unknown_role_falls_back_to_default_view():
     assert ws["archetype"] == "default"
     assert "purchase_price" not in ws["fields"]  # default is a restricted allowlist
     assert ws["sections"] == sections_for("default")
+
+
+def test_embed_links_gated_on_key_and_address(monkeypatch):
+    from app.enrichment.property_data import embed_links
+
+    monkeypatch.delenv("GOOGLE_MAPS_API_KEY", raising=False)
+    assert embed_links("1 Main St, Fresno, CA") == {}  # no key -> feature hidden
+    monkeypatch.setenv("GOOGLE_MAPS_API_KEY", "synthetic-key")
+    assert embed_links(None) == {}  # no address -> hidden
+    out = embed_links("1 Main St, Fresno, CA")
+    assert set(out) == {"street", "map"}
+    assert "streetview" in out["street"] and "synthetic-key" in out["street"]
+    assert "maptype=satellite" in out["map"]
