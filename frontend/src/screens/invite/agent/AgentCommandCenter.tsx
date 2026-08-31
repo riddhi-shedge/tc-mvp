@@ -476,7 +476,7 @@ function ClientsView({ clients, onOpen, onDraftUpdate, drafting }: {
   );
 }
 
-function ScheduleView({ items, onOpen }: { items: ScheduleItem[] | null; onOpen: (id: string) => void }) {
+export function ScheduleView({ items, onOpen }: { items: ScheduleItem[] | null; onOpen: (id: string) => void }) {
   if (items === null) return <div className="aw-empty">Loading your schedule…</div>;
   const groups = new Map<string, ScheduleItem[]>();
   for (const it of items) {
@@ -509,25 +509,40 @@ function ScheduleView({ items, onOpen }: { items: ScheduleItem[] | null; onOpen:
   );
 }
 
-function EarningsView({ data, onOpen }: { data: EarningsData | null; onOpen: (id: string) => void }) {
+export function EarningsView({ data, onOpen, totalsDefs, personHeader = "Client & property" }: {
+  data: (Omit<EarningsData, "rows"> & { rows: (EarningsData["rows"][number] & { sellerName?: string; status?: string })[] }) | null;
+  onOpen: (id: string) => void;
+  totalsDefs?: [string, string][];
+  personHeader?: string;
+}) {
   if (data === null) return <div className="aw-empty">Loading earnings…</div>;
+  const defs: [string, string][] = totalsDefs ?? [
+    ["inEscrowCents", "in escrow (est.)"], ["closingSoonCents", "closing ≤ 30 days (est.)"], ["closedCents", "closed (est.)"],
+  ];
+  const stageLabel = (r: { stage?: string; status?: string }) =>
+    STAGE_LABEL[(r.stage ?? "") as keyof typeof STAGE_LABEL]
+    ?? ({ active: "Active", in_escrow: "In escrow", pre_market: "Pre-market", closed: "Closed" } as Record<string, string>)[r.status ?? ""]
+    ?? r.stage ?? r.status ?? "—";
   return (
     <>
       <div className="aw-h"><h1>Earnings</h1><span className="muted">{data.rateNote}</span></div>
       <div className="aw-stats" style={{ gridTemplateColumns: "repeat(3, 1fr)" }}>
-        <div className="aw-stat"><div className="aw-stat-n tnum">{usd(data.totals.inEscrowCents)}</div><div className="aw-stat-l">in escrow (est.)</div></div>
-        <div className="aw-stat"><div className="aw-stat-n tnum">{usd(data.totals.closingSoonCents)}</div><div className="aw-stat-l">closing ≤ 30 days (est.)</div></div>
-        <div className="aw-stat"><div className="aw-stat-n tnum">{usd(data.totals.closedCents)}</div><div className="aw-stat-l">closed (est.)</div></div>
+        {defs.map(([k, l]) => (
+          <div className="aw-stat" key={k}>
+            <div className="aw-stat-n tnum">{usd((data.totals as unknown as Record<string, number>)[k] ?? 0)}</div>
+            <div className="aw-stat-l">{l}</div>
+          </div>
+        ))}
       </div>
       {data.rows.length === 0 ? <div className="aw-empty">No priced deals yet.</div> : (
         <div className="aw-tablewrap">
           <table className="aw-table">
-            <thead><tr><th>Client &amp; property</th><th className="col-opt">Stage</th><th>Price</th><th>Est. commission</th><th className="col-opt">Close</th></tr></thead>
+            <thead><tr><th>{personHeader}</th><th className="col-opt">Stage</th><th>Price</th><th>Est. commission</th><th className="col-opt">Close</th></tr></thead>
             <tbody>
               {data.rows.map((r) => (
                 <tr key={r.dealId} className="click" onClick={() => onOpen(r.dealId)}>
-                  <td><div className="aw-client">{r.clientName}</div><div className="aw-addr">{r.propertyAddress}</div></td>
-                  <td className="col-opt"><span className="aw-stage">{STAGE_LABEL[r.stage] ?? r.stage}</span></td>
+                  <td><div className="aw-client">{r.clientName ?? r.sellerName}</div><div className="aw-addr">{r.propertyAddress}</div></td>
+                  <td className="col-opt"><span className="aw-stage">{stageLabel(r)}</span></td>
                   <td className="tnum">{usd(r.priceCents)}</td>
                   <td className="tnum" style={{ fontWeight: 650 }}>{usd(r.commissionEstCents)}</td>
                   <td className="col-opt tnum">{r.closeDate ? fmtDate(r.closeDate) : "—"}</td>

@@ -27,6 +27,8 @@ from app.common.auth import PartyUser, TCUser, require_agent_portfolio, require_
 from app.master.agent_portfolio import (
     agent_earnings,
     agent_schedule,
+    listing_earnings,
+    seller_context,
     build_agent_portfolio,
     build_listing_portfolio,
     build_offer_comparison,
@@ -1798,6 +1800,8 @@ def listing_sellers(
     agent: PartyUser = Depends(require_agent_portfolio),
     repo: MasterRepo = Depends(get_repo),
 ) -> dict[str, Any]:
+    """Seller cards with the pre-call cram: status + DOM, offers, disclosure
+    delivery state, marketing pulse (sample), talking points."""
     out = []
     for st in _all_deal_states(repo):
         txn = st.get("transaction") or {}
@@ -1810,8 +1814,70 @@ def listing_sellers(
                 {"id": p.get("id"), "name": p.get("name"), "role": p.get("role"), "phone": p.get("phone")}
                 for p in st.get("parties") or [] if p.get("role") != "seller"
             ],
+            **seller_context(st),
         })
     return {"sellers": out}
+
+
+@router.get("/listing/schedule")
+def listing_schedule_view(
+    agent: PartyUser = Depends(require_agent_portfolio),
+    repo: MasterRepo = Depends(get_repo),
+) -> dict[str, Any]:
+    """The listing agent's day across the book — seller-framed names."""
+    return {"items": agent_schedule(_all_deal_states(repo), name_field="seller_names")}
+
+
+@router.get("/listing/earnings")
+def listing_earnings_view(
+    agent: PartyUser = Depends(require_agent_portfolio),
+    repo: MasterRepo = Depends(get_repo),
+) -> dict[str, Any]:
+    """Listing-side commission pipeline — ESTIMATES only, display only."""
+    return listing_earnings(_all_deal_states(repo))
+
+
+@router.post("/listing/sellers/{transaction_id}/draft-update", status_code=201)
+def listing_draft_seller_update(
+    transaction_id: str,
+    agent: PartyUser = Depends(require_agent_portfolio),
+    repo: MasterRepo = Depends(get_repo),
+    drafter: Drafter = Depends(get_drafter),
+) -> dict[str, Any]:
+    """The weekly where-things-stand note to the SELLER — co-pilot drafted,
+    approval-queue gated (Rule 3)."""
+    st = repo.get_full_state(transaction_id)
+    if not st:
+        raise HTTPException(status_code=404, detail="Listing not found")
+    seller = next((p for p in st.get("parties") or [] if p.get("role") == "seller"), None)
+    if not seller:
+        raise HTTPException(status_code=409, detail="No seller on this listing")
+    fields = {k: v.get("value") for k, v in (st.get("effective_fields") or {}).items()}
+    dates = tuple(
+        (d.get("name"), d.get("due_date"))
+        for d in sorted(st.get("deadlines") or [], key=lambda x: x.get("due_date") or "")[:4]
+        if d.get("due_date")
+    )
+    ctx = MessageContext(
+        purpose="seller_update", recipient_name=seller.get("name"), recipient_role="seller",
+        property_address=(st.get("property") or {}).get("address") or fields.get("property_address"),
+        buyer_names=fields.get("buyer_names"), seller_names=fields.get("seller_names"),
+        tc_name=_agent_me([st], agent.party_id).get("name"),
+        key_dates=dates, note=None,
+    )
+    try:
+        draft = drafter.draft_message(ctx)
+    except ZdrNotConfirmed as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from None
+    except DraftFailed:
+        raise HTTPException(status_code=502, detail="Drafting is unavailable right now") from None
+    created = repo.create_message(
+        transaction_id=transaction_id, subject=draft.subject, body=draft.body,
+        party_id=seller.get("id"), actor=agent.actor, action="message.drafted",
+        details={"why": draft.why, "purpose": "seller_update", "ai": True,
+                 "recipient_name": seller.get("name"), "recipient_role": "seller"},
+    )
+    return {"message": {"id": created["id"], "subject": created["subject"], "status": created["status"]}}
 
 
 @router.get("/listing/offers/{transaction_id}")

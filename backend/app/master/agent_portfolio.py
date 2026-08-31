@@ -202,17 +202,20 @@ _DRAFT_RULES: list[tuple[str, str, str]] = [
 _BUYER_COMMISSION_RATE = 0.025
 
 
-def agent_schedule(states: list[dict[str, Any]], horizon_days: int = 21) -> list[dict[str, Any]]:
+def agent_schedule(
+    states: list[dict[str, Any]], horizon_days: int = 21, name_field: str = "buyer_names"
+) -> list[dict[str, Any]]:
     """Where the agent needs to be: every dated deadline + open task across the
     book — anything overdue (it still needs handling) through the horizon, flat
-    list sorted by date; the frontend groups by day. Read-only facts."""
+    list sorted by date; the frontend groups by day. Read-only facts.
+    `name_field` frames the person column (buyer_names / seller_names)."""
     out: list[dict[str, Any]] = []
     for st in states:
         txn = st.get("transaction") or {}
         if (txn.get("stage") or "") == "closed" or (txn.get("status") or "open") != "open":
             continue
         fields = _flat_fields(st)
-        client = fields.get("buyer_names") or "Buyer"
+        client = fields.get(name_field) or ("Seller" if name_field == "seller_names" else "Buyer")
         addr = (st.get("property") or {}).get("address") or fields.get("property_address") or "Property"
         for d in st.get("deadlines") or []:
             days = _days_to(d.get("due_date"))
@@ -412,6 +415,86 @@ def build_listing_portfolio(*, deals: list[dict[str, Any]], me: dict[str, Any], 
         "radar": deadline_radar(deals),
         "activity": feed["events"],
         "weekly": feed["weekly"],
+    }
+
+
+def listing_earnings(states: list[dict[str, Any]]) -> dict[str, Any]:
+    """The listing-side commission pipeline. Active listings count as *potential*
+    (if it closes at the contract price); in-escrow as pending; closed as earned.
+    Estimates only — the agent's actual rate is their listing agreement."""
+    rows: list[dict[str, Any]] = []
+    totals = {"activeCents": 0, "inEscrowCents": 0, "closedCents": 0}
+    for st in states:
+        txn = st.get("transaction") or {}
+        if (txn.get("status") or "open") != "open":
+            continue
+        fields = _flat_fields(st)
+        price = _cents(fields.get("purchase_price"))
+        if not price:
+            continue
+        commission = round(price * _BUYER_COMMISSION_RATE)  # listing-side default, same 2.5%
+        status = _LISTING_STATUS.get(txn.get("stage") or "", "in_escrow")
+        close = next(
+            (d.get("due_date") for d in st.get("deadlines") or []
+             if re.search(r"escrow|clos", d.get("name") or "", re.I)),
+            None,
+        )
+        rows.append({
+            "dealId": txn.get("id"),
+            "sellerName": fields.get("seller_names") or "Seller",
+            "propertyAddress": (st.get("property") or {}).get("address") or fields.get("property_address") or "Property",
+            "priceCents": price, "commissionEstCents": commission,
+            "closeDate": close, "status": status,
+        })
+        key = {"active": "activeCents", "in_escrow": "inEscrowCents", "closed": "closedCents"}.get(status)
+        if key:
+            totals[key] += commission
+    rows.sort(key=lambda r: (r["status"] == "closed", r["closeDate"] or "9999"))
+    return {"rows": rows, "totals": totals, "rateNote": f"{_BUYER_COMMISSION_RATE:.1%} listing-side default — estimate only"}
+
+
+def _sample_pulse(tid: str) -> dict[str, int]:
+    """Deterministic ILLUSTRATIVE marketing activity (no showings/views source in
+    the SOR yet) — always labeled sample by the frontend, mirroring the offer-
+    comparison precedent."""
+    h = abs(hash(tid))
+    return {"showings": 2 + h % 7, "views": 120 + h % 400, "saves": 5 + h % 30}
+
+
+def seller_context(st: dict[str, Any]) -> dict[str, Any]:
+    """The pre-call cram for one seller: listing status + DOM, offers waiting,
+    disclosure delivery state, marketing pulse (sample), next deadline, and
+    plain-English talking points. What the agent recites when the seller calls
+    asking 'so… what's happening?'"""
+    from app.master.party_views import _seller_disclosures
+
+    txn = st.get("transaction") or {}
+    tid = txn.get("id") or ""
+    fields = _flat_fields(st)
+    status = _LISTING_STATUS.get(txn.get("stage") or "", "in_escrow")
+    seller = _first_party(st.get("parties") or [], "seller")
+    deadlines = sorted(
+        (d for d in st.get("deadlines") or [] if d.get("due_date")),
+        key=lambda d: d["due_date"],
+    )
+    upcoming = [d for d in deadlines if (_days_to(d["due_date"]) or -99) >= 0]
+    nxt = upcoming[0] if upcoming else (deadlines[-1] if deadlines else None)
+    disclosures = _seller_disclosures(
+        deadlines=st.get("deadlines") or [], audit_log=st.get("audit_log") or [],
+        party_id=(seller or {}).get("id") or "", property_view=None,
+    )
+    return {
+        "status": status,
+        "daysOnMarket": _synth_dom(tid) if status == "active" else None,
+        "offerCount": 3 if status == "active" else 0,  # matches listing_summary's illustrative offers
+        "priceCents": _cents(fields.get("purchase_price")),
+        "nextDeadline": ({"label": nxt["name"], "date": nxt["due_date"], "risk": _risk(_days_to(nxt["due_date"]))} if nxt else None),
+        "disclosures": [
+            {"kind": d["kind"], "title": d["title"], "delivered": d["state"] in ("delivered", "acknowledged")}
+            for d in disclosures
+        ],
+        "pulse": _sample_pulse(tid) if status == "active" else None,
+        "talkingPoints": agent_activity(st.get("audit_log") or [], deal_id=tid, limit=4),
     }
 
 

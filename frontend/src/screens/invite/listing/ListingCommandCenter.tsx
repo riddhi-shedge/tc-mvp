@@ -4,15 +4,15 @@ import { Icon, IconName } from "../../../lib/icons";
 import { humanize, initials } from "../helpers";
 import "../agent/agent.css";
 import { usePoll } from "../shared/usePoll";
-import { ActivityList, ApprovalQueue, DealOverlay, Greeting, RadarView, RiskPill } from "../agent/AgentCommandCenter";
-import { ApprovalItem, DealDetail } from "../agent/types";
+import { ActivityList, ApprovalQueue, DealOverlay, EarningsView, Greeting, RadarView, RiskPill, ScheduleView } from "../agent/AgentCommandCenter";
+import { ApprovalItem, DealDetail, EarningsData, ScheduleItem } from "../agent/types";
 import {
   BuyerSideHealth, LISTING_STATUS_LABEL, ListingPortfolio, ListingSummary,
   Offer, OfferComparison, SellerRow,
 } from "./types";
 
 type Papi = <T,>(path: string, init?: RequestInit) => Promise<T>;
-type View = "today" | "listings" | "offers" | "sellers" | "activity" | "radar";
+type View = "today" | "listings" | "offers" | "sellers" | "schedule" | "earnings" | "activity" | "radar";
 type Filter = "all" | "active" | "in_escrow" | "attention";
 
 const usd = (c: number | null) => c == null ? "—" : new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(c / 100);
@@ -22,6 +22,8 @@ export function ListingCommandCenter({ papi }: { papi: Papi }) {
   const [pf, setPf] = useState<ListingPortfolio | null>(null);
   const [approvals, setApprovals] = useState<ApprovalItem[]>([]);
   const [sellers, setSellers] = useState<SellerRow[] | null>(null);
+  const [schedule, setSchedule] = useState<ScheduleItem[] | null>(null);
+  const [earnings, setEarnings] = useState<EarningsData | null>(null);
   const [detail, setDetail] = useState<DealDetail | null>(null);
   const [offerSel, setOfferSel] = useState<string | null>(null);
   const [offerData, setOfferData] = useState<OfferComparison | null>(null);
@@ -42,7 +44,9 @@ export function ListingCommandCenter({ papi }: { papi: Papi }) {
   usePoll(() => { void loadAll(); }); // §7 live-sync
   useEffect(() => {
     if (view === "sellers" && sellers === null) papi<{ sellers: SellerRow[] }>("/listing/sellers").then((d) => setSellers(d.sellers)).catch(() => setSellers([]));
-  }, [view, sellers, papi]);
+    if (view === "schedule" && schedule === null) papi<{ items: ScheduleItem[] }>("/listing/schedule").then((d) => setSchedule(d.items)).catch(() => setSchedule([]));
+    if (view === "earnings" && earnings === null) papi<EarningsData>("/listing/earnings").then(setEarnings).catch(() => setEarnings(null));
+  }, [view, sellers, schedule, earnings, papi]);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setDetail(null); };
     window.addEventListener("keydown", onKey); return () => window.removeEventListener("keydown", onKey);
@@ -76,6 +80,15 @@ export function ListingCommandCenter({ papi }: { papi: Papi }) {
     catch (e) { setErr(e instanceof Error ? e.message : "Co-pilot drafting is unavailable."); }
     finally { setDrafting(false); }
   }
+  async function draftSellerUpdate(listingId: string) {
+    setDrafting(true); setErr(null);
+    try {
+      await papi(`/listing/sellers/${listingId}/draft-update`, { method: "POST" });
+      await loadAll();
+      setView("today");
+    } catch (e) { setErr(e instanceof Error ? e.message : "Drafting is unavailable right now."); }
+    finally { setDrafting(false); }
+  }
   async function refreshCopilot() {
     setDrafting(true); setErr(null);
     try { await papi("/agent/copilot/refresh", { method: "POST", body: JSON.stringify({ limit: 8 }) }); await loadAll(); }
@@ -93,6 +106,8 @@ export function ListingCommandCenter({ papi }: { papi: Papi }) {
     { id: "today", label: "Today", icon: "inbox", count: stats.needYouToday, hot: stats.needYouToday > 0 },
     { id: "offers", label: "Offers", icon: "receipt", count: stats.offersToReview, ai: true },
     { id: "sellers", label: "Sellers", icon: "users" },
+    { id: "schedule", label: "Schedule", icon: "calendar" },
+    { id: "earnings", label: "Earnings", icon: "money" },
     { id: "activity", label: "AI activity", icon: "sparkle" },
     { id: "radar", label: "Deadline radar", icon: "flag" },
   ];
@@ -144,7 +159,18 @@ export function ListingCommandCenter({ papi }: { papi: Papi }) {
               onDraft={draftComparison} drafting={drafting} onOpenListing={openListing} />
           )}
 
-          {view === "sellers" && <SellersView sellers={sellers} onOpen={openListing} />}
+          {view === "sellers" && <SellersView sellers={sellers} onOpen={openListing} onOffers={openOffers} onDraftUpdate={draftSellerUpdate} drafting={drafting} />}
+
+          {view === "schedule" && <ScheduleView items={schedule} onOpen={openListing} />}
+
+          {view === "earnings" && (
+            <EarningsView
+              data={earnings}
+              onOpen={openListing}
+              personHeader="Seller & property"
+              totalsDefs={[["activeCents", "on market — potential (est.)"], ["inEscrowCents", "in escrow (est.)"], ["closedCents", "closed (est.)"]]}
+            />
+          )}
           {view === "activity" && (<><div className="aw-h"><h1>What your co-pilot did</h1></div><ActivityList activity={activity} onOpen={openListing} full /></>)}
           {view === "radar" && <RadarView radar={radar} onOpen={openListing} />}
 
@@ -318,24 +344,87 @@ function OfferCard({ o }: { o: Offer }) {
   );
 }
 
-function SellersView({ sellers, onOpen }: { sellers: SellerRow[] | null; onOpen: (id: string) => void }) {
+function SellersView({ sellers, onOpen, onOffers, onDraftUpdate, drafting }: {
+  sellers: SellerRow[] | null; onOpen: (id: string) => void; onOffers: (id: string) => void;
+  onDraftUpdate: (id: string) => void; drafting: boolean;
+}) {
   if (sellers === null) return <div className="aw-empty">Loading sellers…</div>;
+  const STATUS: Record<string, string> = { pre_market: "Pre-market", active: "Active", in_escrow: "In escrow", closed: "Closed" };
   return (
     <>
-      <div className="aw-h"><h1>Sellers &amp; counterparties</h1><span className="muted">{sellers.length}</span></div>
+      <div className="aw-h"><h1>Sellers</h1><span className="muted">{sellers.length} — everything you recite when they call asking "so… what's happening?"</span></div>
       {sellers.length === 0 ? <div className="aw-empty">No sellers yet.</div> : sellers.map((c) => (
-        <div className="aw-card" key={c.listingId} style={{ padding: ".8rem .9rem", marginBottom: ".6rem" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: ".6rem", marginBottom: ".5rem" }}>
-            <div><div className="aw-client" style={{ fontSize: "1rem" }}>{c.sellerName}</div><div className="aw-addr">{c.propertyAddress}</div></div>
-            <button className="aw-btn aw-btn-g sm" style={{ marginLeft: "auto" }} onClick={() => onOpen(c.listingId)}>Open listing</button>
+        <div className="aw-card aw-cc" key={c.listingId}>
+          <div className="aw-cc-top">
+            <div>
+              <div className="aw-client" style={{ fontSize: "1.05rem" }}>{c.sellerName}</div>
+              <div className="aw-addr">{c.propertyAddress}</div>
+            </div>
+            <div className="aw-cc-meta">
+              <span className="aw-stage">{STATUS[c.status] ?? c.status}</span>
+              {c.daysOnMarket != null && (
+                <span className={`aw-risk ${c.daysOnMarket > 30 ? "at_risk" : "ok"}`}>
+                  {c.daysOnMarket}d on market{c.daysOnMarket > 30 ? " · stale" : ""}
+                </span>
+              )}
+              {c.priceCents != null && <span className="tnum" style={{ fontWeight: 650 }}>{new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(c.priceCents / 100)}</span>}
+            </div>
           </div>
-          <div className="aw-list">
-            {c.parties.map((p) => (
-              <div className="aw-list-row" key={p.id}>
-                <span className="aw-avatar" style={{ width: 24, height: 24, fontSize: 10 }}>{initials(p.name, p.role)}</span>
-                <div style={{ flex: 1, minWidth: 0 }}><div>{p.name ?? humanize(p.role)}</div><div className="aw-addr">{humanize(p.role)}</div></div>
-                {p.phone && <a className="aw-btn aw-btn-g sm" href={`tel:${p.phone}`}><Icon name="phone" size={12} /> {p.phone}</a>}
-              </div>
+
+          <div className="aw-cc-row">
+            {c.offerCount > 0 && (
+              <button className="aw-btn aw-btn-p sm" onClick={() => onOffers(c.listingId)}>
+                <Icon name="receipt" size={12} /> {c.offerCount} offers to present
+              </button>
+            )}
+            {c.nextDeadline && (
+              <span className="aw-cc-next">
+                <RiskPill risk={c.nextDeadline.risk} date={c.nextDeadline.date} />
+                <span className="aw-addr">{c.nextDeadline.label}</span>
+              </span>
+            )}
+            {c.disclosures.length > 0 && (
+              <span className="aw-cc-conts" title="Disclosure delivery — the listing agent's liability clock">
+                {c.disclosures.map((x) => (
+                  <span key={x.kind} className={`aw-cdot ${x.delivered ? "done" : "open"}`}>
+                    {x.delivered ? "✓" : "○"} {x.kind.toUpperCase()}
+                  </span>
+                ))}
+              </span>
+            )}
+          </div>
+
+          {c.pulse && (
+            <div className="aw-cc-row" style={{ marginTop: 0 }}>
+              <span className="aw-addr">
+                Activity this week: <b>{c.pulse.showings}</b> showings · <b>{c.pulse.views}</b> views · <b>{c.pulse.saves}</b> saves
+                <span className="aw-sample" style={{ marginLeft: 6 }}>sample</span>
+              </span>
+            </div>
+          )}
+
+          {c.talkingPoints.length > 0 && (
+            <div className="aw-cc-talk">
+              <div className="aw-cc-talk-h">Talking points — before you pick up</div>
+              {c.talkingPoints.map((t) => (
+                <div key={t.id} className="aw-cc-talk-row">
+                  <span style={{ width: 6, height: 6, borderRadius: "50%", background: t.mode === "needs_you" ? "var(--ai)" : "var(--sage)", flex: "none", marginTop: 6 }} />
+                  <span>{t.text}</span>
+                  {t.occurredAt && <span className="aw-addr tnum" style={{ marginLeft: "auto", flex: "none" }}>{fmtDate(t.occurredAt).replace(/, \d{4}$/, "")}</span>}
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div className="aw-cc-actions">
+            <button className="aw-btn aw-btn-p sm" disabled={drafting} onClick={() => onDraftUpdate(c.listingId)}>
+              <Icon name="sparkle" size={12} /> {drafting ? "Drafting…" : "Draft seller update"}
+            </button>
+            <button className="aw-btn aw-btn-g sm" onClick={() => onOpen(c.listingId)}>Open listing</button>
+            {c.parties.filter((p) => p.phone).slice(0, 3).map((p) => (
+              <a key={p.id} className="aw-btn aw-btn-g sm" href={`tel:${p.phone}`}>
+                <Icon name="phone" size={11} /> {humanize(p.role).split(" ")[0]}
+              </a>
             ))}
           </div>
         </div>
@@ -343,3 +432,4 @@ function SellersView({ sellers, onOpen }: { sellers: SellerRow[] | null; onOpen:
     </>
   );
 }
+

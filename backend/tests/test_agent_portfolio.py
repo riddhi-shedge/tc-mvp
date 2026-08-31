@@ -241,3 +241,39 @@ def test_client_context_snapshot():
     assert conts["inspection"] is True and conts["loan"] is False
     assert "proof_of_funds" in ctx["docTypes"]
     assert len(ctx["talkingPoints"]) == 1  # plain-English event feed
+
+
+# ---- listing-agent working views ---------------------------------------------
+
+from app.master.agent_portfolio import listing_earnings, seller_context  # noqa: E402
+
+
+def test_listing_earnings_buckets_by_status():
+    active = _state(tid="a", stage="new", fields=_LISTING_FIELDS)  # active listing
+    escrow = _state(tid="b", stage="cont", fields=_LISTING_FIELDS,
+                    deadlines=[{"id": "c", "name": "Close of escrow", "due_date": _iso(12)}])
+    out = listing_earnings([active, escrow])
+    assert out["totals"]["activeCents"] == round(190_000_000 * 0.025)
+    assert out["totals"]["inEscrowCents"] == round(190_000_000 * 0.025)
+    assert out["totals"]["closedCents"] == 0
+    assert "listing-side" in out["rateNote"] and "estimate" in out["rateNote"]
+
+
+def test_seller_context_cram():
+    st = _state(
+        tid="L1", stage="new", fields=_LISTING_FIELDS,
+        parties=[{"id": "sel", "name": "Karthik", "role": "seller"}],
+        deadlines=[{"id": "d", "name": "Seller disclosure delivery due", "due_date": _iso(4)}],
+        audit=[
+            {"id": "e1", "action": "compliance.run", "created_at": _iso(-1) + "T10:00:00Z"},
+            {"id": "e2", "action": "party.disclosure_attested", "created_at": _iso(-1) + "T11:00:00Z",
+             "details": {"party_id": "sel", "kind": "tds"}},
+        ],
+    )
+    ctx = seller_context(st)
+    assert ctx["status"] == "active" and ctx["offerCount"] == 3
+    assert ctx["daysOnMarket"] is not None and ctx["pulse"]["showings"] >= 2  # sample pulse
+    ds = {d["kind"]: d["delivered"] for d in ctx["disclosures"]}
+    assert ds["tds"] is True and ds["spq"] is False  # attestation read back per kind
+    assert ctx["nextDeadline"]["label"].startswith("Seller disclosure")
+    assert len(ctx["talkingPoints"]) >= 1

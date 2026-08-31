@@ -54,7 +54,22 @@ export interface ListingPortfolio {
   weekly: CoPilotWeekly;
 }
 
-export interface SellerRow { listingId: string; sellerName: string; propertyAddress: string; parties: Party[] }
+// Seller card = roster + the pre-call cram (status/DOM, offers, disclosure
+// delivery, sample marketing pulse, talking points).
+export interface SellerRow {
+  listingId: string;
+  sellerName: string;
+  propertyAddress: string;
+  parties: Party[];
+  status: ListingStatus;
+  daysOnMarket: number | null;
+  offerCount: number;
+  priceCents: number | null;
+  nextDeadline: { label: string; date: string; risk: RiskLevel } | null;
+  disclosures: { kind: string; title: string; delivered: boolean }[];
+  pulse: { showings: number; views: number; saves: number } | null;
+  talkingPoints: AIActivityEvent[];
+}
 
 export const LISTING_STATUS_LABEL: Record<ListingStatus, string> = {
   pre_market: "Pre-market", active: "Active", in_escrow: "In escrow", closed: "Closed",
