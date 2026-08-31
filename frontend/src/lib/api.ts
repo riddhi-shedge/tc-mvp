@@ -406,6 +406,8 @@ export interface FullState {
   timeline_gate?: TimelineGate;
   // Provenance chain: extracted_fields.payload_id -> payloads.document_id -> signed URL.
   payloads?: { id: string; document_id: string }[];
+  // P8: catalog-rendered recent events (operator voice) for "since you last looked".
+  digest?: { id: string; text: string; mode: "autonomous" | "needs_you"; occurredAt: string | null }[];
   parties: DealParty[];
   documents: DealDocument[];
   extracted_fields: ExtractedField[];

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api, AuditRow, FullState, Message } from "../lib/api";
 import { fmtDate, fmtDateTime } from "../lib/format";
 import { ExtractionReview } from "./ExtractionReview";
@@ -101,6 +101,11 @@ export function Deal({ id, onBack }: { id: string; onBack: () => void }) {
   const [chatBusy, setChatBusy] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
 
+  // P8 "since you last looked": events newer than this browser's last visit to
+  // this deal (view marker only — losing it just shows more, never less).
+  const [freshEvents, setFreshEvents] = useState<NonNullable<FullState["digest"]>>([]);
+  const seenRef = useRef(false);
+
   const refresh = useCallback(async () => {
     try {
       setState(await api.get<FullState>(`/transactions/${id}`));
@@ -112,6 +117,17 @@ export function Deal({ id, onBack }: { id: string; onBack: () => void }) {
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  useEffect(() => {
+    if (!state?.digest || seenRef.current) return;
+    seenRef.current = true;
+    const key = `tc_seen_${id}`;
+    const lastSeen = localStorage.getItem(key);
+    if (lastSeen) {
+      setFreshEvents(state.digest.filter((e) => (e.occurredAt ?? "") > lastSeen).slice(0, 6));
+    }
+    localStorage.setItem(key, new Date().toISOString());
+  }, [state, id]);
 
   async function run(
     fn: () => Promise<unknown>,
@@ -365,6 +381,23 @@ export function Deal({ id, onBack }: { id: string; onBack: () => void }) {
           </div>
         </div>
       </div>
+      {freshEvents.length > 0 && (
+        <div className="dg-strip">
+          <div className="dg-h">
+            <Icon name="sparkle" size={14} /> Since you last looked
+            <button className="kbtn icon" style={{ marginLeft: "auto" }} title="Dismiss"
+              onClick={() => setFreshEvents([])}><Icon name="x" size={12} /></button>
+          </div>
+          {freshEvents.map((e) => (
+            <div key={e.id} className="dg-row">
+              <span className={`dg-dot ${e.mode}`} />
+              <span>{e.text}</span>
+              {e.occurredAt && <span className="dg-t tnum">{fmtDate(e.occurredAt)}</span>}
+            </div>
+          ))}
+        </div>
+      )}
+
       {error && <p className="error">{error}</p>}
 
       {gate && !gate.ready && (

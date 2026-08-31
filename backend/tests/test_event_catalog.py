@@ -72,3 +72,14 @@ def test_task_done_is_owner_scoped():
     assert not can_originate("task.done", "buyer", owner_role="seller")
     with pytest.raises(Exception):
         require_originate("task.done", "buyer", owner_role="seller")
+
+
+def test_deal_state_carries_catalog_digest(client, tc_headers):
+    """P8: /transactions/{id} ships a digest rendered from the shared catalog."""
+    txn = client.post(
+        "/transactions", json={"property_address": "8 Digest Dr"}, headers=tc_headers
+    ).json()["id"]
+    state = client.get(f"/transactions/{txn}", headers=tc_headers).json()
+    assert "digest" in state
+    # creating the deal logged catalog-visible events with friendly operator text
+    assert all(set(e) >= {"id", "text", "mode", "occurredAt"} for e in state["digest"])

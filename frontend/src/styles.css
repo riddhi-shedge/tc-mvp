@@ -2118,3 +2118,13 @@ button.secondary.sm { padding: 0.28rem 0.55rem; font-size: 0.76rem; }
 .av-dl:first-child { border-top:0; } .av-dl-date { color:var(--muted); flex:0 0 auto; } .av-dl-name { flex:1; }
 
 @media(prefers-reduced-motion:reduce){ .role-body > *,.sv-hero-photo,.sv-progfill,.iw-drop-ic{ animation:none!important; opacity:1!important; transform:none!important; } }
+
+/* P8 — "since you last looked" digest strip on a deal. */
+.dg-strip { background: var(--surface); border: 1px solid var(--gold-500); border-radius: 10px;
+  padding: 10px 13px; margin-bottom: 1rem; }
+.dg-h { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 700;
+  letter-spacing: 0.04em; text-transform: uppercase; color: var(--gold-700); margin-bottom: 4px; }
+.dg-row { display: flex; align-items: center; gap: 8px; padding: 4px 0; font-size: 13px; }
+.dg-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green-600); flex: 0 0 auto; }
+.dg-dot.needs_you { background: var(--gold-500); }
+.dg-t { margin-left: auto; font-size: 11.5px; color: var(--muted); }

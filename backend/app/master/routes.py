@@ -29,6 +29,7 @@ from app.master.agent_portfolio import (
     draft_targets,
 )
 from app.master.attention import build_attention
+from app.master.event_catalog import agent_activity
 from app.master.party_views import _seller_deal_health
 from app.common.zdr import ZdrNotConfirmed
 from app.contracts.compliance import ComplianceResult
@@ -1211,6 +1212,9 @@ def read_full_state(
     if state is None:
         raise HTTPException(status_code=404, detail="Transaction not found")
     _merge_task_meta(state)
+    # P8: a human-readable digest of recent deal events, rendered from the shared
+    # event catalog (operator voice) — powers the "since you last looked" strip.
+    state["digest"] = agent_activity(state.get("audit_log", []), deal_id=transaction_id, limit=20)
     return state
 
 
