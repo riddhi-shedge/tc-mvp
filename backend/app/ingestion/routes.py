@@ -294,6 +294,32 @@ def manual_upload(
         raise HTTPException(
             status_code=503, detail="Attachment store unavailable; try again shortly"
         ) from None
+
+    # Exact-duplicate check: storage paths are content-addressed
+    # ({source}/{sha256}/{filename}), so the digest segment identifies the bytes
+    # even when the copy was renamed or arrived by email. An identical file
+    # already open in the queue is NOT re-queued — the TC is told instead. One
+    # identical to an already-FILED document still queues (a re-file can be
+    # legitimate) but carries a warning; a dismissed one re-queues silently
+    # (dismiss then re-upload reads as intent).
+    parts = storage_path.split("/")
+    digest = parts[1] if len(parts) >= 3 else None
+    already_filed: dict[str, Any] | None = None
+    if digest:
+        dups = inbox.find_items_by_digest(digest)
+        open_dup = next(
+            (d for d in dups if d["status"] in ("pending", "needs_manual", "processing")), None
+        )
+        if open_dup is not None:
+            return {"duplicate_of": open_dup}
+        confirmed = next((d for d in dups if d["status"] == "confirmed"), None)
+        if confirmed is not None:
+            already_filed = {
+                "item_id": confirmed["id"],
+                "attachment_name": confirmed.get("attachment_name"),
+                "transaction_id": confirmed.get("confirmed_transaction_id"),
+            }
+
     item = inbox.add_item(
         from_email=tc.actor,
         to_email="manual-upload",
@@ -306,6 +332,8 @@ def manual_upload(
         storage_path=storage_path,
         source="manual",
     )
+    if already_filed is not None:
+        return {**item, "already_filed": already_filed}
     return item
 
 

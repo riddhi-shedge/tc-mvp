@@ -75,6 +75,14 @@ class InboxRepo(Protocol):
         None if none."""
         ...
 
+    def find_items_by_digest(self, digest: str) -> list[dict[str, Any]]:
+        """All inbox items whose stored bytes hash to this sha256 digest —
+        regardless of source, filename, or status. Storage paths are
+        content-addressed ({source}/{digest}/{filename}), so this is an EXACT
+        same-bytes match: a renamed copy is found, a revised document never is.
+        Used to tell the TC 'you already have this exact file'."""
+        ...
+
     def download_attachment(self, path: str) -> bytes:
         """Fetch stored attachment bytes for extraction (part a internal only —
         content never crosses to the master or the frontend). Raises
@@ -202,6 +210,16 @@ class SupabaseInboxRepo:
             .data
         )
         return rows[0] if rows else None
+
+    def find_items_by_digest(self, digest: str) -> list[dict[str, Any]]:
+        return (
+            self._db.table("ingestion_inbox")
+            .select("*")
+            .like("storage_path", f"%/{digest}/%")
+            .order("created_at", desc=True)
+            .execute()
+            .data
+        )
 
     def download_attachment(self, path: str) -> bytes:
         try:

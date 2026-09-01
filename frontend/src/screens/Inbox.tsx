@@ -48,6 +48,8 @@ export function Inbox({ onOpenDeal }: { onOpenDeal: (id: string) => void }) {
   const [manualRows, setManualRows] = useState<{ name: string; value: string }[]>([]);
   // Inbox items currently managed by the batch panel (hidden from the queue).
   const [batchHeld, setBatchHeld] = useState<string[]>([]);
+  // Informational (non-error) result of the last single-file upload.
+  const [uploadNotice, setUploadNotice] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     try {
@@ -155,11 +157,24 @@ export function Inbox({ onOpenDeal }: { onOpenDeal: (id: string) => void }) {
     setProcName(uploadName);
     setProcessing(true);
     setError(null);
+    setUploadNotice(null);
     try {
-      await api.post("/ingestion/manual-upload", {
+      const resp = await api.post<{
+        duplicate_of?: InboxItem;
+        already_filed?: { attachment_name?: string | null };
+      }>("/ingestion/manual-upload", {
         filename: uploadName,
         content_base64: uploadB64,
       });
+      if (resp.duplicate_of) {
+        setUploadNotice(
+          `"${uploadName}" is byte-for-byte identical to "${resp.duplicate_of.attachment_name ?? "a file"}" already in your queue — not added again. Dismiss the queued one first if you meant to replace it.`,
+        );
+      } else if (resp.already_filed) {
+        setUploadNotice(
+          `Heads up: an identical file${resp.already_filed.attachment_name ? ` ("${resp.already_filed.attachment_name}")` : ""} was already filed to a deal. The upload is queued — confirm only if you mean to re-file it.`,
+        );
+      }
       setUploadName(null);
       setUploadB64(null);
       await refresh();
@@ -425,6 +440,11 @@ export function Inbox({ onOpenDeal }: { onOpenDeal: (id: string) => void }) {
             Fallback for a document that didn't arrive by email (PDF).
           </p>
         </div>
+        {uploadNotice && (
+          <div className="why" style={{ marginTop: "0.6rem" }}>
+            {uploadNotice}
+          </div>
+        )}
       </div>
 
     </>

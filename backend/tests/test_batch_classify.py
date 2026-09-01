@@ -8,10 +8,15 @@ SYNTHETIC_B64 = base64.b64encode(b"PDF-synthetic-batch").decode()
 
 
 def _upload_unlabeled(client, tc_headers, filename="scan001.pdf"):
-    """A file whose name/subject give the heuristic nothing → detected unknown."""
+    """A file whose name/subject give the heuristic nothing → detected unknown.
+    Bytes are derived from the filename so two 'versions' never collide with the
+    exact-duplicate (same-digest) check."""
     r = client.post(
         "/ingestion/manual-upload",
-        json={"filename": filename, "content_base64": SYNTHETIC_B64},
+        json={
+            "filename": filename,
+            "content_base64": base64.b64encode(f"PDF-synthetic-{filename}".encode()).decode(),
+        },
         headers=tc_headers,
     )
     assert r.status_code == 201

@@ -55,6 +55,14 @@ class InMemoryInboxRepo:
         ]
         return max(matches, key=lambda i: i["created_at"] or "") if matches else None
 
+    def find_items_by_digest(self, digest: str) -> list[dict[str, Any]]:
+        matches = [
+            i
+            for i in self.items.values()
+            if f"/{digest}/" in (i.get("storage_path") or "")
+        ]
+        return sorted(matches, key=lambda i: i["created_at"] or "", reverse=True)
+
     def download_attachment(self, path: str) -> bytes:
         if self.fail_storage or path not in self.files:
             raise StorageUnavailable("attachment store failed (SyntheticOutage)")
