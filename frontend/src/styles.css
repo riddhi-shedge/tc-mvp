@@ -2228,3 +2228,4 @@ button.secondary.sm { padding: 0.28rem 0.55rem; font-size: var(--t-s); }
 .batchfile-bar select { margin: 0; width: auto; max-width: 320px; }
 .batchguess { font-size: var(--t-xs); max-width: 340px; overflow: hidden;
   text-overflow: ellipsis; white-space: nowrap; border-color: var(--gold-300); }
+.missing-row { display: flex; align-items: baseline; gap: 0.45rem; padding: 0.22rem 0; font-size: var(--t-s); }

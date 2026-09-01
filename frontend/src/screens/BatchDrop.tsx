@@ -426,6 +426,8 @@ export function BatchDrop({
           await api.post(`/ingestion/inbox/${row.itemId}/confirm`, {
             decision: txnId,
             doc_type: row.docType,
+            // 'Other' filings keep their name (Terra's guess / "prior version…").
+            ...(row.docType === "other" && row.guess ? { label: row.guess } : {}),
           });
           patch(row.key, { phase: "done" });
         } catch (err) {

@@ -420,6 +420,8 @@ class ConfirmRequest(BaseModel):
     decision: str = Field(min_length=1)
     # TC's correction/confirmation of the detected type (e.g. for 'unknown').
     doc_type: DocType | None = None
+    # Display name for an 'other' filing (defaults to Terra's stored guess).
+    label: str | None = Field(default=None, min_length=1, max_length=160)
     # Manual field-entry fallback (bad scans / failed extraction): the TC types
     # the §5 values. Typing them IS the confirmation — they land confirmed.
     manual_fields: list[ManualFieldEntry] | None = None
@@ -866,8 +868,10 @@ def confirm_inbox_item(
 
     token = _tc_token(credentials)
     doc_type = body.doc_type or item.get("detected_doc_type") or UNKNOWN_DOC_TYPE
-    if doc_type == OTHER_DOC_TYPE:
-        # The TC asked Terra to identify it — classify from the content itself.
+    if doc_type == OTHER_DOC_TYPE and not body.label:
+        # A bare 'other' means the TC asked Terra to identify it — classify from
+        # the content itself. An explicit label means the human already decided
+        # ("file as Other, named X") — honor it, don't reclassify.
         doc_type, _guess, _signals = _classify_document(item, inbox, extractor)
     if doc_type == UNKNOWN_DOC_TYPE:
         # Never guess: an unclassified document can't enter the SOR.
@@ -941,11 +945,19 @@ def confirm_inbox_item(
         else:
             transaction_id = body.decision
 
+        # An 'other' document keeps a human-readable name: the TC's words, or
+        # Terra's stored content-level guess — never shown as a bare "Other".
+        document_label = (
+            (body.label or item.get("doc_guess") or None)
+            if doc_type == OTHER_DOC_TYPE
+            else None
+        )
         payload = Payload(
             document_id=f"inbox-{item_id}",
             transaction_id=transaction_id,
             extracted_fields=fields,
             document_type=doc_type,
+            document_label=document_label,
             document_storage_ref=item.get("storage_path"),
             counter_meta=counter_meta,
             preapproval_meta=preapproval_meta,

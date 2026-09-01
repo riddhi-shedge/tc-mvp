@@ -1196,21 +1196,25 @@ class SupabaseRepo:
                 self._db.table("documents").delete().eq("id", prior[0]["id"]).execute()
         # Compensated like create_transaction: deleting the document cascades
         # the payload and extracted fields if any later step fails.
+        doc_row: dict[str, Any] = {
+            "transaction_id": transaction_id,
+            "external_ref": payload.document_id,
+            "doc_type": payload.document_type,
+            "storage_path": payload.document_storage_ref,
+            "status": "pending",
+        }
+        if payload.document_label:
+            doc_row["label"] = payload.document_label
         try:
-            doc = (
-                self._db.table("documents")
-                .insert(
-                    {
-                        "transaction_id": transaction_id,
-                        "external_ref": payload.document_id,
-                        "doc_type": payload.document_type,
-                        "storage_path": payload.document_storage_ref,
-                        "status": "pending",
-                    }
-                )
-                .execute()
-                .data[0]
-            )
+            try:
+                doc = self._db.table("documents").insert(doc_row).execute().data[0]
+            except Exception as exc:
+                # Graceful pre-migration: file the document even before the
+                # label column exists (the label is display-only).
+                if "label" not in doc_row or _is_unique_violation(exc):
+                    raise
+                doc_row.pop("label")
+                doc = self._db.table("documents").insert(doc_row).execute().data[0]
         except Exception as exc:
             # Concurrent duplicate confirm: the unique index rejected the second
             # insert. Return the payload the winning writer already wrote.

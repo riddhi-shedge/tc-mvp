@@ -4,6 +4,7 @@ import { fmtDate, fmtDateTime } from "../lib/format";
 import { ExtractionReview } from "./ExtractionReview";
 import { DealDashboard } from "./DealDashboard";
 import { DocumentChecks } from "./DocumentChecks";
+import { MissingPanel } from "./MissingPanel";
 import { DealNotes } from "./DealNotes";
 import { DealMap } from "./DealMap";
 import { DealTimeline } from "./DealTimeline";
@@ -587,7 +588,9 @@ export function Deal({ id, onBack }: { id: string; onBack: () => void }) {
                   <Icon name={docIcon(d.doc_type)} size={24} />
                 </div>
                 <div style={{ minWidth: 0, flex: 1 }}>
-                  <div className="doc-name">{humanize(d.doc_type ?? "unknown")}</div>
+                  <div className="doc-name">
+                    {d.doc_type === "other" && d.label ? d.label : humanize(d.doc_type ?? "unknown")}
+                  </div>
                   {d.created_at && (
                     <div className="muted" style={{ fontSize: "0.76rem", margin: "1px 0 4px" }}>
                       Uploaded {fmtDate(d.created_at)}
@@ -603,6 +606,8 @@ export function Deal({ id, onBack }: { id: string; onBack: () => void }) {
           </div>
         )}
       </div>
+
+      <MissingPanel state={state} />
 
       <DocumentChecks state={state} />
 

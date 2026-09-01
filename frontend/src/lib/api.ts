@@ -63,6 +63,8 @@ export interface DealDocument {
   id: string;
   external_ref: string | null;
   doc_type: string | null;
+  // Human-readable name for 'other' documents (Terra's guess or the TC's words).
+  label?: string | null;
   storage_path: string | null;
   status: string;
   created_at?: string;

@@ -101,6 +101,9 @@ class Payload(BaseModel):
     # ingestion-side storage reference. Optional — older payloads stay valid.
     document_type: DocType | None = None
     document_storage_ref: str | None = Field(default=None, min_length=1)
+    # Display label for 'other' documents — Terra's content-level guess or the
+    # TC's own words ("FHA Amendatory Clause"). Never a type, purely a name.
+    document_label: str | None = Field(default=None, min_length=1, max_length=160)
     # Counter-offer facts (only on seller/buyer counter payloads).
     counter_meta: CounterMeta | None = None
     # Preapproval facts (only on preapproval payloads).

@@ -84,6 +84,9 @@ export function Inbox({ onOpenDeal }: { onOpenDeal: (id: string) => void }) {
         {
           decision: decisionFor(item),
           ...(docType ? { doc_type: docType } : {}),
+          // Choosing "Other document" with a stored guess files it under that
+          // name (the hint text promises exactly this).
+          ...(docType === "other" && item.doc_guess ? { label: item.doc_guess } : {}),
           ...(manualFields?.length ? { manual_fields: manualFields } : {}),
         },
       );
