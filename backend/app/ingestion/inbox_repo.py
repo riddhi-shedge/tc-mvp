@@ -110,10 +110,14 @@ class InboxRepo(Protocol):
         """Conditionally close out a pending/needs_manual item."""
         ...
 
-    def set_detected_doc_type(self, item_id: str, doc_type: str) -> dict[str, Any] | None:
+    def set_detected_doc_type(
+        self, item_id: str, doc_type: str, doc_guess: str | None = None
+    ) -> dict[str, Any] | None:
         """Persist a (re)classified type on a still-pending item — used by the
         content-level classify endpoint so a batch upload's labels survive a
-        refresh. CAS on status=pending: never relabels an item mid-confirm."""
+        refresh. doc_guess is the model's free-text best guess when the type is
+        outside the known set. CAS on status=pending: never relabels an item
+        mid-confirm."""
         ...
 
 
@@ -276,8 +280,20 @@ class SupabaseInboxRepo:
             },
         )
 
-    def set_detected_doc_type(self, item_id: str, doc_type: str) -> dict[str, Any] | None:
-        return self._transition(item_id, "pending", {"detected_doc_type": doc_type})
+    def set_detected_doc_type(
+        self, item_id: str, doc_type: str, doc_guess: str | None = None
+    ) -> dict[str, Any] | None:
+        updates: dict[str, Any] = {"detected_doc_type": doc_type}
+        if doc_guess is not None:
+            updates["doc_guess"] = doc_guess
+        try:
+            return self._transition(item_id, "pending", updates)
+        except Exception:
+            if "doc_guess" not in updates:
+                raise
+            # Graceful pre-migration: persist the label even before the
+            # doc_guess column exists (the guess is advisory).
+            return self._transition(item_id, "pending", {"detected_doc_type": doc_type})
 
     def mark_ignored(self, item_id: str) -> dict[str, Any] | None:
         rows = (

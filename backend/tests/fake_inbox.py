@@ -156,11 +156,15 @@ class InMemoryInboxRepo:
         item["status"] = "ignored"
         return item
 
-    def set_detected_doc_type(self, item_id: str, doc_type: str) -> dict[str, Any] | None:
+    def set_detected_doc_type(
+        self, item_id: str, doc_type: str, doc_guess: str | None = None
+    ) -> dict[str, Any] | None:
         item = self.items[item_id]
         if item["status"] != "pending":
             return None
         item["detected_doc_type"] = doc_type
+        if doc_guess is not None:
+            item["doc_guess"] = doc_guess
         return item
 
 

@@ -34,12 +34,46 @@ def test_classify_labels_from_content(client, tc_headers, extractor):
     item = _upload_unlabeled(client, tc_headers)
     r = client.post(f"/ingestion/inbox/{item['id']}/classify", headers=tc_headers)
     assert r.status_code == 200
-    assert r.json() == {"item_id": item["id"], "doc_type": "disclosure", "identified": True}
+    assert r.json() == {
+        "item_id": item["id"],
+        "doc_type": "disclosure",
+        "identified": True,
+        "guess": "",
+    }
     # The label persists — a page refresh still shows it in the queue.
     listed = client.get("/ingestion/inbox", headers=tc_headers).json()
     match = next(i for i in listed if i["id"] == item["id"])
     assert match["detected_doc_type"] == "disclosure"
     assert match["status"] == "pending"
+
+
+def test_classify_accepts_full_type_vocabulary(client, tc_headers, extractor):
+    """The model may answer with ANY known type — a termite report is labeled
+    termite_inspection, not collapsed to 'other' (regression: old 5-type list)."""
+    extractor.doc_looks_like = "termite_inspection"
+    item = _upload_unlabeled(client, tc_headers)
+    r = client.post(f"/ingestion/inbox/{item['id']}/classify", headers=tc_headers)
+    assert r.status_code == 200
+    assert r.json()["doc_type"] == "termite_inspection"
+    assert r.json()["identified"] is True
+    assert r.json()["guess"] == ""
+
+
+def test_classify_other_carries_best_guess(client, tc_headers, extractor):
+    """Outside the known set, Terra still says what it thinks the document is —
+    the type stays 'unknown' (the TC decides) but the guess is surfaced+stored."""
+    extractor.doc_looks_like = "other"
+    extractor.doc_guess = "AVID — Agent Visual Inspection Disclosure"
+    item = _upload_unlabeled(client, tc_headers)
+    r = client.post(f"/ingestion/inbox/{item['id']}/classify", headers=tc_headers)
+    assert r.status_code == 200
+    body = r.json()
+    assert body["identified"] is False
+    assert body["doc_type"] == "unknown"
+    assert body["guess"] == "AVID — Agent Visual Inspection Disclosure"
+    listed = client.get("/ingestion/inbox", headers=tc_headers).json()
+    match = next(i for i in listed if i["id"] == item["id"])
+    assert match["doc_guess"] == "AVID — Agent Visual Inspection Disclosure"
 
 
 def test_classify_unrecognized_stays_unknown(client, tc_headers, extractor):

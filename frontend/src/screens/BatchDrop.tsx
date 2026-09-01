@@ -29,6 +29,7 @@ type BatchFile = {
   note?: string;
   itemId?: string;
   docType?: string; // current label; undefined/"unknown" means ask
+  guess?: string; // Terra's free-text best guess for out-of-vocabulary docs
 };
 
 const BATCH_TYPE_LABELS: Record<string, string> = {
@@ -174,14 +175,14 @@ export function BatchDrop({
         }
         // Filename gave nothing — ask Terra to read the content itself.
         patch(row.key, { phase: "labeling", itemId: item.id, file: null });
-        const label = await api.post<{ doc_type: string; identified: boolean }>(
+        const label = await api.post<{ doc_type: string; identified: boolean; guess?: string }>(
           `/ingestion/inbox/${item.id}/classify`,
         );
         patch(
           row.key,
           label.identified
             ? { phase: "ready", docType: label.doc_type }
-            : { phase: "ask", docType: undefined },
+            : { phase: "ask", docType: undefined, guess: label.guess || undefined },
         );
       } catch (err) {
         patch(row.key, {
@@ -365,8 +366,17 @@ export function BatchDrop({
                 )}
                 {(row.phase === "ready" || row.phase === "ask") && (
                   <>
-                    {row.phase === "ask" && !row.docType && (
+                    {row.phase === "ask" && !row.docType && !row.guess && (
                       <span className="badge warn">What is this?</span>
+                    )}
+                    {row.phase === "ask" && !row.docType && row.guess && (
+                      <button
+                        className="secondary batchguess"
+                        title={`Terra's best guess — click to file as "Other document" under this name`}
+                        onClick={() => patch(row.key, { docType: "other" })}
+                      >
+                        Terra thinks: {row.guess} — use it?
+                      </button>
                     )}
                     <select
                       value={row.docType ?? ""}

@@ -107,6 +107,24 @@ export function Inbox({ onOpenDeal }: { onOpenDeal: (id: string) => void }) {
     }
   }
 
+  async function askTerra(item: InboxItem) {
+    setBusy(item.id);
+    setError(null);
+    try {
+      const label = await api.post<{ doc_type: string; identified: boolean; guess?: string }>(
+        `/ingestion/inbox/${item.id}/classify`,
+      );
+      if (label.identified) {
+        setDocTypes((prev) => ({ ...prev, [item.id]: label.doc_type }));
+      }
+      await refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Classification failed");
+    } finally {
+      setBusy(null);
+    }
+  }
+
   async function dismiss(item: InboxItem) {
     setBusy(item.id);
     try {
@@ -192,6 +210,12 @@ export function Inbox({ onOpenDeal }: { onOpenDeal: (id: string) => void }) {
               {item.suggestion && (
                 <div className="muted">Suggested: {item.suggestion.reason}</div>
               )}
+              {item.detected_doc_type === "unknown" && item.doc_guess && (
+                <div className="muted">
+                  Terra's guess: <strong>{item.doc_guess}</strong> — pick "Other document" to
+                  file it as that.
+                </div>
+              )}
             </div>
             <div>
               <label>New deal, or attach to which existing?</label>
@@ -209,6 +233,21 @@ export function Inbox({ onOpenDeal }: { onOpenDeal: (id: string) => void }) {
               </select>
               {item.detected_doc_type === "unknown" && (
                 <>
+                  <button
+                    className="secondary"
+                    disabled={busy === item.id}
+                    style={{ marginBottom: "0.4rem" }}
+                    onClick={() => void askTerra(item)}
+                  >
+                    {busy === item.id ? (
+                      <>
+                        <span className="spinner" />
+                        Terra is reading…
+                      </>
+                    ) : (
+                      "Ask Terra what this is"
+                    )}
+                  </button>
                   <label>Document type</label>
                   <select
                     value={docTypes[item.id] ?? ""}

@@ -53,8 +53,10 @@ class FakeExtractor:
         preapproval: Preapproval | None = None,
         preliminary: PreliminaryReport | None = None,
         inspection: InspectionReport | None = None,
+        doc_guess: str = "",
     ) -> None:
         self.doc_looks_like = doc_looks_like
+        self.doc_guess = doc_guess
         self.signature_detected = signature_detected
         self.subject_to_counter_offer = subject_to_counter_offer
         self.counter_meta = counter_meta or CounterMeta(
@@ -84,6 +86,7 @@ class FakeExtractor:
             doc_looks_like=self.doc_looks_like,
             signature_detected=self.signature_detected,
             subject_to_counter_offer=self.subject_to_counter_offer,
+            doc_guess=self.doc_guess,
         )
 
     def extract_counter_meta(self, *, pdf_bytes: bytes) -> CounterMeta:

@@ -44,6 +44,10 @@ class ExtractionResult:
     # True when the PA indicates acceptance is subject to a counter offer (so the
     # PA's terms may not be final until that counter is uploaded).
     subject_to_counter_offer: bool = False
+    # When doc_looks_like is 'other': the model's free-text best guess at what
+    # the document actually is (e.g. "AVID — Agent Visual Inspection Disclosure").
+    # Advisory only — surfaced to the TC, never filed without their say-so.
+    doc_guess: str = ""
 
 
 @dataclass(frozen=True)
@@ -286,6 +290,7 @@ def _output_schema() -> dict[str, Any]:
                     "other",
                 ],
             },
+            "doc_guess": {"type": "string"},
             "signature_indicators": {"type": "boolean"},
             "subject_to_counter_offer": {"type": "boolean"},
             "fields": {
@@ -305,7 +310,13 @@ def _output_schema() -> dict[str, Any]:
                 },
             },
         },
-        "required": ["doc_looks_like", "signature_indicators", "subject_to_counter_offer", "fields"],
+        "required": [
+            "doc_looks_like",
+            "doc_guess",
+            "signature_indicators",
+            "subject_to_counter_offer",
+            "fields",
+        ],
         "additionalProperties": False,
     }
 
@@ -333,7 +344,13 @@ def _prompt() -> str:
         "6. Report subject_to_counter_offer: true if the agreement indicates "
         "acceptance is subject to a counter offer — e.g. a 'Seller Counter Offer' "
         "or 'Buyer Counter Offer' checkbox is checked, or it references an attached "
-        "counter offer (SCO/BCO). This means the printed terms may not be final.\n\n"
+        "counter offer (SCO/BCO). This means the printed terms may not be final.\n"
+        "7. Report doc_guess: when doc_looks_like is 'other', name what the "
+        "document most likely is in a few words, as a California transaction "
+        "coordinator would say it (e.g. 'AVID — Agent Visual Inspection "
+        "Disclosure', 'HOA CC&Rs package', 'Escrow general provisions', 'Home "
+        "warranty invoice'). Base it only on the document itself. When "
+        "doc_looks_like is any listed type, return an empty string.\n\n"
         f"Fields to extract:\n{field_lines}"
     )
 
@@ -611,4 +628,5 @@ def parse_extraction_output(data: dict[str, Any]) -> ExtractionResult:
         doc_looks_like=doc_looks_like,
         signature_detected=bool(data.get("signature_indicators", False)),
         subject_to_counter_offer=bool(data.get("subject_to_counter_offer", False)),
+        doc_guess=str(data.get("doc_guess", "")).strip()[:120],
     )

@@ -49,6 +49,9 @@ export interface InboxItem {
   attachment_name: string | null;
   attachment_count: number;
   detected_doc_type: string | null;
+  // Terra's free-text best guess when the type is outside the known set
+  // (e.g. "AVID — Agent Visual Inspection Disclosure"). Advisory only.
+  doc_guess?: string | null;
   status: "pending" | "needs_manual";
   needs_manual_reason: string | null;
   source: "email" | "manual";
