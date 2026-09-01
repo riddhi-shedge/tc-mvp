@@ -30,7 +30,36 @@ type BatchFile = {
   itemId?: string;
   docType?: string; // current label; undefined/"unknown" means ask
   guess?: string; // Terra's free-text best guess for out-of-vocabulary docs
+  // Version signals from the content read — used to tell an original from a
+  // ratified copy when two files carry the same label.
+  signals?: { signed: boolean; subject_to_counter_offer: boolean };
+  signalsFailed?: boolean; // content read failed — never rank this row
 };
+
+type ClassifyResponse = {
+  doc_type: string;
+  identified: boolean;
+  guess?: string;
+  signals?: { signed?: boolean; subject_to_counter_offer?: boolean };
+};
+
+function asSignals(s: ClassifyResponse["signals"]): BatchFile["signals"] {
+  if (!s || typeof s.signed !== "boolean") return undefined;
+  return { signed: s.signed, subject_to_counter_offer: Boolean(s.subject_to_counter_offer) };
+}
+
+/** Higher = more likely the operative (final) version: fully executed and not
+ *  subject to a counter beats everything; unsigned drafts rank last. */
+function versionRank(s: NonNullable<BatchFile["signals"]>): number {
+  return (s.signed ? 2 : 0) + (s.subject_to_counter_offer ? 0 : 1);
+}
+
+function sigText(s: BatchFile["signals"]): string {
+  if (!s) return "unreadable";
+  if (s.signed && !s.subject_to_counter_offer) return "fully signed, no open counter";
+  if (s.signed) return "signed but subject to a counter offer";
+  return "not fully signed";
+}
 
 const BATCH_TYPE_LABELS: Record<string, string> = {
   purchase_agreement: "Purchase agreement",
@@ -118,7 +147,9 @@ export function BatchDrop({
   const [target, setTarget] = useState<string>("new");
   const [filing, setFiling] = useState(false);
   const [batchError, setBatchError] = useState<string | null>(null);
+  const [comparing, setComparing] = useState(false);
   const workingRef = useRef(false);
+  const comparingRef = useRef(false);
 
   // Items held by the batch are hidden from the queue below so two UIs never
   // fight over the same document. Filed and failed rows are released — a failed
@@ -175,14 +206,17 @@ export function BatchDrop({
         }
         // Filename gave nothing — ask Terra to read the content itself.
         patch(row.key, { phase: "labeling", itemId: item.id, file: null });
-        const label = await api.post<{ doc_type: string; identified: boolean; guess?: string }>(
-          `/ingestion/inbox/${item.id}/classify`,
-        );
+        const label = await api.post<ClassifyResponse>(`/ingestion/inbox/${item.id}/classify`);
         patch(
           row.key,
           label.identified
-            ? { phase: "ready", docType: label.doc_type }
-            : { phase: "ask", docType: undefined, guess: label.guess || undefined },
+            ? { phase: "ready", docType: label.doc_type, signals: asSignals(label.signals) }
+            : {
+                phase: "ask",
+                docType: undefined,
+                guess: label.guess || undefined,
+                signals: asSignals(label.signals),
+              },
         );
       } catch (err) {
         patch(row.key, {
@@ -202,6 +236,44 @@ export function BatchDrop({
       setRows((prev) => [...prev]); // re-run the effect for late arrivals
     })();
   }, [rows, onQueueChanged]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // When two or more files claim the same label "purchase agreement" (usually
+  // from filenames alone), read each one's content for version signals so Terra
+  // can say which is the operative copy and which is an earlier version.
+  useEffect(() => {
+    const pas = rows.filter(
+      (r) =>
+        (r.phase === "ready" || r.phase === "ask") &&
+        r.itemId &&
+        r.docType === "purchase_agreement",
+    );
+    const unread = pas.filter((r) => !r.signals && !r.signalsFailed);
+    if (comparingRef.current || pas.length < 2 || unread.length === 0) return;
+    comparingRef.current = true;
+    setComparing(true);
+    void (async () => {
+      for (const row of unread) {
+        try {
+          const label = await api.post<ClassifyResponse>(
+            `/ingestion/inbox/${row.itemId}/classify`,
+          );
+          const signals = asSignals(label.signals);
+          patch(row.key, {
+            ...(signals ? { signals } : { signalsFailed: true }),
+            // Content beats filename: if the read says it's actually something
+            // else (e.g. a counter offer), relabel it out of the PA pile.
+            ...(label.identified && label.doc_type !== row.docType
+              ? { docType: label.doc_type }
+              : {}),
+          });
+        } catch {
+          patch(row.key, { signalsFailed: true });
+        }
+      }
+      comparingRef.current = false;
+      setComparing(false);
+    })();
+  }, [rows]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function onDrop(e: DragEvent) {
     e.preventDefault();
@@ -229,7 +301,24 @@ export function BatchDrop({
   const fileable = active.filter(
     (r) => (r.phase === "ready" || r.phase === "ask") && r.itemId && r.docType,
   );
-  const paCount = fileable.filter((r) => r.docType === "purchase_agreement").length;
+  const paRows = fileable.filter((r) => r.docType === "purchase_agreement");
+  const paCount = paRows.length;
+
+  // Rank the competing purchase agreements by version signals. A unique winner
+  // becomes Terra's suggestion; a tie is reported honestly — the TC picks.
+  let paSuggestion: { keep: BatchFile; demote: BatchFile[] } | null = null;
+  let paTie = false;
+  if (paCount > 1 && paRows.every((r) => r.signals)) {
+    const ranked = [...paRows].sort(
+      (a, b) =>
+        versionRank(b.signals as NonNullable<BatchFile["signals"]>) -
+        versionRank(a.signals as NonNullable<BatchFile["signals"]>),
+    );
+    const top = versionRank(ranked[0].signals as NonNullable<BatchFile["signals"]>);
+    const second = versionRank(ranked[1].signals as NonNullable<BatchFile["signals"]>);
+    if (top > second) paSuggestion = { keep: ranked[0], demote: ranked.slice(1) };
+    else paTie = true;
+  }
 
   let blockReason: string | null = null;
   if (stillWorking) blockReason = "Terra is still reading the files…";
@@ -239,7 +328,11 @@ export function BatchDrop({
   else if (target === "new" && paCount === 0)
     blockReason = "A new deal needs a purchase agreement — label one, or attach to an existing deal";
   else if (target === "new" && paCount > 1)
-    blockReason = "Two files are labeled purchase agreement — relabel one (e.g. as a counter offer)";
+    blockReason = comparing
+      ? "Terra is comparing the purchase agreements…"
+      : paSuggestion
+        ? "Two purchase agreements — apply Terra's suggestion above, or relabel one"
+        : "Two purchase agreements and Terra can't tell which is current — relabel one yourself";
 
   async function fileBatch() {
     setFiling(true);
@@ -403,6 +496,46 @@ export function BatchDrop({
               </div>
             ))}
           </div>
+
+          {paCount > 1 && (comparing || paSuggestion || paTie) && (
+            <div className="why" style={{ marginTop: "0.7rem" }}>
+              {comparing && (
+                <span>
+                  <span className="spinner" /> Two files read as purchase agreements — Terra is
+                  reading both to find the current version…
+                </span>
+              )}
+              {!comparing && paSuggestion && (
+                <>
+                  <strong>{paSuggestion.keep.name}</strong> looks like the operative purchase
+                  agreement ({sigText(paSuggestion.keep.signals)});{" "}
+                  {paSuggestion.demote.map((r) => `"${r.name}" (${sigText(r.signals)})`).join(", ")}{" "}
+                  look{paSuggestion.demote.length === 1 ? "s" : ""} like an earlier version.
+                  <div style={{ marginTop: "0.45rem" }}>
+                    <button
+                      onClick={() =>
+                        paSuggestion?.demote.forEach((r) =>
+                          patch(r.key, {
+                            docType: "other",
+                            guess: "prior version of the purchase agreement",
+                          }),
+                        )
+                      }
+                    >
+                      Keep "{paSuggestion.keep.name}" — file the other as a prior version
+                    </button>
+                  </div>
+                </>
+              )}
+              {!comparing && paTie && (
+                <span>
+                  Terra read both purchase agreements and they look alike (
+                  {sigText(paRows[0]?.signals)}) — it won't guess which is current. Pick one to
+                  keep and relabel the other.
+                </span>
+              )}
+            </div>
+          )}
 
           {settled.length > 0 && (
             <div className="batchfile-bar">

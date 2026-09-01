@@ -39,6 +39,7 @@ def test_classify_labels_from_content(client, tc_headers, extractor):
         "doc_type": "disclosure",
         "identified": True,
         "guess": "",
+        "signals": {"signed": True, "subject_to_counter_offer": False},
     }
     # The label persists — a page refresh still shows it in the queue.
     listed = client.get("/ingestion/inbox", headers=tc_headers).json()
@@ -74,6 +75,32 @@ def test_classify_other_carries_best_guess(client, tc_headers, extractor):
     listed = client.get("/ingestion/inbox", headers=tc_headers).json()
     match = next(i for i in listed if i["id"] == item["id"])
     assert match["doc_guess"] == "AVID — Agent Visual Inspection Disclosure"
+
+
+def test_classify_signals_tell_pa_versions_apart(client, tc_headers, extractor):
+    """Two files both reading as purchase agreements: the ratified one shows
+    executed signatures, the earlier one doesn't — the signals expose that so
+    the batch UI can suggest which is the operative PA."""
+    extractor.doc_looks_like = "purchase_agreement"
+    extractor.signature_detected = False
+    extractor.subject_to_counter_offer = True
+    old = _upload_unlabeled(client, tc_headers, filename="scan-old.pdf")
+    r_old = client.post(f"/ingestion/inbox/{old['id']}/classify", headers=tc_headers)
+    extractor.signature_detected = True
+    extractor.subject_to_counter_offer = False
+    new = _upload_unlabeled(client, tc_headers, filename="scan-new.pdf")
+    r_new = client.post(f"/ingestion/inbox/{new['id']}/classify", headers=tc_headers)
+    assert r_old.json()["signals"] == {"signed": False, "subject_to_counter_offer": True}
+    assert r_new.json()["signals"] == {"signed": True, "subject_to_counter_offer": False}
+    assert r_old.json()["doc_type"] == r_new.json()["doc_type"] == "purchase_agreement"
+
+
+def test_classify_failure_returns_empty_signals(client, tc_headers, extractor):
+    extractor.raise_failed = True
+    item = _upload_unlabeled(client, tc_headers)
+    r = client.post(f"/ingestion/inbox/{item['id']}/classify", headers=tc_headers)
+    assert r.status_code == 200
+    assert r.json()["signals"] == {}
 
 
 def test_classify_unrecognized_stays_unknown(client, tc_headers, extractor):

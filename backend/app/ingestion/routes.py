@@ -326,13 +326,21 @@ def classify_inbox_item(
         raise HTTPException(status_code=404, detail="Inbox item not found")
     if item["status"] != "pending":
         raise HTTPException(status_code=409, detail="Only pending items can be classified")
-    detected, guess = _classify_document(item, inbox, extractor)
+    detected, guess, signals = _classify_document(item, inbox, extractor)
     identified = detected != OTHER_DOC_TYPE
     doc_type = detected if identified else UNKNOWN_DOC_TYPE
     updated = inbox.set_detected_doc_type(item_id, doc_type, doc_guess=guess or None)
     if updated is None:  # raced with a confirm/dismiss; nothing persisted
         raise HTTPException(status_code=409, detail="Inbox item already handled")
-    return {"item_id": item_id, "doc_type": doc_type, "identified": identified, "guess": guess}
+    return {
+        "item_id": item_id,
+        "doc_type": doc_type,
+        "identified": identified,
+        "guess": guess,
+        # Version signals (executed signatures / subject-to-counter) so the UI
+        # can tell an original from a ratified copy of the same document type.
+        "signals": signals,
+    }
 
 
 # ---- The TC's queue view (with routing suggestions) --------------------------
@@ -417,15 +425,18 @@ def _extraction_error(message: str, reasons: list[str]) -> HTTPException:
 
 def _classify_document(
     item: dict[str, Any], inbox: InboxRepo, extractor: Extractor
-) -> tuple[DocType, str]:
+) -> tuple[DocType, str, dict[str, bool]]:
     """Content-level classification: the model reads the document and reports
     what it actually is — any of the known types, or 'other' plus a free-text
     best guess (the model already knows the CA form universe; no document data
-    ever leaves the ZDR-gated model path). Best-effort — an unreadable, blocked,
-    or unrecognizable document comes back ('other', '') rather than blocking."""
+    ever leaves the ZDR-gated model path). Also returns version signals
+    (signature/subject-to-counter) so two same-type documents — e.g. an original
+    and a ratified purchase agreement — can be told apart. Best-effort — an
+    unreadable, blocked, or unrecognizable document comes back ('other', '', {})
+    rather than blocking."""
     storage_path = item.get("storage_path")
     if not storage_path:
-        return OTHER_DOC_TYPE, ""
+        return OTHER_DOC_TYPE, "", {}
     try:
         pdf_bytes = inbox.download_attachment(storage_path)
     except StorageUnavailable:
@@ -434,15 +445,19 @@ def _classify_document(
         ) from None
     readable = decrypt_pdf(pdf_bytes)
     if readable is None:
-        return OTHER_DOC_TYPE, ""
+        return OTHER_DOC_TYPE, "", {}
     try:
         result = extractor.extract(pdf_bytes=readable, doc_type=OTHER_DOC_TYPE)
     except (ExtractionFailed, ExtractionBlocked):
-        return OTHER_DOC_TYPE, ""
+        return OTHER_DOC_TYPE, "", {}
+    signals = {
+        "signed": result.signature_detected,
+        "subject_to_counter_offer": result.subject_to_counter_offer,
+    }
     looks = result.doc_looks_like  # schema-constrained to the known types + 'other'
     if looks != OTHER_DOC_TYPE and looks != UNKNOWN_DOC_TYPE:
-        return looks, ""  # type: ignore[return-value]
-    return OTHER_DOC_TYPE, result.doc_guess
+        return looks, "", signals  # type: ignore[return-value]
+    return OTHER_DOC_TYPE, result.doc_guess, signals
 
 
 def _extract_counter(
@@ -803,7 +818,7 @@ def confirm_inbox_item(
     doc_type = body.doc_type or item.get("detected_doc_type") or UNKNOWN_DOC_TYPE
     if doc_type == OTHER_DOC_TYPE:
         # The TC asked Terra to identify it — classify from the content itself.
-        doc_type, _guess = _classify_document(item, inbox, extractor)
+        doc_type, _guess, _signals = _classify_document(item, inbox, extractor)
     if doc_type == UNKNOWN_DOC_TYPE:
         # Never guess: an unclassified document can't enter the SOR.
         raise HTTPException(
