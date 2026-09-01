@@ -156,6 +156,13 @@ class InMemoryInboxRepo:
         item["status"] = "ignored"
         return item
 
+    def set_detected_doc_type(self, item_id: str, doc_type: str) -> dict[str, Any] | None:
+        item = self.items[item_id]
+        if item["status"] != "pending":
+            return None
+        item["detected_doc_type"] = doc_type
+        return item
+
 
 class FakeMasterClient:
     """Stands in for the HTTP client ingestion uses to reach the master API.

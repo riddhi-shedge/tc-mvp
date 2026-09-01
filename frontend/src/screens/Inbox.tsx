@@ -7,6 +7,7 @@ import {
   TransactionSummary,
 } from "../lib/api";
 import { DealsBoard } from "./DealsBoard";
+import { BatchDrop } from "./BatchDrop";
 import { UploadOverlay } from "../lib/UploadOverlay";
 import { Icon } from "../lib/icons";
 
@@ -45,6 +46,8 @@ export function Inbox({ onOpenDeal }: { onOpenDeal: (id: string) => void }) {
   const [manualFor, setManualFor] = useState<string | null>(null);
   const [manualReasons, setManualReasons] = useState<string[]>([]);
   const [manualRows, setManualRows] = useState<{ name: string; value: string }[]>([]);
+  // Inbox items currently managed by the batch panel (hidden from the queue).
+  const [batchHeld, setBatchHeld] = useState<string[]>([]);
 
   const refresh = useCallback(async () => {
     try {
@@ -150,7 +153,7 @@ export function Inbox({ onOpenDeal }: { onOpenDeal: (id: string) => void }) {
     }
   }
 
-  const pending = items.filter((i) => i.status === "pending");
+  const pending = items.filter((i) => i.status === "pending" && !batchHeld.includes(i.id));
   const needsManual = items.filter((i) => i.status === "needs_manual");
 
   return (
@@ -355,6 +358,13 @@ export function Inbox({ onOpenDeal }: { onOpenDeal: (id: string) => void }) {
           <p className="muted">Upload the readable copy below, then confirm it.</p>
         </div>
       )}
+
+      <BatchDrop
+        transactions={transactions}
+        onOpenDeal={onOpenDeal}
+        onQueueChanged={refresh}
+        onHeldIdsChange={setBatchHeld}
+      />
 
       <div className="card">
         <h2><Icon name="attach" size={17} /> Manual upload</h2>

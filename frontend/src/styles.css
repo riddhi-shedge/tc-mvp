@@ -2207,3 +2207,22 @@ button.secondary.sm { padding: 0.28rem 0.55rem; font-size: var(--t-s); }
   border-radius: 8px; display: inline-grid; place-items: center; margin-left: 6px; }
 .tab-badge.warn { background: var(--status-warn-bg); color: var(--status-warn-fg); }
 .tab-badge.danger { background: var(--status-danger-bg); color: var(--status-danger-fg); }
+
+/* Batch upload: drop a whole folder — Terra labels each file, the TC files the batch. */
+.batchdrop { transition: border-color 120ms ease, background 120ms ease; }
+.batchdrop.over { border-color: var(--accent); background: var(--cream-2); }
+.batchpick { display: inline-flex; align-items: center; padding: 0.35rem 0.8rem; cursor: pointer;
+  font-size: var(--t-sm); font-weight: 600; color: var(--ink);
+  border: 1px solid var(--line); border-radius: var(--r-pill); background: var(--surface); }
+.batchpick:hover { border-color: var(--accent); }
+.batchrow { display: flex; align-items: center; gap: 0.55rem; padding: 0.35rem 0;
+  border-bottom: 1px solid var(--line-2); font-size: var(--t-s); }
+.batchrow:last-child { border-bottom: none; }
+.batchrow select { margin: 0; width: auto; }
+.batchrow .secondary { padding: 0.1rem 0.5rem; }
+.batchname { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap; font-weight: 600; color: var(--ink); }
+.batchrow .spinner { width: 10px; height: 10px; }
+.batchfile-bar { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap;
+  margin-top: 0.8rem; padding-top: 0.7rem; border-top: 1px solid var(--line); }
+.batchfile-bar select { margin: 0; width: auto; max-width: 320px; }

@@ -309,6 +309,32 @@ def manual_upload(
     return item
 
 
+@router.post("/inbox/{item_id}/classify")
+def classify_inbox_item(
+    item_id: str,
+    tc: TCUser = Depends(require_tc),
+    inbox: InboxRepo = Depends(get_inbox_repo),
+    extractor: Extractor = Depends(get_extractor),
+) -> dict[str, Any]:
+    """Content-level labeling for the batch-upload flow: the model reads the
+    stored PDF (ZDR-gated, same extractor seam as confirm) and reports what it
+    is. Honest when unsure — an unrecognized/unreadable document stays 'unknown'
+    so the TC is asked, never guessed for. The label is only a suggestion; the
+    HITL confirm still decides."""
+    item = inbox.get(item_id)
+    if item is None:
+        raise HTTPException(status_code=404, detail="Inbox item not found")
+    if item["status"] != "pending":
+        raise HTTPException(status_code=409, detail="Only pending items can be classified")
+    detected = _classify_document(item, inbox, extractor)
+    identified = detected != OTHER_DOC_TYPE
+    doc_type = detected if identified else UNKNOWN_DOC_TYPE
+    updated = inbox.set_detected_doc_type(item_id, doc_type)
+    if updated is None:  # raced with a confirm/dismiss; nothing persisted
+        raise HTTPException(status_code=409, detail="Inbox item already handled")
+    return {"item_id": item_id, "doc_type": doc_type, "identified": identified}
+
+
 # ---- The TC's queue view (with routing suggestions) --------------------------
 
 

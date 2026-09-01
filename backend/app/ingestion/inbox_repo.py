@@ -110,6 +110,12 @@ class InboxRepo(Protocol):
         """Conditionally close out a pending/needs_manual item."""
         ...
 
+    def set_detected_doc_type(self, item_id: str, doc_type: str) -> dict[str, Any] | None:
+        """Persist a (re)classified type on a still-pending item — used by the
+        content-level classify endpoint so a batch upload's labels survive a
+        refresh. CAS on status=pending: never relabels an item mid-confirm."""
+        ...
+
 
 class SupabaseInboxRepo:
     def __init__(self) -> None:
@@ -269,6 +275,9 @@ class SupabaseInboxRepo:
                 "confirmed_at": datetime.now(timezone.utc).isoformat(),
             },
         )
+
+    def set_detected_doc_type(self, item_id: str, doc_type: str) -> dict[str, Any] | None:
+        return self._transition(item_id, "pending", {"detected_doc_type": doc_type})
 
     def mark_ignored(self, item_id: str) -> dict[str, Any] | None:
         rows = (
