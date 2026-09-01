@@ -532,8 +532,18 @@ def _extract_counter(
     fields = [
         ExtractedField(name=f.name, value=f.value, confidence=f.confidence, confirmed=True)
         for f in result.fields
+        # A counter changes TERMS (price, dates), never who is buying or selling
+        # — and counter forms list the countering side first, which flips the
+        # model's name reads. Identity fields from a counter are dropped: they
+        # would land auto-confirmed, supersede the PA's correct names, and spawn
+        # inverted buyer/seller parties (live bug, deal 39ec2f4c).
+        if f.name not in _COUNTER_IDENTITY_FIELDS
     ]
     return fields, meta
+
+
+# Fields a counter offer may never override — identity comes from the PA.
+_COUNTER_IDENTITY_FIELDS = frozenset({"buyer_names", "seller_names", "property_address"})
 
 
 def _extract_contingency_removal_fields(
