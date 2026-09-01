@@ -1513,9 +1513,31 @@ class SupabaseRepo:
         # and log it for reconciliation.
         if payload.document_type == "purchase_agreement":
             try:
-                self._db.table("documents").delete().eq(
-                    "transaction_id", transaction_id
-                ).eq("doc_type", "purchase_agreement").neq("id", doc["id"]).execute()
+                superseded = (
+                    self._db.table("documents")
+                    .delete()
+                    .eq("transaction_id", transaction_id)
+                    .eq("doc_type", "purchase_agreement")
+                    .neq("id", doc["id"])
+                    .execute()
+                    .data
+                )
+                # The removal must be visible in the audit chain (found by the TC
+                # audit: a confirmed inbox item pointed at a payload that no longer
+                # existed, with no record of why). One entry per superseded PA.
+                for old in superseded or []:
+                    self._audit(
+                        transaction_id=transaction_id,
+                        actor=actor,
+                        action="document.superseded",
+                        entity_type="document",
+                        entity_id=old["id"],
+                        details={
+                            "external_ref": old.get("external_ref"),
+                            "superseded_by": doc["id"],
+                            "reason": "newer purchase agreement confirmed (one PA per deal)",
+                        },
+                    )
             except Exception:
                 _log.warning(
                     "write_payload: PA supersede-delete failed for txn=%s; the new PA "

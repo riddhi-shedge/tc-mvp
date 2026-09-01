@@ -1164,7 +1164,20 @@ class InMemoryRepo:
                 p["id"] for p in self.payloads.values() if p["document_id"] in old_docs
             }
             for did in old_docs:
+                old_doc = self.documents[did]
                 del self.documents[did]
+                self._audit(
+                    transaction_id=transaction_id,
+                    actor=actor,
+                    action="document.superseded",
+                    entity_type="document",
+                    entity_id=did,
+                    details={
+                        "external_ref": old_doc.get("external_ref"),
+                        "superseded_by": doc["id"],
+                        "reason": "newer purchase agreement confirmed (one PA per deal)",
+                    },
+                )
             for pid in old_payloads:
                 del self.payloads[pid]
             self.extracted_fields = [

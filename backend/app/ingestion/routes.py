@@ -30,7 +30,7 @@ from app.contracts.documents import (
     UNKNOWN_DOC_TYPE,
     DocType,
 )
-from app.contracts.fields import EXTRACTABLE_FIELD_NAMES
+from app.contracts.fields import DEADLINE_DRIVING, EXTRACTABLE_FIELD_NAMES
 from app.contracts.payload import (
     NEW_TRANSACTION,
     CounterMeta,
@@ -530,7 +530,17 @@ def _extract_counter(
     except ExtractionFailed as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from None
     fields = [
-        ExtractedField(name=f.name, value=f.value, confidence=f.confidence, confirmed=True)
+        ExtractedField(
+            name=f.name,
+            value=f.value,
+            confidence=f.confidence,
+            # Only the deal's TERMS auto-confirm from a counter (they are the
+            # agreed changes and supersede the PA). Contact/company fields land
+            # unconfirmed: a low-confidence phone read off a counter must not
+            # silently beat the PA's value (TC audit finding: a 0.5-confidence
+            # buyer_agent_phone superseded the PA's 0.9 one).
+            confirmed=f.name in DEADLINE_DRIVING or f.name in _COUNTER_TERM_FIELDS,
+        )
         for f in result.fields
         # A counter changes TERMS (price, dates), never who is buying or selling
         # — and counter forms list the countering side first, which flips the
@@ -544,6 +554,8 @@ def _extract_counter(
 
 # Fields a counter offer may never override — identity comes from the PA.
 _COUNTER_IDENTITY_FIELDS = frozenset({"buyer_names", "seller_names", "property_address"})
+# Non-deadline terms a counter legitimately restates and confirms.
+_COUNTER_TERM_FIELDS = frozenset({"purchase_price", "other_terms"})
 
 
 def _extract_contingency_removal_fields(
