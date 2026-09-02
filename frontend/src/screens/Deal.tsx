@@ -1,32 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, AuditRow, FullState, Message } from "../lib/api";
 import { fmtDate, fmtDateTime } from "../lib/format";
-import { ExtractionReview } from "./ExtractionReview";
+import { DocumentLedger } from "./DocumentLedger";
 import { DealDashboard } from "./DealDashboard";
-import { DocumentChecks } from "./DocumentChecks";
-import { MissingPanel } from "./MissingPanel";
 import { DealNotes } from "./DealNotes";
 import { DealTimeline } from "./DealTimeline";
 import { AnimatedTabs, CountUp, toast } from "../lib/ui";
 import { Icon, IconName } from "../lib/icons";
 
-function docIcon(t: string | null): IconName {
-  const s = (t ?? "").toLowerCase();
-  if (s.includes("purchase")) return "contract";
-  if (s.includes("proof")) return "money";
-  if (s.includes("disclosure")) return "clipboard";
-  if (s.includes("inspection")) return "search";
-  return "doc";
-}
-// A distinct tint per document type so the icon reads at a glance.
-function docTint(t: string | null): string {
-  const s = (t ?? "").toLowerCase();
-  if (s.includes("purchase")) return "#5257ea";
-  if (s.includes("proof")) return "#0e9488";
-  if (s.includes("disclosure")) return "#c07512";
-  if (s.includes("inspection")) return "#8457d6";
-  return "#5b6472";
-}
 function actionIcon(a: string): IconName {
   if (a.includes("created")) return "sparkle";
   if (a.includes("payload") || a.includes("extract")) return "search";
@@ -83,6 +64,9 @@ const snippet = (body: string | null) => (body ?? "").replace(/\s+/g, " ").trim(
  *  lender contact → real lender draft (editable) → Approve & Send (guarded). */
 export function Deal({ id, onBack }: { id: string; onBack: () => void }) {
   const [state, setState] = useState<FullState | null>(null);
+  // Active tab (from AnimatedTabs): the Documents ledger claims the full page,
+  // so the timeline collapses to a one-line strip while it's open.
+  const [activeTab, setActiveTab] = useState<string | null>(null);
   const [draftWhy, setDraftWhy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -269,6 +253,17 @@ export function Deal({ id, onBack }: { id: string; onBack: () => void }) {
     coe != null ? Math.round((new Date(coe.due_date).getTime() - Date.now()) / 86_400_000) : null;
   const openTasks = state.tasks.filter((t) => !["done", "complete"].includes(t.status)).length;
   const unresolvedRisks = state.risk_flags.filter((f) => !f.resolved).length;
+
+  // Stage-adaptive default tab (P-E): early deals open on the document work,
+  // mid-deal on comms, closing/closed on overview.
+  const stage = (state.transaction as { stage?: string }).stage ?? "new";
+  const initialTab = stage === "new" ? "documents" : stage === "cont" ? "comms" : "overview";
+  // The Documents ledger claims the full page: the big timeline collapses to a
+  // one-line strip while that tab is open.
+  const onDocsTab = (activeTab ?? initialTab) === "documents";
+  const nextDeadline = [...state.deadlines]
+    .filter((d) => new Date(d.due_date).getTime() >= Date.now() - 86_400_000)
+    .sort((a, b) => a.due_date.localeCompare(b.due_date))[0];
 
   return (
     <>
@@ -517,7 +512,7 @@ export function Deal({ id, onBack }: { id: string; onBack: () => void }) {
         </div>
       )}
 
-      {state.deadlines.length > 0 && (
+      {state.deadlines.length > 0 && !onDocsTab && (
         <DealTimeline
           id={id}
           deadlines={state.deadlines}
@@ -527,14 +522,22 @@ export function Deal({ id, onBack }: { id: string; onBack: () => void }) {
           onChanged={refresh}
         />
       )}
+      {state.deadlines.length > 0 && onDocsTab && (
+        <div className="tl-strip">
+          <Icon name="clock" size={13} />
+          {coeDays != null && <span>{coeDays < 0 ? `Closed ${-coeDays}d ago` : `Closing in ${coeDays}d`}</span>}
+          {nextDeadline && (
+            <span className="muted">
+              Next: {nextDeadline.name.replace(/ (ends|due|delivery).*$/i, "")} · {fmtDate(nextDeadline.due_date).replace(/,\s*\d{4}$/, "")}
+            </span>
+          )}
+          <span className="muted" style={{ marginLeft: "auto" }}>timeline collapses while you work the documents</span>
+        </div>
+      )}
 
       <AnimatedTabs
-        initial={(() => {
-          // Stage-adaptive default (P-E): early deals open on the confirm/extraction
-          // work, mid-deal on comms, closing/closed on overview.
-          const stage = (state.transaction as { stage?: string }).stage ?? "new";
-          return stage === "new" ? "documents" : stage === "cont" ? "comms" : "overview";
-        })()}
+        initial={initialTab}
+        onChange={setActiveTab}
         tabs={[
           {
             id: "overview",
@@ -556,73 +559,7 @@ export function Deal({ id, onBack }: { id: string; onBack: () => void }) {
             content: (
               <>
 
-      <div className="card">
-        <h2><Icon name="doc" size={17} /> Documents</h2>
-        {state.documents.length === 0 && (
-          <div className="empty"><span className="empty-ic"><Icon name="doc" size={26} /></span>No documents yet.</div>
-        )}
-        {state.documents.length > 0 && (
-          <div className="doc-grid">
-            {state.documents.map((d) => (
-              <button
-                key={d.id}
-                type="button"
-                className="doc-card"
-                onClick={() => openDoc(d.id)}
-                title="Open document in a new tab"
-              >
-                <div className="doc-ic" style={{ background: `${docTint(d.doc_type)}1f`, color: docTint(d.doc_type) }}>
-                  <Icon name={docIcon(d.doc_type)} size={24} />
-                </div>
-                <div style={{ minWidth: 0, flex: 1 }}>
-                  <div className="doc-name">
-                    {d.doc_type === "other" && d.label ? d.label : humanize(d.doc_type ?? "unknown")}
-                  </div>
-                  {d.created_at && (
-                    <div className="muted" style={{ fontSize: "0.76rem", margin: "1px 0 4px" }}>
-                      Uploaded {fmtDate(d.created_at)}
-                    </div>
-                  )}
-                  <span className={`badge ${d.status === "confirmed" ? "ok" : "draft"}`}>
-                    {d.status}
-                  </span>
-                </div>
-                <span className="doc-open"><Icon name="external" size={15} /></span>
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
-
-      <MissingPanel state={state} />
-
-      <DocumentChecks state={state} />
-
-      <ExtractionReview
-        state={state}
-        busy={busy}
-        onOpenSource={openDoc}
-        onConfirmAll={() =>
-          void run(
-            () =>
-              api.post(`/transactions/${id}/fields/confirm`, {
-                field_ids: unconfirmed.map((f) => f.id),
-              }),
-            `${unconfirmed.length} field${unconfirmed.length > 1 ? "s" : ""} confirmed`,
-          )
-        }
-        onVerify={(field, value) =>
-          void run(async () => {
-            const v = value.trim();
-            if (v && v !== field.value) {
-              // Corrected value → overwrite (a known §5 name re-add also confirms it).
-              await api.post(`/transactions/${id}/fields`, { name: field.name, value: v });
-            } else {
-              await api.post(`/transactions/${id}/fields/confirm`, { field_ids: [field.id] });
-            }
-          }, "Field verified")
-        }
-      />
+      <DocumentLedger id={id} state={state} onChanged={refresh} onOpenDoc={openDoc} />
 
               </>
             ),
