@@ -2456,3 +2456,14 @@ button.secondary.sm { padding: 0.28rem 0.55rem; font-size: var(--t-s); }
 .cs-act input { font: inherit; font-size: 0.74rem; padding: 2px 6px; border: 1px solid var(--line);
   border-radius: var(--r-sm); background: var(--surface); color: var(--ink); }
 .cs-act button { font-size: var(--t-xs); padding: 0.25rem 0.8rem; }
+
+/* Ops lanes (Wave 3A) */
+.ops-row { display: flex; align-items: center; gap: 10px; padding: 8px 4px;
+  border-bottom: 1px solid var(--line-2); }
+.ops-row:last-of-type { border-bottom: none; }
+.ops-row.waived { opacity: 0.55; }
+.ops-ic { width: 26px; height: 26px; border-radius: 6px; display: grid; place-items: center;
+  background: var(--surface-2); color: var(--ink-2); flex: 0 0 auto; }
+.ops-mid { flex: 1; min-width: 0; display: block; }
+.ops-name { display: block; font-size: var(--t-s); font-weight: 650; }
+.ops-hint { display: block; font-size: 0.7rem; color: var(--muted); }

@@ -783,6 +783,7 @@ _CHILD_TABLES = (
     "repairs",
     "notices",
     "closing_events",
+    "ops_items",
 )
 
 
@@ -2889,6 +2890,38 @@ class SupabaseRepo:
             entity_type="repair", entity_id=repair_id, details={},
         )
         return rows[0]
+
+    # -- ops lanes (Wave 3A) ---------------------------------------------------
+    def advance_ops_item(self, *, transaction_id, lane, status, occurred_on, note, actor):
+        """ordered: creates the lane row; done: completes an ordered row.
+        Returns None when the transition is invalid for the current state."""
+        existing = (
+            self._db.table("ops_items").select("*")
+            .eq("transaction_id", transaction_id).eq("lane", lane)
+            .execute().data
+        )
+        if status == "ordered":
+            if existing:
+                return None
+            row = (
+                self._db.table("ops_items")
+                .insert({"transaction_id": transaction_id, "lane": lane,
+                         "status": "ordered", "ordered_on": occurred_on, "note": note})
+                .execute().data[0]
+            )
+        else:  # done
+            if not existing or existing[0]["status"] != "ordered":
+                return None
+            row = (
+                self._db.table("ops_items")
+                .update({"status": "done", "completed_on": occurred_on,
+                         **({"note": note} if note else {})})
+                .eq("id", existing[0]["id"]).execute().data[0]
+            )
+        self._audit(transaction_id=transaction_id, actor=actor, action="ops.advanced",
+                    entity_type="ops_item", entity_id=row["id"],
+                    details={"lane": lane, "status": status})
+        return row
 
     # -- closing steps (Wave 2) ----------------------------------------------
     def record_closing_step(self, *, transaction_id, step, occurred_on, note, actor):

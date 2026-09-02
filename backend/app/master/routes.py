@@ -410,6 +410,45 @@ def list_notes(
     return {"available": True, "notes": notes}
 
 
+OPS_LANES = {"hoa", "warranty", "nhd", "utilities"}
+
+
+class OpsAdvanceRequest(BaseModel):
+    status: str = Field(pattern="^(ordered|done)$")
+    occurred_on: str | None = None
+    note: str | None = Field(default=None, max_length=300)
+
+
+@router.post("/transactions/{transaction_id}/ops/{lane}", status_code=201)
+def advance_ops_lane(
+    transaction_id: str,
+    lane: str,
+    body: OpsAdvanceRequest,
+    tc: TCUser = Depends(require_tc),
+    repo: MasterRepo = Depends(get_repo),
+) -> dict[str, Any]:
+    """Wave 3A ops lanes (HOA docs / home warranty / NHD / utilities): one
+    ordered->done mini-chain per lane, TC-advanced only."""
+    if lane not in OPS_LANES:
+        raise HTTPException(status_code=422, detail=f"Unknown lane; lanes are {sorted(OPS_LANES)}")
+    if not repo.transaction_exists(transaction_id):
+        raise HTTPException(status_code=404, detail="Transaction not found")
+    try:
+        occurred = date.fromisoformat(body.occurred_on) if body.occurred_on else ca_today()
+    except ValueError:
+        raise HTTPException(status_code=422, detail="occurred_on must be YYYY-MM-DD") from None
+    row = repo.advance_ops_item(
+        transaction_id=transaction_id, lane=lane, status=body.status,
+        occurred_on=occurred.isoformat(), note=(body.note or None), actor=tc.actor,
+    )
+    if row is None:
+        raise HTTPException(
+            status_code=409,
+            detail="Invalid transition — 'ordered' starts a lane once; 'done' needs it ordered first",
+        )
+    return row
+
+
 # Wave 2: the closing chain, in order. Each step is TC-confirmed exactly once;
 # a step may only be recorded when every prior step exists (no stranded states).
 CLOSING_CHAIN = ["docs_ordered", "cd_delivered", "signed", "funded", "recorded", "keys_released"]

@@ -435,6 +435,8 @@ export interface FullState {
   messages: Message[];
   reminders: Reminder[];
   risk_flags: DealRiskFlag[];
+  // Wave 3A ops lanes: hoa | warranty | nhd | utilities, ordered->done.
+  ops_items?: { id: string; lane: string; status: string; ordered_on: string | null; completed_on: string | null; note: string | null }[];
   // Wave 2 closing chain: TC-confirmed steps (docs_ordered ... keys_released).
   closing_events?: { id: string; step: string; occurred_on: string; note: string | null }[];
   // Wave 1 NBP tracker: served-notice records with cure clocks (D2/D3).

@@ -52,6 +52,7 @@ class InMemoryRepo:
         self.repairs: list[dict[str, Any]] = []
         self.notices: list[dict[str, Any]] = []
         self.closing_events: list[dict[str, Any]] = []
+        self.ops_items: list[dict[str, Any]] = []
         self.reminders: list[dict[str, Any]] = []
         self.deal_notes: list[dict[str, Any]] = []
         self.party_invites: list[dict[str, Any]] = []
@@ -1361,6 +1362,29 @@ class InMemoryRepo:
         states = (self.get_full_state(tid) for tid in self.transactions)
         return [s for s in states if s is not None]
 
+    def advance_ops_item(self, *, transaction_id, lane, status, occurred_on, note, actor):
+        existing = [o for o in self.ops_items
+                    if o["transaction_id"] == transaction_id and o["lane"] == lane]
+        if status == "ordered":
+            if existing:
+                return None
+            row = {"id": str(uuid.uuid4()), "transaction_id": transaction_id, "lane": lane,
+                   "status": "ordered", "ordered_on": occurred_on, "completed_on": None,
+                   "note": note, "created_at": _now()}
+            self.ops_items.append(row)
+        else:
+            if not existing or existing[0]["status"] != "ordered":
+                return None
+            row = existing[0]
+            row["status"] = "done"
+            row["completed_on"] = occurred_on
+            if note:
+                row["note"] = note
+        self._audit(transaction_id=transaction_id, actor=actor, action="ops.advanced",
+                    entity_type="ops_item", entity_id=row["id"],
+                    details={"lane": lane, "status": status})
+        return row
+
     def record_closing_step(self, *, transaction_id, step, occurred_on, note, actor):
         row = {"id": str(uuid.uuid4()), "transaction_id": transaction_id, "step": step,
                "occurred_on": occurred_on, "note": note, "created_at": _now()}
@@ -1477,4 +1501,5 @@ class InMemoryRepo:
             "repairs": [r for r in self.repairs if r["transaction_id"] == transaction_id],
             "notices": [n for n in self.notices if n["transaction_id"] == transaction_id],
             "closing_events": [c for c in self.closing_events if c["transaction_id"] == transaction_id],
+            "ops_items": [o for o in self.ops_items if o["transaction_id"] == transaction_id],
         }
