@@ -82,6 +82,11 @@ PURPOSES: dict[str, str] = {
     "where the purchase stands, what was recently completed, what happens next and "
     "when, and whether anything is needed from them (usually nothing). No jargon; "
     "reassuring but factual; reference only the dates provided.",
+    "weekly_status": "Write the weekly status update for this deal, tailored to the "
+    "recipient's role (principal clients get warm plain language; agents and escrow get "
+    "a crisp professional summary). Cover: where the deal stands, what happened this "
+    "week, what happens next and when, and anything needed from them. Use ONLY the "
+    "facts in the note and the dates provided; never promise outcomes.",
     "chase": "Follow up, briefly and courteously, on a previous message that has "
     "received no reply — reference the earlier ask (see the note), restate the one "
     "thing needed, and make it easy to respond. Never scold; assume good faith.",

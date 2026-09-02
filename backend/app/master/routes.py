@@ -16,6 +16,7 @@ import re
 import secrets
 import subprocess
 import sys
+from dataclasses import replace
 from datetime import date, datetime, timedelta, timezone
 
 from app.common.dates import ca_today
@@ -411,6 +412,81 @@ def list_notes(
 
 
 OPS_LANES = {"hoa", "warranty", "nhd", "utilities"}
+
+_STATUS_ROLES = ["buyer", "seller", "buyer_agent", "listing_agent", "escrow"]
+
+
+def _status_digest(state: dict[str, Any]) -> str:
+    """Plain-text weekly-status facts for the drafter's note: ops lanes, closing
+    chain, open repairs/notices, and the next few deadlines. SOR data only."""
+    lines: list[str] = []
+    lane_names = {"hoa": "HOA package", "warranty": "Home warranty",
+                  "nhd": "NHD report", "utilities": "Utilities transfer"}
+    for o in state.get("ops_items", []):
+        nm = lane_names.get(o["lane"], o["lane"])
+        lines.append(
+            f"{nm}: {'complete ' + (o.get('completed_on') or '') if o['status'] == 'done' else 'in progress since ' + (o.get('ordered_on') or '')}".strip()
+        )
+    steps = {e["step"]: e["occurred_on"] for e in state.get("closing_events", [])}
+    if steps:
+        last = [s for s in ["docs_ordered", "cd_delivered", "signed", "funded", "recorded", "keys_released"] if s in steps][-1]
+        lines.append(f"Closing progress: {last.replace('_', ' ')} on {steps[last]}")
+    open_repairs = [r for r in state.get("repairs", []) if r.get("status") == "open"]
+    if open_repairs:
+        lines.append(f"Open repair items: {len(open_repairs)}")
+    open_notices = [n for n in state.get("notices", []) if n.get("status") == "open"]
+    for n in open_notices:
+        lines.append(f"Notice to perform served {n['served_date']}; cure expires {n['cure_expires']}")
+    upcoming = sorted(
+        (d for d in state.get("deadlines", []) if d.get("due_date", "") >= ca_today().isoformat()),
+        key=lambda d: d["due_date"],
+    )[:3]
+    for d in upcoming:
+        lines.append(f"Upcoming: {d['name']} — {d['due_date']}")
+    return "\n".join(lines) or "No open items — deal is on track."
+
+
+@router.post("/transactions/{transaction_id}/status-updates", status_code=201)
+def draft_weekly_status(
+    transaction_id: str,
+    tc: TCUser = Depends(require_tc),
+    repo: MasterRepo = Depends(get_repo),
+    drafter: Drafter = Depends(get_drafter),
+) -> dict[str, Any]:
+    """Wave 3B: the weekly ritual — one status draft per key party (role-aware
+    voice), all landing in the approval queue. Rule 3: drafts only; parties
+    without an email are reported, never guessed at."""
+    state = repo.get_full_state(transaction_id)
+    if state is None:
+        raise HTTPException(status_code=404, detail="Transaction not found")
+    digest = _status_digest(state)
+    drafted: list[dict[str, Any]] = []
+    skipped: list[dict[str, Any]] = []
+    for role in _STATUS_ROLES:
+        party = next((p for p in state["parties"] if p.get("role") == role), None)
+        if party is None:
+            continue  # role not on this deal — nothing to report
+        if not party.get("email"):
+            skipped.append({"name": party.get("name"), "role": role, "reason": "no email"})
+            continue
+        ctx = _message_context(state, party, "weekly_status", tc)
+        ctx = replace(ctx, note=digest)
+        try:
+            draft = drafter.draft_message(ctx)
+        except ZdrNotConfirmed as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from None
+        except DraftFailed:
+            skipped.append({"name": party.get("name"), "role": role, "reason": "draft failed"})
+            continue
+        if _MONEY_FIELD_NAME.search(f"{draft.subject}\n{draft.body}"):
+            skipped.append({"name": party.get("name"), "role": role, "reason": "money-language rejected"})
+            continue
+        message = repo.create_message(
+            transaction_id=transaction_id, subject=draft.subject, body=draft.body,
+            party_id=party["id"], actor=tc.actor, details={"kind": "weekly_status"},
+        )
+        drafted.append({"message_id": message["id"], "name": party.get("name"), "role": role})
+    return {"drafted": drafted, "skipped": skipped}
 
 
 class OpsAdvanceRequest(BaseModel):

@@ -124,9 +124,38 @@ export function OpsLanes({
           </div>
         );
       })}
-      <p className="muted" style={{ marginTop: "0.5rem", fontSize: "0.74rem" }}>
-        Chase drafts a message to the responsible party — nothing sends without your approval.
-      </p>
+      <div style={{ display: "flex", alignItems: "center", gap: "0.7rem", marginTop: "0.7rem" }}>
+        <button
+          className="dl-act pri"
+          disabled={busy === "__weekly"}
+          title="Draft this week's status update to every key party (role-aware voice) — all land in Communication for your approval"
+          onClick={() =>
+            void (async () => {
+              setBusy("__weekly");
+              try {
+                const r = await api.post<{ drafted: unknown[]; skipped: { name: string | null; reason: string }[] }>(
+                  `/transactions/${id}/status-updates`,
+                );
+                toast(
+                  `${r.drafted.length} update${r.drafted.length === 1 ? "" : "s"} drafted` +
+                    (r.skipped.length ? ` — ${r.skipped.length} skipped (${r.skipped.map((s) => s.reason)[0]})` : "") +
+                    " — review in Communication",
+                );
+                onChanged();
+              } catch (err) {
+                toast(err instanceof Error ? err.message : "Failed", { error: true });
+              } finally {
+                setBusy(null);
+              }
+            })()
+          }
+        >
+          {busy === "__weekly" ? "Drafting…" : "Draft weekly updates"}
+        </button>
+        <span className="muted" style={{ fontSize: "0.74rem" }}>
+          Chase and weekly updates only draft — nothing sends without your approval.
+        </span>
+      </div>
     </div>
   );
 }
