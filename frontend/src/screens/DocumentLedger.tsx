@@ -107,35 +107,68 @@ function flagMatchesDoc(caseKey: string, docType: string): boolean {
   return false;
 }
 
-// Expected-for-a-CA-deal ghost rows (mirrors MissingPanel, but lives in-list).
+// Searchable text for content-aware matching: type + label + universal-read kind.
+function docText(d: DealDocument): string {
+  return `${d.doc_type ?? ""} ${d.label ?? ""} ${d.facts?.doc_kind ?? ""} ${d.facts?.summary ?? ""}`;
+}
+
+// Expected-for-a-CA-deal ghost rows. The disclosure packet is tracked FORM BY
+// FORM (a real TC never checks off "disclosures" as one lump): a received doc
+// satisfies a form when its type/label/universal-read kind matches.
 type Ghost = {
   key: string; group: string; name: string; icon: IconName; role: string;
   why: string; askRole: string; purpose: string;
-  has: (types: Set<string>) => boolean;
+  has: (docs: DealDocument[]) => boolean;
 };
+const byType = (...types: string[]) => (docs: DealDocument[]) =>
+  docs.some((d) => types.includes(d.doc_type ?? ""));
+const byMatch = (re: RegExp) => (docs: DealDocument[]) => docs.some((d) => re.test(docText(d)));
+const DISCLOSURE_FORMS: { key: string; name: string; re: RegExp }[] = [
+  { key: "tds", name: "TDS — Transfer Disclosure Statement", re: /transfer disclosure|\bTDS\b/i },
+  { key: "spq", name: "SPQ — Seller Property Questionnaire", re: /property questionnaire|\bSPQ\b/i },
+  { key: "nhd", name: "NHD — Natural Hazard Disclosure report", re: /natural hazard|\bNHD\b/i },
+  { key: "fld", name: "FLD — Lead-Based Paint disclosure", re: /lead[- ]based paint|\bFLD\b/i },
+  { key: "avid", name: "AVID — Agent Visual Inspection Disclosure", re: /\bAVID\b|visual inspection/i },
+  { key: "whsd", name: "WHSD — Water Heater & Smoke Detector", re: /water heater|smoke detector|\bWHSD\b/i },
+];
 const EXPECTED: Ghost[] = [
   { key: "gh-pa", group: "Contract", name: "Purchase agreement", icon: "contract",
     role: "The deal cannot compute without it.", why: "No purchase agreement is on file.",
-    askRole: "buyer_agent", purpose: "general", has: (t) => t.has("purchase_agreement") },
+    askRole: "buyer_agent", purpose: "general", has: byType("purchase_agreement") },
   { key: "gh-fin", group: "Financing", name: "Preapproval or proof of funds", icon: "bank",
     role: "Evidence the buyer's financing is real — adds the loan officer, checks borrower/amount/expiry.",
     why: "The loan contingency needs financing evidence behind it.",
-    askRole: "buyer_agent", purpose: "lender_status",
-    has: (t) => t.has("preapproval") || t.has("proof_of_funds") },
-  { key: "gh-dis", group: "Reports & disclosures", name: "Disclosures (TDS / SPQ / NHD)", icon: "clipboard",
-    role: "Seller's statutory disclosure packet — the buyer's review clock starts on delivery.",
-    why: "Statutory delivery deadline applies.", askRole: "listing_agent", purpose: "disclosure_reminder",
-    has: (t) => t.has("disclosure") },
+    askRole: "buyer_agent", purpose: "lender_status", has: byType("preapproval", "proof_of_funds") },
+  ...DISCLOSURE_FORMS.map((f) => ({
+    key: `gh-${f.key}`, group: "Reports & disclosures", name: f.name,
+    icon: "clipboard" as IconName,
+    role: "Part of the seller's statutory disclosure packet — delivered to the buyer, signed by both sides.",
+    why: "Statutory delivery deadline applies; the buyer's review clock starts on delivery.",
+    askRole: "listing_agent", purpose: "disclosure_reminder", has: byMatch(f.re),
+  })),
   { key: "gh-prelim", group: "Reports & disclosures", name: "Preliminary (title) report", icon: "pin",
     role: "Title search — APN, owner of record and recency cross-checks.",
     why: "Needed before contingencies clear.", askRole: "escrow", purpose: "escrow_checkin",
-    has: (t) => t.has("preliminary_report") },
+    has: byType("preliminary_report") },
   { key: "gh-insp", group: "Reports & disclosures", name: "Property & termite inspections", icon: "search",
     role: "Inspection reports attach here once the inspections happen.",
     why: "The inspection contingency needs reports behind it.",
     askRole: "buyer_agent", purpose: "inspection_schedule",
-    has: (t) => t.has("property_inspection") || t.has("termite_inspection") || t.has("inspection_report") },
+    has: byType("property_inspection", "termite_inspection", "inspection_report") },
 ];
+
+// Statutory buyer-rescission advisory (Civ. Code §1102.3): TDS/NHD delivery
+// opens a 3-day (personal) / 5-day (mail) rescission window that does NOT roll
+// for weekends. Display-only, computed from the RECEIVED date as a proxy — the
+// real clock runs from delivery to the buyer.
+const RESCISSION_RE = /transfer disclosure|\bTDS\b|natural hazard|\bNHD\b/i;
+function rescissionWindow(d: DealDocument): { p3: string; p5: string } | null {
+  if (!d.created_at || !RESCISSION_RE.test(docText(d))) return null;
+  const t = new Date(d.created_at).getTime();
+  const fmt = (days: number) =>
+    fmtDate(new Date(t + days * 86_400_000).toISOString()).replace(/,\s*\d{4}$/, "");
+  return { p3: fmt(3), p5: fmt(5) };
+}
 
 function humanize(s: string): string {
   const t = s.replace(/_/g, " ");
@@ -194,14 +227,13 @@ export function DocumentLedger({
       arr.push(f);
       fieldsByDoc.set(did, arr);
     }
-    const types = new Set(state.documents.map((d) => d.doc_type ?? ""));
     const rows: Row[] = state.documents.map((d) => ({
       kind: "doc" as const,
       doc: d,
       fields: fieldsByDoc.get(d.id) ?? [],
       group: GROUP_OF[d.doc_type ?? ""] ?? "Other",
     }));
-    for (const g of EXPECTED) if (!g.has(types)) rows.push({ kind: "ghost", ghost: g });
+    for (const g of EXPECTED) if (!g.has(state.documents)) rows.push({ kind: "ghost", ghost: g });
     return { rows };
   }, [state]);
 
@@ -422,6 +454,16 @@ export function DocumentLedger({
             </button>
           </div>
           {DOC_ROLE[d.doc_type ?? ""] && <div className="dl-role">{DOC_ROLE[d.doc_type ?? ""]}</div>}
+          {(() => {
+            const w = rescissionWindow(d);
+            return w ? (
+              <div className="dl-rescission">
+                Statutory buyer rescission window: through <b>{w.p3}</b> (personal delivery) /{" "}
+                <b>{w.p5}</b> (by mail) — fixed by statute, never rolls for weekends. Computed
+                from the received date; the real clock runs from delivery to the buyer.
+              </div>
+            ) : null;
+          })()}
           {d.doc_type === "purchase_agreement" && (
             <div className="dl-keyfacts">
               {price && <div className="dl-kf"><span>Price</span><b>{price}</b></div>}

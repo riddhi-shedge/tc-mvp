@@ -2428,3 +2428,5 @@ button.secondary.sm { padding: 0.28rem 0.55rem; font-size: var(--t-s); }
 .dl-story { padding: 14px 18px; border-bottom: 1px solid var(--line); background: var(--surface-2); }
 .dl-story-narrative { font-size: var(--t-b); color: var(--ink); max-width: 90ch; margin: 0 0 10px; line-height: 1.6; }
 .dl-story-src { color: var(--muted); font-size: 0.7rem; }
+.dl-rescission { font-size: var(--t-xs); color: var(--amber-700); background: var(--amber-100);
+  border-radius: var(--r-sm); padding: 7px 11px; margin-top: 8px; max-width: 76ch; }
