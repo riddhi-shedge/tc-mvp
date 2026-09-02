@@ -2467,3 +2467,27 @@ button.secondary.sm { padding: 0.28rem 0.55rem; font-size: var(--t-s); }
 .ops-mid { flex: 1; min-width: 0; display: block; }
 .ops-name { display: block; font-size: var(--t-s); font-weight: 650; }
 .ops-hint { display: block; font-size: 0.7rem; color: var(--muted); }
+
+/* Broker file + close-out packet (Wave 4A) */
+.bf-bar { height: 6px; border-radius: 3px; background: var(--line-2); margin-top: 8px; overflow: hidden; }
+.bf-bar i { display: block; height: 100%; background: var(--green-600); border-radius: 3px; }
+.bf-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 2px 18px; margin-top: 10px; }
+.bf-item { display: flex; align-items: baseline; gap: 8px; font-size: var(--t-s); padding: 3px 0; }
+.bf-dot { width: 16px; height: 16px; border-radius: 50%; display: grid; place-items: center;
+  font-size: 0.62rem; font-weight: 700; background: var(--surface-2); color: var(--muted); flex: 0 0 auto; }
+.bf-dot.ok { background: var(--green-100); color: var(--green-700); }
+.bf-when { margin-left: auto; font-family: ui-monospace, Menlo, monospace; font-size: 0.62rem; color: var(--muted); }
+.packet { display: none; }
+@media print {
+  body.printing-packet * { visibility: hidden; }
+  body.printing-packet .packet, body.printing-packet .packet * { visibility: visible; }
+  body.printing-packet .packet { display: block; position: absolute; left: 0; top: 0; width: 100%;
+    color: #000; background: #fff; font: 11pt/1.5 Georgia, serif; padding: 0.5in; }
+  .packet h1 { font-size: 16pt; margin: 0 0 2pt; }
+  .packet .pk-sub { color: #555; margin: 0 0 14pt; font-size: 9pt; }
+  .packet h2 { font-size: 11pt; margin: 12pt 0 4pt; border-bottom: 1pt solid #999; }
+  .packet table { width: 100%; border-collapse: collapse; font-size: 9.5pt; }
+  .packet td { padding: 2pt 6pt 2pt 0; vertical-align: top; border-bottom: 0.5pt solid #ddd; }
+  .packet td:first-child { width: 38%; color: #333; text-transform: capitalize; }
+  .packet .pk-foot { margin-top: 14pt; font-size: 8.5pt; color: #555; font-style: italic; }
+}

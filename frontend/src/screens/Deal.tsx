@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, AuditRow, FullState, Message } from "../lib/api";
 import { fmtDate, fmtDateTime } from "../lib/format";
+import { BrokerFile } from "./BrokerFile";
 import { ClosingStepper } from "./ClosingStepper";
 import { OpsLanes } from "./OpsLanes";
 import { DocumentLedger } from "./DocumentLedger";
@@ -550,6 +551,7 @@ export function Deal({ id, onBack }: { id: string; onBack: () => void }) {
               <>
                 <ClosingStepper id={id} state={state} onChanged={refresh} />
                 <OpsLanes id={id} state={state} onChanged={refresh} />
+                <BrokerFile state={state} />
                 <DealDashboard id={id} state={state} onChanged={refresh} />
                 <DealNotes id={id} onChanged={refresh} />
               </>
