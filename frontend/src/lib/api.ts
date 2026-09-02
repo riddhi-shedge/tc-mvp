@@ -435,6 +435,8 @@ export interface FullState {
   messages: Message[];
   reminders: Reminder[];
   risk_flags: DealRiskFlag[];
+  // Wave 1 repair loop: TC-created items, human-resolved only.
+  repairs?: { id: string; description: string; status: string; source_document_id: string | null; created_at?: string }[];
   approvals: { id: string; message_id: string; approved_by: string }[];
   audit_log: AuditRow[];
 }

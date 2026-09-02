@@ -18,6 +18,14 @@ __all__ = ["UNKNOWN_DOC_TYPE", "check_readability", "detect_doc_type"]
 # signed PA is the deal-creating document (§11 step 1).
 _DOC_TYPE_PATTERNS: list[tuple[DocType, re.Pattern[str]]] = [
     (
+        "request_for_repairs",
+        re.compile(r"request\s+for\s+repairs?|\brr\b[-_ ]|repair\s+request", re.IGNORECASE),
+    ),
+    (
+        "repair_response",
+        re.compile(r"repair\s+(response|reply)|response\s+to\s+repair", re.IGNORECASE),
+    ),
+    (
         "purchase_agreement",
         re.compile(r"purchase\s+agreement|residential\s+purchase|\brpa\b", re.IGNORECASE),
     ),

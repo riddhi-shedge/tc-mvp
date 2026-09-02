@@ -11,6 +11,8 @@ from typing import Literal
 DocType = Literal[
     "purchase_agreement",
     "counter_offer",
+    "request_for_repairs",
+    "repair_response",
     "seller_counter_offer",
     "buyer_counter_offer",
     "contingency_removal",

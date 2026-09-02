@@ -408,6 +408,44 @@ def list_notes(
     return {"available": True, "notes": notes}
 
 
+class CreateRepairRequest(BaseModel):
+    description: str = Field(min_length=1, max_length=300)
+    source_document_id: str | None = None
+
+
+@router.post("/transactions/{transaction_id}/repairs", status_code=201)
+def create_repair(
+    transaction_id: str,
+    body: CreateRepairRequest,
+    tc: TCUser = Depends(require_tc),
+    repo: MasterRepo = Depends(get_repo),
+) -> dict[str, Any]:
+    """Track a repair item (Wave 1 repair loop). Created only by the TC — the
+    click IS the HITL that promotes an advisory read fact into a record."""
+    if not repo.transaction_exists(transaction_id):
+        raise HTTPException(status_code=404, detail="Transaction not found")
+    return repo.create_repair(
+        transaction_id=transaction_id,
+        description=body.description.strip(),
+        source_document_id=body.source_document_id,
+        actor=tc.actor,
+    )
+
+
+@router.post("/transactions/{transaction_id}/repairs/{repair_id}/resolve")
+def resolve_repair(
+    transaction_id: str,
+    repair_id: str,
+    tc: TCUser = Depends(require_tc),
+    repo: MasterRepo = Depends(get_repo),
+) -> dict[str, Any]:
+    """Human-only by design: repair.resolve is NEVER_BY_MACHINE (§5 authority)."""
+    row = repo.resolve_repair(transaction_id=transaction_id, repair_id=repair_id, actor=tc.actor)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Open repair not found on this transaction")
+    return row
+
+
 @router.post("/transactions/{transaction_id}/notes", status_code=201)
 def add_note(
     transaction_id: str,

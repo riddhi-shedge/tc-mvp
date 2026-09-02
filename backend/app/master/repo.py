@@ -556,6 +556,18 @@ class MasterRepo(Protocol):
         card; None when unavailable. Populated in the enrichment phase."""
         ...
 
+    def create_repair(
+        self, *, transaction_id: str, description: str, source_document_id: str | None, actor: str
+    ) -> dict[str, Any]:
+        """Track a repair item (TC-created only — the click is the HITL)."""
+        ...
+
+    def resolve_repair(
+        self, *, transaction_id: str, repair_id: str, actor: str
+    ) -> dict[str, Any] | None:
+        """Resolve an open repair (human-only: repair.resolve is NEVER_BY_MACHINE)."""
+        ...
+
     def list_deal_notes(self, transaction_id: str) -> list[dict[str, Any]] | None:
         """The TC's notes on a deal (P3 — SOR-backed, never shown to parties).
         None means the deal_notes table isn't provisioned yet (pre-migration);
@@ -768,6 +780,7 @@ _CHILD_TABLES = (
     "risk_flags",
     "approvals",
     "audit_log",
+    "repairs",
 )
 
 
@@ -2760,13 +2773,16 @@ class SupabaseRepo:
         # of serially (each is a ~250ms REST round-trip to hosted Supabase, so the
         # serial version cost ~4s per deal; measured 2026-08-30).
         def _fetch(table: str) -> tuple[str, list[dict[str, Any]]]:
-            rows = (
-                self._db.table(table)
-                .select("*")
-                .eq("transaction_id", transaction_id)
-                .execute()
-                .data
-            )
+            try:
+                rows = (
+                    self._db.table(table)
+                    .select("*")
+                    .eq("transaction_id", transaction_id)
+                    .execute()
+                    .data
+                )
+            except Exception:
+                return table, []  # graceful pre-migration (e.g. repairs)
             return table, rows
 
         state: dict[str, Any] = {"transaction": txns[0]}
@@ -2795,13 +2811,16 @@ class SupabaseRepo:
         # concurrent wave) instead of 13 per deal — the per-deal loop cost ~4s x
         # N deals (~29s for 7 deals; measured 2026-08-30).
         def _fetch(table: str) -> tuple[str, list[dict[str, Any]]]:
-            rows = (
-                self._db.table(table)
-                .select("*")
-                .in_("transaction_id", ids)
-                .execute()
-                .data
-            )
+            try:
+                rows = (
+                    self._db.table(table)
+                    .select("*")
+                    .in_("transaction_id", ids)
+                    .execute()
+                    .data
+                )
+            except Exception:
+                return table, []  # graceful pre-migration (e.g. repairs)
             return table, rows
 
         by_table: dict[str, dict[str, list[dict[str, Any]]]] = {}
@@ -2825,6 +2844,49 @@ class SupabaseRepo:
             )
             states.append(state)
         return states
+
+    # -- repairs (Wave 1): TC-created from RR facts, human-resolved only ------
+    def create_repair(
+        self, *, transaction_id: str, description: str, source_document_id: str | None, actor: str
+    ) -> dict[str, Any]:
+        row = (
+            self._db.table("repairs")
+            .insert(
+                {
+                    "transaction_id": transaction_id,
+                    "description": description,
+                    "status": "open",
+                    "source_document_id": source_document_id,
+                }
+            )
+            .execute()
+            .data[0]
+        )
+        self._audit(
+            transaction_id=transaction_id, actor=actor, action="repair.added",
+            entity_type="repair", entity_id=row["id"], details={"description": description[:200]},
+        )
+        return row
+
+    def resolve_repair(
+        self, *, transaction_id: str, repair_id: str, actor: str
+    ) -> dict[str, Any] | None:
+        rows = (
+            self._db.table("repairs")
+            .update({"status": "resolved", "resolved_at": datetime.now(timezone.utc).isoformat()})
+            .eq("id", repair_id)
+            .eq("transaction_id", transaction_id)
+            .eq("status", "open")
+            .execute()
+            .data
+        )
+        if not rows:
+            return None
+        self._audit(
+            transaction_id=transaction_id, actor=actor, action="repair.resolved",
+            entity_type="repair", entity_id=repair_id, details={},
+        )
+        return rows[0]
 
     # -- deal notes (P3): TC-only, SOR-backed --------------------------------
     def list_deal_notes(self, transaction_id: str) -> list[dict[str, Any]] | None:

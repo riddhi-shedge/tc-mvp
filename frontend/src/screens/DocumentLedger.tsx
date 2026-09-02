@@ -18,6 +18,8 @@ const DOC_LABEL: Record<string, string> = {
   buyer_counter_offer: "Buyer counter offer",
   counter_offer: "Counter offer",
   contingency_removal: "Contingency removal",
+  request_for_repairs: "Request for repairs (RR)",
+  repair_response: "Repair response",
   preapproval: "Preapproval / underwriter",
   preliminary_report: "Preliminary (title) report",
   property_inspection: "Property inspection",
@@ -34,6 +36,8 @@ const DOC_ROLE: Record<string, string> = {
   buyer_counter_offer: "Supersedes the agreement's price and terms — these are the agreed final terms.",
   counter_offer: "Supersedes the agreement's price and terms.",
   contingency_removal: "Removes contingencies from the timeline — the buyer can no longer back out on that basis.",
+  request_for_repairs: "The buyer's repair asks after inspections — track each item below and resolve as work completes.",
+  repair_response: "The seller's answer to the repair request — agreed items become tracked repairs.",
   preapproval: "Adds the loan officer; Terra checks borrower, amount and expiry against the contract.",
   preliminary_report: "Title search — checks APN, owner of record and recency against the contract.",
   property_inspection: "Adds the inspector; checks address and recency.",
@@ -47,6 +51,8 @@ const DOC_ICON: Record<string, IconName> = {
   buyer_counter_offer: "contract",
   counter_offer: "contract",
   contingency_removal: "check",
+  request_for_repairs: "clipboard",
+  repair_response: "clipboard",
   preapproval: "bank",
   proof_of_funds: "money",
   preliminary_report: "pin",
@@ -63,6 +69,8 @@ const GROUP_OF: Record<string, string> = {
   buyer_counter_offer: "Contract",
   counter_offer: "Contract",
   contingency_removal: "Contract",
+  request_for_repairs: "Contract",
+  repair_response: "Contract",
   preapproval: "Financing",
   proof_of_funds: "Financing",
   preliminary_report: "Reports & disclosures",
@@ -516,6 +524,25 @@ export function DocumentLedger({
                   <span className={`dl-conf ${f.confidence < 0.7 ? "low" : ""}`}>
                     {f.confidence.toFixed(2)}
                   </span>
+                  {(d.doc_type === "request_for_repairs" || d.doc_type === "repair_response") && (
+                    <button
+                      className="dl-mini"
+                      disabled={busy}
+                      title="Promote this read item into a tracked repair (your click is the confirmation)"
+                      onClick={() =>
+                        void run(
+                          () =>
+                            api.post(`/transactions/${id}/repairs`, {
+                              description: `${f.label}: ${f.value}`.slice(0, 300),
+                              source_document_id: d.id,
+                            }),
+                          "Repair tracked",
+                        )
+                      }
+                    >
+                      Track
+                    </button>
+                  )}
                 </div>
               ))}
               <p className="dl-note">
@@ -548,6 +575,41 @@ export function DocumentLedger({
               Confirm all {open.length} readable fields
             </button>
           )}
+          {(d.doc_type === "request_for_repairs" || d.doc_type === "repair_response") &&
+            (state.repairs ?? []).length > 0 && (
+              <div className="dl-facet">
+                <div className="dl-faceth">
+                  <h4>Tracked repairs</h4>
+                  <span className="dl-fhn">
+                    {(state.repairs ?? []).filter((r) => r.status === "open").length} open
+                  </span>
+                </div>
+                {(state.repairs ?? []).map((r) => (
+                  <div className="dl-fr" key={r.id}>
+                    <span className="dl-fv" style={r.status === "resolved" ? { textDecoration: "line-through", color: "var(--muted)" } : undefined}>
+                      {r.description}
+                    </span>
+                    {r.status === "open" ? (
+                      <button
+                        className="dl-mini pri"
+                        disabled={busy}
+                        onClick={() =>
+                          void run(
+                            () => api.post(`/transactions/${id}/repairs/${r.id}/resolve`),
+                            "Repair resolved",
+                          )
+                        }
+                      >
+                        Resolve
+                      </button>
+                    ) : (
+                      <span className="dl-okmark"><Icon name="check" size={13} /></span>
+                    )}
+                  </div>
+                ))}
+                <p className="dl-note">Resolving is human-only by design (repair.resolve is never machine-actionable).</p>
+              </div>
+            )}
           {(flags.length > 0 || DOC_ROLE[d.doc_type ?? ""]) && (
             <div className="dl-facet">
               <div className="dl-faceth"><h4>Checks</h4></div>
