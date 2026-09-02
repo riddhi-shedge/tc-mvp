@@ -2891,6 +2891,23 @@ class SupabaseRepo:
         )
         return rows[0]
 
+    # -- cancellation unwind (Wave 4B) -----------------------------------------
+    def record_cancellation(self, *, transaction_id, canceled_on, deposit_disposition, actor):
+        """Record the CC form's facts on an already-canceled deal. Disposition is
+        a status word only — amounts/movement are never stored (Rule 2)."""
+        rows = (
+            self._db.table("transactions")
+            .update({"canceled_on": canceled_on, "deposit_disposition": deposit_disposition})
+            .eq("id", transaction_id).eq("status", "canceled")
+            .execute().data
+        )
+        if not rows:
+            return None
+        self._audit(transaction_id=transaction_id, actor=actor, action="cancellation.recorded",
+                    entity_type="transaction", entity_id=transaction_id,
+                    details={"canceled_on": canceled_on, "deposit_disposition": deposit_disposition})
+        return rows[0]
+
     # -- ops lanes (Wave 3A) ---------------------------------------------------
     def advance_ops_item(self, *, transaction_id, lane, status, occurred_on, note, actor):
         """ordered: creates the lane row; done: completes an ordered row.

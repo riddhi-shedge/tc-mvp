@@ -10,6 +10,7 @@ from typing import Literal
 
 DocType = Literal[
     "purchase_agreement",
+    "cancellation",
     "counter_offer",
     "request_for_repairs",
     "repair_response",

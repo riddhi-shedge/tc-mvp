@@ -38,3 +38,34 @@ def test_lanes_are_independent_and_validated(client, tc_headers, repo):
     for lane in ("warranty", "nhd", "utilities"):
         assert _adv(client, tc_headers, txn_id, lane, "ordered").status_code == 201
     assert len(repo.get_full_state(txn_id)["ops_items"]) == 3
+
+
+def test_cancellation_unwind(client, tc_headers, repo):
+    """Wave 4B: unwind only on a canceled deal; disposition is a status word."""
+    txn_id = _txn(client, tc_headers)
+    r = client.post(
+        f"/transactions/{txn_id}/cancellation",
+        json={"deposit_disposition": "released_to_buyer"},
+        headers=tc_headers,
+    )
+    assert r.status_code == 409  # not canceled yet
+    client.post(
+        f"/transactions/{txn_id}/cancel", json={"reason": "buyer withdrew"}, headers=tc_headers
+    )
+    r = client.post(
+        f"/transactions/{txn_id}/cancellation",
+        json={"deposit_disposition": "released_to_buyer", "canceled_on": "2026-09-01"},
+        headers=tc_headers,
+    )
+    assert r.status_code == 200
+    assert r.json()["deposit_disposition"] == "released_to_buyer"
+    assert r.json()["canceled_on"] == "2026-09-01"
+    actions = [a["action"] for a in repo.get_full_state(txn_id)["audit_log"]]
+    assert "cancellation.recorded" in actions
+    # Amounts can never sneak in through the enum.
+    bad = client.post(
+        f"/transactions/{txn_id}/cancellation",
+        json={"deposit_disposition": "$15,000 to buyer"},
+        headers=tc_headers,
+    )
+    assert bad.status_code == 422

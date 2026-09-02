@@ -411,6 +411,37 @@ def list_notes(
     return {"available": True, "notes": notes}
 
 
+class CancellationRequest(BaseModel):
+    # Status words only — never amounts, never movement (Rule 2).
+    deposit_disposition: str = Field(pattern="^(released_to_buyer|released_to_seller|disputed|n_a)$")
+    canceled_on: str | None = None
+
+
+@router.post("/transactions/{transaction_id}/cancellation")
+def record_cancellation(
+    transaction_id: str,
+    body: CancellationRequest,
+    tc: TCUser = Depends(require_tc),
+    repo: MasterRepo = Depends(get_repo),
+) -> dict[str, Any]:
+    """Wave 4B: record what the signed CC form says — effective date + deposit
+    DISPOSITION (a status word; amounts and movement are never stored). Only
+    valid on an already-canceled deal (cancel first, then unwind)."""
+    try:
+        eff = date.fromisoformat(body.canceled_on) if body.canceled_on else ca_today()
+    except ValueError:
+        raise HTTPException(status_code=422, detail="canceled_on must be YYYY-MM-DD") from None
+    row = repo.record_cancellation(
+        transaction_id=transaction_id, canceled_on=eff.isoformat(),
+        deposit_disposition=body.deposit_disposition, actor=tc.actor,
+    )
+    if row is None:
+        raise HTTPException(
+            status_code=409, detail="Deal is not canceled — cancel it first, then record the unwind"
+        )
+    return row
+
+
 OPS_LANES = {"hoa", "warranty", "nhd", "utilities"}
 
 _STATUS_ROLES = ["buyer", "seller", "buyer_agent", "listing_agent", "escrow"]

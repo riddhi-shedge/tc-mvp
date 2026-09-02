@@ -1362,6 +1362,17 @@ class InMemoryRepo:
         states = (self.get_full_state(tid) for tid in self.transactions)
         return [s for s in states if s is not None]
 
+    def record_cancellation(self, *, transaction_id, canceled_on, deposit_disposition, actor):
+        txn = self.transactions.get(transaction_id)
+        if txn is None or txn.get("status") != "canceled":
+            return None
+        txn["canceled_on"] = canceled_on
+        txn["deposit_disposition"] = deposit_disposition
+        self._audit(transaction_id=transaction_id, actor=actor, action="cancellation.recorded",
+                    entity_type="transaction", entity_id=transaction_id,
+                    details={"canceled_on": canceled_on, "deposit_disposition": deposit_disposition})
+        return txn
+
     def advance_ops_item(self, *, transaction_id, lane, status, occurred_on, note, actor):
         existing = [o for o in self.ops_items
                     if o["transaction_id"] == transaction_id and o["lane"] == lane]

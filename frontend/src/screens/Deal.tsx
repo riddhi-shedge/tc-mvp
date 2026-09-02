@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api, AuditRow, FullState, Message } from "../lib/api";
 import { fmtDate, fmtDateTime } from "../lib/format";
 import { BrokerFile } from "./BrokerFile";
+import { CancellationCard } from "./CancellationCard";
 import { ClosingStepper } from "./ClosingStepper";
 import { OpsLanes } from "./OpsLanes";
 import { DocumentLedger } from "./DocumentLedger";
@@ -549,6 +550,7 @@ export function Deal({ id, onBack }: { id: string; onBack: () => void }) {
             icon: <Icon name="board" size={14} />,
             content: (
               <>
+                <CancellationCard id={id} state={state} onChanged={refresh} />
                 <ClosingStepper id={id} state={state} onChanged={refresh} />
                 <OpsLanes id={id} state={state} onChanged={refresh} />
                 <BrokerFile state={state} />
