@@ -2229,3 +2229,76 @@ button.secondary.sm { padding: 0.28rem 0.55rem; font-size: var(--t-s); }
 .batchguess { font-size: var(--t-xs); max-width: 340px; overflow: hidden;
   text-overflow: ellipsis; white-space: nowrap; border-color: var(--gold-300); }
 .missing-row { display: flex; align-items: baseline; gap: 0.45rem; padding: 0.22rem 0; font-size: var(--t-s); }
+
+/* Phase chapter zoom timeline (tz-): lane-packed chips, clickable phase strip,
+   +N clusters that zoom, today line. Replaces the alternating tlr markers. */
+.tz-btns { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; }
+.tz-zb { font: inherit; font-size: var(--t-xs); font-weight: 600; color: var(--ink);
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-pill);
+  padding: 4px 13px; cursor: pointer; }
+.tz-zb:hover { border-color: var(--accent); color: var(--accent); }
+.tz-zb.on { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.tz-esc { font-size: var(--t-2xs); color: var(--muted); margin-left: auto; }
+.tz-stage { position: relative; height: 216px; border: 1px solid var(--line);
+  border-radius: var(--r); background: var(--cream); overflow: hidden; user-select: none; }
+.tz-axis { position: absolute; left: 0; right: 0; top: 142px; height: 2px; background: var(--line); }
+.tz-strip { position: absolute; left: 0; right: 0; top: 172px; height: 28px; }
+.tz-band { position: absolute; top: 0; height: 28px; border-radius: var(--r-sm); cursor: pointer;
+  display: flex; align-items: center; justify-content: center; overflow: hidden;
+  border: 1px solid transparent; transition: border-color 130ms; }
+.tz-band:hover, .tz-band.active { border-color: var(--accent); }
+.tz-band span { font-size: var(--t-2xs); font-weight: 700; letter-spacing: 0.06em;
+  text-transform: uppercase; color: var(--ink-2); white-space: nowrap; }
+.tz-band.b-cont { background: var(--gold-100); }
+.tz-band.b-close { background: var(--green-100); }
+.tz-pip { position: absolute; top: 139px; width: 8px; height: 8px; margin-left: -4px;
+  border-radius: 50%; background: var(--muted); }
+.tz-pip.s-next { background: var(--accent); }
+.tz-pip.s-done { background: var(--green-600); }
+.tz-pip.s-overdue { background: var(--red-600); }
+.tz-pip.s-goal { background: var(--navy-700); }
+.tz-stem { position: absolute; width: 1px; background: var(--line); }
+.tz-mk { position: absolute; transform: translateX(-50%) translateY(4px); z-index: 3; opacity: 0;
+  transition: opacity 300ms ease, transform 300ms ease; }
+.tz-stage.play .tz-mk { opacity: 1; transform: translateX(-50%) translateY(0); }
+@media (prefers-reduced-motion: reduce) { .tz-mk { transition: none; opacity: 1; transform: translateX(-50%); } }
+.tz-chip { display: inline-flex; align-items: baseline; gap: 6px; padding: 3.5px 11px;
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-pill);
+  box-shadow: var(--shadow-sm); font-size: var(--t-xs); font-weight: 600; white-space: nowrap;
+  line-height: 1.35; color: var(--ink); }
+.tz-chip i { align-self: center; width: 7px; height: 7px; border-radius: 50%;
+  background: var(--muted); flex: 0 0 auto; }
+.tz-mk.s-next .tz-chip { border-color: var(--accent); }
+.tz-mk.s-next .tz-chip i { background: var(--accent); }
+.tz-mk.s-done .tz-chip { color: var(--ink-2); }
+.tz-mk.s-done .tz-chip i { background: var(--green-600); }
+.tz-mk.s-overdue .tz-chip i { background: var(--red-600); }
+.tz-mk.s-goal .tz-chip { border-color: var(--navy-700); }
+.tz-mk.s-goal .tz-chip i { background: var(--navy-700); }
+.tz-chip .d { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 0.62rem;
+  font-weight: 500; color: var(--muted); }
+.tz-nexttag { position: absolute; top: -14px; left: 50%; transform: translateX(-50%);
+  font-size: 0.58rem; font-weight: 800; letter-spacing: 0.08em; color: var(--accent); }
+.tz-more { position: absolute; transform: translateX(-50%); padding: 3.5px 12px; z-index: 3;
+  background: var(--accent-soft, var(--gold-100)); color: var(--accent); border: 1px solid transparent;
+  border-radius: var(--r-pill); font: inherit; font-size: var(--t-xs); font-weight: 700;
+  cursor: pointer; white-space: nowrap; box-shadow: var(--shadow-sm); }
+.tz-more:hover { border-color: var(--accent); }
+.tz-tick { position: absolute; top: 136px; height: 8px; width: 1px; background: var(--line); }
+.tz-tick-lab { position: absolute; top: 150px; transform: translateX(-50%);
+  font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 0.6rem; color: var(--muted);
+  white-space: nowrap; }
+.tz-today { position: absolute; top: 14px; height: 122px; width: 2px; margin-left: -1px;
+  background: var(--red-600); opacity: 0.5; border-radius: 2px; z-index: 1; }
+.tz-today-lab { position: absolute; top: 1px; transform: translateX(-50%); font-size: 0.6rem;
+  font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--red-600); }
+.tz-pop { position: absolute; left: 50%; top: 28px; transform: translateX(-50%); width: 200px;
+  z-index: 9; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-sm);
+  box-shadow: var(--shadow-lg); padding: 0.55rem 0.65rem; opacity: 0; visibility: hidden;
+  transition: opacity 120ms; text-align: left; }
+.tz-mk:hover .tz-pop { opacity: 1; visibility: visible; }
+.tz-pt { font-size: var(--t-2xs); font-weight: 700; color: var(--ink-2); display: flex;
+  align-items: center; gap: 5px; margin-bottom: 3px; }
+.tz-pn { font-size: var(--t-xs); color: var(--ink); margin-bottom: 6px; }
+.tz-acts button { font-size: var(--t-2xs); padding: 0.2rem 0.6rem; }
+@media (prefers-reduced-motion: reduce) { .tz-band { transition: none; } .tz-pop { transition: none; } }
