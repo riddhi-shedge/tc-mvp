@@ -435,6 +435,8 @@ export interface FullState {
   messages: Message[];
   reminders: Reminder[];
   risk_flags: DealRiskFlag[];
+  // Wave 2 closing chain: TC-confirmed steps (docs_ordered ... keys_released).
+  closing_events?: { id: string; step: string; occurred_on: string; note: string | null }[];
   // Wave 1 NBP tracker: served-notice records with cure clocks (D2/D3).
   notices?: { id: string; deadline_id: string | null; kind: string; served_date: string; cure_expires: string; status: string }[];
   // Wave 1 repair loop: TC-created items, human-resolved only.

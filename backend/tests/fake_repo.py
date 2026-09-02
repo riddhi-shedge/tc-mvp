@@ -51,6 +51,7 @@ class InMemoryRepo:
         self.risk_flags: list[dict[str, Any]] = []
         self.repairs: list[dict[str, Any]] = []
         self.notices: list[dict[str, Any]] = []
+        self.closing_events: list[dict[str, Any]] = []
         self.reminders: list[dict[str, Any]] = []
         self.deal_notes: list[dict[str, Any]] = []
         self.party_invites: list[dict[str, Any]] = []
@@ -1360,6 +1361,15 @@ class InMemoryRepo:
         states = (self.get_full_state(tid) for tid in self.transactions)
         return [s for s in states if s is not None]
 
+    def record_closing_step(self, *, transaction_id, step, occurred_on, note, actor):
+        row = {"id": str(uuid.uuid4()), "transaction_id": transaction_id, "step": step,
+               "occurred_on": occurred_on, "note": note, "created_at": _now()}
+        self.closing_events.append(row)
+        self._audit(transaction_id=transaction_id, actor=actor, action="closing.step",
+                    entity_type="closing_event", entity_id=row["id"],
+                    details={"step": step, "occurred_on": occurred_on})
+        return row
+
     def create_notice(self, *, transaction_id, deadline_id, kind, served_date, cure_expires, actor):
         row = {"id": str(uuid.uuid4()), "transaction_id": transaction_id,
                "deadline_id": deadline_id, "kind": kind, "served_date": served_date,
@@ -1466,4 +1476,5 @@ class InMemoryRepo:
             "audit_log": [a for a in self.audit_log if a["transaction_id"] == transaction_id],
             "repairs": [r for r in self.repairs if r["transaction_id"] == transaction_id],
             "notices": [n for n in self.notices if n["transaction_id"] == transaction_id],
+            "closing_events": [c for c in self.closing_events if c["transaction_id"] == transaction_id],
         }

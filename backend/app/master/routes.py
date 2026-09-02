@@ -410,6 +410,81 @@ def list_notes(
     return {"available": True, "notes": notes}
 
 
+# Wave 2: the closing chain, in order. Each step is TC-confirmed exactly once;
+# a step may only be recorded when every prior step exists (no stranded states).
+CLOSING_CHAIN = ["docs_ordered", "cd_delivered", "signed", "funded", "recorded", "keys_released"]
+
+# Federal holidays for the TRID 3-business-day CD review clock (business day =
+# every day EXCEPT Sundays and federal legal public holidays — Saturdays COUNT).
+# Deliberately separate from ca_legal_holidays. 2026–2027 fixed/observed dates.
+_FEDERAL_HOLIDAYS = {
+    "2026-01-01", "2026-01-19", "2026-02-16", "2026-05-25", "2026-06-19",
+    "2026-07-03", "2026-09-07", "2026-10-12", "2026-11-11", "2026-11-26",
+    "2026-12-25", "2027-01-01", "2027-01-18", "2027-02-15", "2027-05-31",
+    "2027-06-18", "2027-07-05", "2027-09-06", "2027-10-11", "2027-11-11",
+    "2027-11-25", "2027-12-24",
+}
+
+
+def trid_earliest_signing(cd_delivered: date) -> date:
+    """Earliest signing day: 3 TRID business days AFTER CD delivery."""
+    d, counted = cd_delivered, 0
+    while counted < 3:
+        d += timedelta(days=1)
+        if d.weekday() != 6 and d.isoformat() not in _FEDERAL_HOLIDAYS:
+            counted += 1
+    return d
+
+
+class ClosingStepRequest(BaseModel):
+    occurred_on: str | None = None  # ISO date; defaults to today (CA time)
+    note: str | None = Field(default=None, max_length=300)
+
+
+@router.post("/transactions/{transaction_id}/closing/{step}", status_code=201)
+def record_closing_step(
+    transaction_id: str,
+    step: str,
+    body: ClosingStepRequest,
+    tc: TCUser = Depends(require_tc),
+    repo: MasterRepo = Depends(get_repo),
+) -> dict[str, Any]:
+    """Advance the closing chain — TC-confirmed only (escrow emails may suggest,
+    the human records). Enforces order, once-per-step, and the federal TRID
+    3-business-day CD review before 'signed'."""
+    if step not in CLOSING_CHAIN:
+        raise HTTPException(status_code=422, detail=f"Unknown step; chain is {CLOSING_CHAIN}")
+    state = repo.get_full_state(transaction_id)
+    if state is None:
+        raise HTTPException(status_code=404, detail="Transaction not found")
+    done = {e["step"]: e for e in state.get("closing_events", [])}
+    if step in done:
+        raise HTTPException(status_code=409, detail=f"'{step}' is already recorded")
+    idx = CLOSING_CHAIN.index(step)
+    missing = [s for s in CLOSING_CHAIN[:idx] if s not in done]
+    if missing:
+        raise HTTPException(
+            status_code=422, detail=f"Record {missing[0]} first — the chain is strictly ordered"
+        )
+    try:
+        occurred = date.fromisoformat(body.occurred_on) if body.occurred_on else ca_today()
+    except ValueError:
+        raise HTTPException(status_code=422, detail="occurred_on must be YYYY-MM-DD") from None
+    if step == "signed" and "cd_delivered" in done:
+        earliest = trid_earliest_signing(date.fromisoformat(done["cd_delivered"]["occurred_on"]))
+        if occurred < earliest:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Too early: TRID requires 3 business days of CD review — "
+                f"earliest signing is {earliest.isoformat()} (Saturdays count; "
+                "Sundays and federal holidays don't).",
+            )
+    return repo.record_closing_step(
+        transaction_id=transaction_id, step=step, occurred_on=occurred.isoformat(),
+        note=(body.note or None), actor=tc.actor,
+    )
+
+
 class ServeNoticeRequest(BaseModel):
     deadline_id: str = Field(min_length=1)
     kind: str = Field(default="nbp", pattern="^(nbp|nsp)$")

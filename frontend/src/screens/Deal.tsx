@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, AuditRow, FullState, Message } from "../lib/api";
 import { fmtDate, fmtDateTime } from "../lib/format";
+import { ClosingStepper } from "./ClosingStepper";
 import { DocumentLedger } from "./DocumentLedger";
 import { DealDashboard } from "./DealDashboard";
 import { DealNotes } from "./DealNotes";
@@ -546,6 +547,7 @@ export function Deal({ id, onBack }: { id: string; onBack: () => void }) {
             icon: <Icon name="board" size={14} />,
             content: (
               <>
+                <ClosingStepper id={id} state={state} onChanged={refresh} />
                 <DealDashboard id={id} state={state} onChanged={refresh} />
                 <DealNotes id={id} onChanged={refresh} />
               </>

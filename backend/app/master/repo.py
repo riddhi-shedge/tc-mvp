@@ -782,6 +782,7 @@ _CHILD_TABLES = (
     "audit_log",
     "repairs",
     "notices",
+    "closing_events",
 )
 
 
@@ -2888,6 +2889,19 @@ class SupabaseRepo:
             entity_type="repair", entity_id=repair_id, details={},
         )
         return rows[0]
+
+    # -- closing steps (Wave 2) ----------------------------------------------
+    def record_closing_step(self, *, transaction_id, step, occurred_on, note, actor):
+        row = (
+            self._db.table("closing_events")
+            .insert({"transaction_id": transaction_id, "step": step,
+                     "occurred_on": occurred_on, "note": note})
+            .execute().data[0]
+        )
+        self._audit(transaction_id=transaction_id, actor=actor, action="closing.step",
+                    entity_type="closing_event", entity_id=row["id"],
+                    details={"step": step, "occurred_on": occurred_on})
+        return row
 
     # -- notices (Wave 1 NBP tracker) ----------------------------------------
     def create_notice(self, *, transaction_id, deadline_id, kind, served_date, cure_expires, actor):
