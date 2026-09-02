@@ -50,6 +50,7 @@ class InMemoryRepo:
         self.approvals: list[dict[str, Any]] = []
         self.risk_flags: list[dict[str, Any]] = []
         self.repairs: list[dict[str, Any]] = []
+        self.notices: list[dict[str, Any]] = []
         self.reminders: list[dict[str, Any]] = []
         self.deal_notes: list[dict[str, Any]] = []
         self.party_invites: list[dict[str, Any]] = []
@@ -1359,6 +1360,25 @@ class InMemoryRepo:
         states = (self.get_full_state(tid) for tid in self.transactions)
         return [s for s in states if s is not None]
 
+    def create_notice(self, *, transaction_id, deadline_id, kind, served_date, cure_expires, actor):
+        row = {"id": str(uuid.uuid4()), "transaction_id": transaction_id,
+               "deadline_id": deadline_id, "kind": kind, "served_date": served_date,
+               "cure_expires": cure_expires, "status": "open", "created_at": _now()}
+        self.notices.append(row)
+        self._audit(transaction_id=transaction_id, actor=actor, action="notice.served",
+                    entity_type="notice", entity_id=row["id"],
+                    details={"kind": kind, "cure_expires": cure_expires})
+        return row
+
+    def cure_notice(self, *, transaction_id, notice_id, actor):
+        for n in self.notices:
+            if n["id"] == notice_id and n["transaction_id"] == transaction_id and n["status"] == "open":
+                n["status"] = "cured"
+                self._audit(transaction_id=transaction_id, actor=actor, action="notice.cured",
+                            entity_type="notice", entity_id=notice_id, details={})
+                return n
+        return None
+
     def create_repair(self, *, transaction_id, description, source_document_id, actor):
         row = {"id": str(uuid.uuid4()), "transaction_id": transaction_id,
                "description": description, "status": "open",
@@ -1445,4 +1465,5 @@ class InMemoryRepo:
             "approvals": [a for a in self.approvals if a["transaction_id"] == transaction_id],
             "audit_log": [a for a in self.audit_log if a["transaction_id"] == transaction_id],
             "repairs": [r for r in self.repairs if r["transaction_id"] == transaction_id],
+            "notices": [n for n in self.notices if n["transaction_id"] == transaction_id],
         }

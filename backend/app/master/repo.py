@@ -781,6 +781,7 @@ _CHILD_TABLES = (
     "approvals",
     "audit_log",
     "repairs",
+    "notices",
 )
 
 
@@ -2886,6 +2887,31 @@ class SupabaseRepo:
             transaction_id=transaction_id, actor=actor, action="repair.resolved",
             entity_type="repair", entity_id=repair_id, details={},
         )
+        return rows[0]
+
+    # -- notices (Wave 1 NBP tracker) ----------------------------------------
+    def create_notice(self, *, transaction_id, deadline_id, kind, served_date, cure_expires, actor):
+        row = (
+            self._db.table("notices")
+            .insert({"transaction_id": transaction_id, "deadline_id": deadline_id,
+                     "kind": kind, "served_date": served_date, "cure_expires": cure_expires})
+            .execute().data[0]
+        )
+        self._audit(transaction_id=transaction_id, actor=actor, action="notice.served",
+                    entity_type="notice", entity_id=row["id"],
+                    details={"kind": kind, "cure_expires": cure_expires})
+        return row
+
+    def cure_notice(self, *, transaction_id, notice_id, actor):
+        rows = (
+            self._db.table("notices").update({"status": "cured"})
+            .eq("id", notice_id).eq("transaction_id", transaction_id).eq("status", "open")
+            .execute().data
+        )
+        if not rows:
+            return None
+        self._audit(transaction_id=transaction_id, actor=actor, action="notice.cured",
+                    entity_type="notice", entity_id=notice_id, details={})
         return rows[0]
 
     # -- deal notes (P3): TC-only, SOR-backed --------------------------------

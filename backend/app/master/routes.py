@@ -16,7 +16,9 @@ import re
 import secrets
 import subprocess
 import sys
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
+
+from app.common.dates import ca_today
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -406,6 +408,60 @@ def list_notes(
         # Pre-migration: report unavailable rather than 500 — the UI says so.
         return {"available": False, "notes": []}
     return {"available": True, "notes": notes}
+
+
+class ServeNoticeRequest(BaseModel):
+    deadline_id: str = Field(min_length=1)
+    kind: str = Field(default="nbp", pattern="^(nbp|nsp)$")
+    served_date: str | None = None  # ISO date; defaults to today (CA time)
+
+
+@router.post("/transactions/{transaction_id}/notices", status_code=201)
+def serve_notice(
+    transaction_id: str,
+    body: ServeNoticeRequest,
+    tc: TCUser = Depends(require_tc),
+    repo: MasterRepo = Depends(get_repo),
+) -> dict[str, Any]:
+    """Record that a Notice to (Buyer/Seller) Perform was SERVED — by the agent,
+    outside Terra (Terra tracks, never sends). Verified rules D2/D3
+    (docs/ca-rules-verification.md): earliest service = 2 days before the
+    deadline; cure = 2 calendar days after service."""
+    state = repo.get_full_state(transaction_id)
+    if state is None:
+        raise HTTPException(status_code=404, detail="Transaction not found")
+    deadline = next((d for d in state["deadlines"] if d["id"] == body.deadline_id), None)
+    if deadline is None:
+        raise HTTPException(status_code=404, detail="Deadline not found on this transaction")
+    try:
+        served = date.fromisoformat(body.served_date) if body.served_date else ca_today()
+    except ValueError:
+        raise HTTPException(status_code=422, detail="served_date must be YYYY-MM-DD") from None
+    earliest = date.fromisoformat(deadline["due_date"]) - timedelta(days=2)  # D2
+    if served < earliest:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Too early: an NBP may be served no sooner than {earliest.isoformat()} "
+            "(2 days before the deadline, verified rule D2).",
+        )
+    cure = (served + timedelta(days=2)).isoformat()  # D3
+    return repo.create_notice(
+        transaction_id=transaction_id, deadline_id=body.deadline_id, kind=body.kind,
+        served_date=served.isoformat(), cure_expires=cure, actor=tc.actor,
+    )
+
+
+@router.post("/transactions/{transaction_id}/notices/{notice_id}/cure")
+def cure_notice(
+    transaction_id: str,
+    notice_id: str,
+    tc: TCUser = Depends(require_tc),
+    repo: MasterRepo = Depends(get_repo),
+) -> dict[str, Any]:
+    row = repo.cure_notice(transaction_id=transaction_id, notice_id=notice_id, actor=tc.actor)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Open notice not found on this transaction")
+    return row
 
 
 class CreateRepairRequest(BaseModel):

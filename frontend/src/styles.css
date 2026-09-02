@@ -2430,3 +2430,7 @@ button.secondary.sm { padding: 0.28rem 0.55rem; font-size: var(--t-s); }
 .dl-story-src { color: var(--muted); font-size: 0.7rem; }
 .dl-rescission { font-size: var(--t-xs); color: var(--amber-700); background: var(--amber-100);
   border-radius: var(--r-sm); padding: 7px 11px; margin-top: 8px; max-width: 76ch; }
+.tz-nbp { margin-top: 6px; font-size: var(--t-2xs); color: var(--ink-2); }
+.tz-nbp b { color: var(--red-700); }
+.tz-nbp button { font-size: var(--t-2xs); padding: 0.15rem 0.55rem; margin-left: 4px; }
+.tz-nbp-ok { color: var(--green-700); font-weight: 700; }

@@ -67,6 +67,7 @@ export function DealTimeline({
   deadlines,
   tasks,
   documents,
+  notices = [],
   acceptanceDate,
   onChanged,
 }: {
@@ -74,6 +75,7 @@ export function DealTimeline({
   deadlines: Deadline[];
   tasks: Task[];
   documents: DealDocument[];
+  notices?: NonNullable<import("../lib/api").FullState["notices"]>;
   acceptanceDate: string | null;
   onChanged: () => void;
 }) {
@@ -475,6 +477,57 @@ export function DealTimeline({
                     {c.m.anchor ? "Contract executed" : "No task linked"}
                   </div>
                 )}
+                {!c.m.anchor && c.m.deadlineIds.length > 0 && (() => {
+                  const notice = notices.find((n) => n.deadline_id && c.m.deadlineIds.includes(n.deadline_id));
+                  if (notice) {
+                    return (
+                      <div className="tz-nbp">
+                        NBP served {notice.served_date} — cure expires <b>{notice.cure_expires}</b>
+                        {notice.status === "cured" ? (
+                          <span className="tz-nbp-ok"> · cured</span>
+                        ) : (
+                          <button
+                            disabled={busy}
+                            onClick={() =>
+                              void (async () => {
+                                try {
+                                  await api.post(`/transactions/${id}/notices/${notice.id}/cure`);
+                                  toast("Notice cured");
+                                  onChanged();
+                                } catch (err) {
+                                  toast(err instanceof Error ? err.message : "Failed", { error: true });
+                                }
+                              })()
+                            }
+                          >
+                            Mark cured
+                          </button>
+                        )}
+                      </div>
+                    );
+                  }
+                  return (
+                    <div className="tz-nbp">
+                      <button
+                        disabled={busy}
+                        title="Record that the agent served a Notice to Perform (Terra tracks the D2/D3 clocks — it never sends the notice)"
+                        onClick={() =>
+                          void (async () => {
+                            try {
+                              await api.post(`/transactions/${id}/notices`, { deadline_id: c.m.deadlineIds[0] });
+                              toast("NBP recorded — cure clock running");
+                              onChanged();
+                            } catch (err) {
+                              toast(err instanceof Error ? err.message : "Failed", { error: true });
+                            }
+                          })()
+                        }
+                      >
+                        Record NBP served
+                      </button>
+                    </div>
+                  );
+                })()}
               </div>
             </div>
           );

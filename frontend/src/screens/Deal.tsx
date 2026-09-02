@@ -518,6 +518,7 @@ export function Deal({ id, onBack }: { id: string; onBack: () => void }) {
           deadlines={state.deadlines}
           tasks={state.tasks}
           documents={state.documents}
+          notices={state.notices}
           acceptanceDate={fields.find((f) => f.name === "acceptance_date")?.value ?? null}
           onChanged={refresh}
         />
