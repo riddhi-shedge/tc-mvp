@@ -6,7 +6,6 @@ import { DealDashboard } from "./DealDashboard";
 import { DocumentChecks } from "./DocumentChecks";
 import { MissingPanel } from "./MissingPanel";
 import { DealNotes } from "./DealNotes";
-import { DealMap } from "./DealMap";
 import { DealTimeline } from "./DealTimeline";
 import { AnimatedTabs, CountUp, toast } from "../lib/ui";
 import { Icon, IconName } from "../lib/icons";
@@ -523,6 +522,7 @@ export function Deal({ id, onBack }: { id: string; onBack: () => void }) {
           id={id}
           deadlines={state.deadlines}
           tasks={state.tasks}
+          documents={state.documents}
           acceptanceDate={fields.find((f) => f.name === "acceptance_date")?.value ?? null}
           onChanged={refresh}
         />
@@ -545,19 +545,6 @@ export function Deal({ id, onBack }: { id: string; onBack: () => void }) {
                 <DealDashboard id={id} state={state} onChanged={refresh} />
                 <DealNotes id={id} onChanged={refresh} />
               </>
-            ),
-          },
-          {
-            id: "map",
-            label: "Deal Map",
-            icon: <Icon name="calendar" size={14} />,
-            content: (
-              <DealMap
-                deadlines={state.deadlines}
-                tasks={state.tasks}
-                documents={state.documents}
-                riskFlags={state.risk_flags}
-              />
             ),
           },
           {

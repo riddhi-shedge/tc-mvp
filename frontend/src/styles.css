@@ -2302,3 +2302,18 @@ button.secondary.sm { padding: 0.28rem 0.55rem; font-size: var(--t-s); }
 .tz-pn { font-size: var(--t-xs); color: var(--ink); margin-bottom: 6px; }
 .tz-acts button { font-size: var(--t-2xs); padding: 0.2rem 0.6rem; }
 @media (prefers-reduced-motion: reduce) { .tz-band { transition: none; } .tz-pop { transition: none; } }
+/* Timeline extra lanes (absorbed Deal Map): tasks + document arrivals. */
+.tz-sep { width: 1px; height: 16px; background: var(--line); margin: 0 2px; }
+.tz-lane-toggle { border-style: dashed; }
+.tz-lane { position: absolute; left: 0; right: 0; height: 30px; }
+.tz-lane-name { position: absolute; left: 8px; top: 6px; font-size: 0.6rem; font-weight: 700;
+  letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); z-index: 2; }
+.tz-lane-line { position: absolute; left: 0; right: 0; top: 14px; height: 1px; background: var(--line-2); }
+.tz-lane-pip { position: absolute; top: 10px; width: 8px; height: 8px; margin-left: -4px;
+  border-radius: 50%; background: var(--muted); cursor: default; }
+.tz-lane-pip.t-done { background: var(--green-600); }
+.tz-lane-pip.t-overdue { background: var(--red-600); }
+.tz-lane-pip.t-up { background: var(--gold-500); }
+.tz-lane-pip.t-doc { background: var(--navy-600); }
+.tz-lane-pip.sq { border-radius: 2px; }
+.tz-lane-pip:hover { transform: scale(1.35); }

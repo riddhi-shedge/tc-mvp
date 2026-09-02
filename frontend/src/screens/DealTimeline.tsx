@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { api, Deadline, Task } from "../lib/api";
+import { api, Deadline, DealDocument, Task } from "../lib/api";
 import { fmtDate } from "../lib/format";
 import { toast } from "../lib/ui";
 import { Icon, IconName } from "../lib/icons";
@@ -66,17 +66,24 @@ export function DealTimeline({
   id,
   deadlines,
   tasks,
+  documents,
   acceptanceDate,
   onChanged,
 }: {
   id: string;
   deadlines: Deadline[];
   tasks: Task[];
+  documents: DealDocument[];
   acceptanceDate: string | null;
   onChanged: () => void;
 }) {
   const [busy, setBusy] = useState(false);
   const [played, setPlayed] = useState(false);
+  // Extra lanes absorbed from the old Deal Map tab: flexible work (tasks) and
+  // the paper trail (documents) against the same date axis. Off by default —
+  // the hero view stays the contractual runway.
+  const [showTasks, setShowTasks] = useState(false);
+  const [showDocs, setShowDocs] = useState(false);
   const stageRef = useRef<HTMLDivElement | null>(null);
   const [width, setWidth] = useState(0);
 
@@ -288,6 +295,39 @@ export function DealTimeline({
   );
   const todayX = now >= from && now <= to ? xOf(now) : null;
 
+  // ---- extra lanes (former Deal Map): tasks + document arrivals ------------
+  type LaneItem = { at: number; label: string; tone: string; square?: boolean };
+  const extraLanes: { name: string; items: LaneItem[] }[] = [];
+  if (showTasks) {
+    extraLanes.push({
+      name: "Tasks",
+      items: tasks
+        .filter((t) => t.due_date)
+        .map((t) => ({
+          at: Date.parse(t.due_date as string),
+          label: `${t.title} — due ${fmtDate(t.due_date as string).replace(/,\s*\d{4}$/, "")}`,
+          tone: isDone(t) ? "done" : Date.parse(t.due_date as string) < now - DAY ? "overdue" : "up",
+        })),
+    });
+  }
+  if (showDocs) {
+    extraLanes.push({
+      name: "Documents",
+      items: documents
+        .filter((d) => d.created_at)
+        .map((d) => ({
+          at: Date.parse(d.created_at as string),
+          label: `${
+            d.doc_type === "other" && d.label ? d.label : (d.doc_type ?? "document").replace(/_/g, " ")
+          } — received ${fmtDate(d.created_at as string).replace(/,\s*\d{4}$/, "")}`,
+          tone: "doc",
+          square: true,
+        })),
+    });
+  }
+  const LANE_H = 30;
+  const stageHeight = 216 + extraLanes.length * LANE_H + (extraLanes.length ? 6 : 0);
+
   return (
     <div className="card tlr-card">
       <div className="tlr-hero">
@@ -325,10 +365,29 @@ export function DealTimeline({
             {p.n}
           </button>
         ))}
+        <span className="tz-sep" />
+        <button
+          className={`tz-zb tz-lane-toggle ${showTasks ? "on" : ""}`}
+          title="Overlay task due dates as a lane (from the old Deal Map)"
+          onClick={() => setShowTasks((v) => !v)}
+        >
+          Tasks
+        </button>
+        <button
+          className={`tz-zb tz-lane-toggle ${showDocs ? "on" : ""}`}
+          title="Overlay document arrivals as a lane (from the old Deal Map)"
+          onClick={() => setShowDocs((v) => !v)}
+        >
+          Documents
+        </button>
         {!isWhole && <span className="tz-esc">Esc to zoom out</span>}
       </div>
 
-      <div className={`tz-stage ${played ? "play" : ""}`} ref={stageRef}>
+      <div
+        className={`tz-stage ${played ? "play" : ""}`}
+        ref={stageRef}
+        style={{ height: stageHeight }}
+      >
         <div className="tz-axis" />
         {todayX !== null && (
           <>
@@ -428,6 +487,26 @@ export function DealTimeline({
             style={{ left: c.x, top: LANE_TOPS[c.lane] + 24, height: AXIS_Y - 3 - (LANE_TOPS[c.lane] + 24) }}
           />
         ))}
+
+        {extraLanes.map((lane, li) => {
+          const top = 208 + li * LANE_H;
+          return (
+            <div key={lane.name} className="tz-lane" style={{ top }}>
+              <span className="tz-lane-name">{lane.name}</span>
+              <div className="tz-lane-line" />
+              {lane.items
+                .filter((it) => it.at >= from - DAY / 2 && it.at <= to + DAY / 2)
+                .map((it, i) => (
+                  <div
+                    key={i}
+                    className={`tz-lane-pip t-${it.tone} ${it.square ? "sq" : ""}`}
+                    style={{ left: xOf(it.at) }}
+                    title={it.label}
+                  />
+                ))}
+            </div>
+          );
+        })}
 
         {clusters.map((g, i) => {
           const cx = (g.x0 + g.x1) / 2;
