@@ -124,7 +124,7 @@ class ClaudeStoryteller:
         try:
             response = client.messages.create(
                 model=model,
-                max_tokens=3000,
+                max_tokens=8000,
                 output_config={"format": {"type": "json_schema", "schema": _SCHEMA}},
                 messages=[{"role": "user", "content": _prompt(digest)}],
             )
@@ -134,6 +134,8 @@ class ClaudeStoryteller:
             raise StoryFailed("synthesis service unreachable") from exc
         if response.stop_reason == "refusal":
             raise StoryFailed("synthesis request was refused by the model")
+        if response.stop_reason == "max_tokens":
+            raise StoryFailed("synthesis output was truncated — try again")
         text = next((b.text for b in response.content if b.type == "text"), None)
         if text is None:
             raise StoryFailed("synthesis returned no output")
