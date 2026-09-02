@@ -10,6 +10,8 @@ confirms.
 
 from __future__ import annotations
 
+from typing import Any
+
 from pydantic import BaseModel, Field
 
 from app.contracts.documents import DocType
@@ -104,6 +106,10 @@ class Payload(BaseModel):
     # Display label for 'other' documents — Terra's content-level guess or the
     # TC's own words ("FHA Amendatory Clause"). Never a type, purely a name.
     document_label: str | None = Field(default=None, min_length=1, max_length=160)
+    # Universal read for documents WITHOUT a typed §5 path: key facts + summary
+    # (serialized DocFacts). ADVISORY ONLY — displayed in the ledger; never
+    # creates fields, parties, or deadlines.
+    document_facts: dict[str, Any] | None = None
     # Counter-offer facts (only on seller/buyer counter payloads).
     counter_meta: CounterMeta | None = None
     # Preapproval facts (only on preapproval payloads).

@@ -166,6 +166,23 @@ export function DocumentLedger({
   const [busy, setBusy] = useState(false);
   const [editing, setEditing] = useState<string | null>(null); // field id being verified
   const [editVal, setEditVal] = useState("");
+  // Cross-document synthesis (advisory): narrative + observations on demand.
+  type Story = {
+    narrative: string;
+    observations: { text: string; severity: string; sources: string[] }[];
+  };
+  const [story, setStory] = useState<Story | null>(null);
+  const [storyBusy, setStoryBusy] = useState(false);
+  async function weaveStory() {
+    setStoryBusy(true);
+    try {
+      setStory(await api.post<Story>(`/transactions/${id}/story`, {}));
+    } catch (err) {
+      toast(err instanceof Error ? err.message : "Synthesis failed", { error: true });
+    } finally {
+      setStoryBusy(false);
+    }
+  }
 
   const model = useMemo(() => {
     const docOfPayload = new Map((state.payloads ?? []).map((p) => [p.id, p.document_id]));
@@ -442,11 +459,35 @@ export function DocumentLedger({
               </div>
             );
           })}
-          {fields.length === 0 && (
+          {fields.length === 0 && d.facts && (d.facts.facts?.length || d.facts.summary) && (
+            <div className="dl-facet">
+              <div className="dl-faceth">
+                <h4>What Terra read from it</h4>
+                <span className="dl-fhn">{d.facts.facts?.length ?? 0}</span>
+              </div>
+              {d.facts.summary && <p className="dl-summary">{d.facts.summary}</p>}
+              {(d.facts.facts ?? []).map((f, i) => (
+                <div className="dl-fr" key={i}>
+                  <span className="dl-fn">{f.label}</span>
+                  <span className="dl-fv" title={f.value}>{f.value}</span>
+                  <span className="dl-kind">{f.kind}</span>
+                  <span className={`dl-conf ${f.confidence < 0.7 ? "low" : ""}`}>
+                    {f.confidence.toFixed(2)}
+                  </span>
+                </div>
+              ))}
+              <p className="dl-note">
+                Informational — read from the document for your context; these never set fields,
+                parties, or deadlines.
+              </p>
+            </div>
+          )}
+          {fields.length === 0 && !(d.facts && (d.facts.facts?.length || d.facts.summary)) && (
             <div className="dl-facet">
               <div className="dl-faceth"><h4>No structured data</h4></div>
               <p className="dl-note">
-                Filed for the record — Terra doesn't extract fields from this document type yet.
+                Filed before the universal read existed — re-uploading (or the backfill) will
+                populate its facts.
               </p>
             </div>
           )}
@@ -515,7 +556,38 @@ export function DocumentLedger({
             <span className="dl-n">{counts[f]}</span>
           </button>
         ))}
+        <button
+          className="dl-fchip dl-story-btn"
+          disabled={storyBusy || state.documents.length === 0}
+          onClick={() => (story ? setStory(null) : void weaveStory())}
+          title="Blend what Terra read from every document into one narrative with cross-document observations"
+        >
+          <Icon name="sparkle" size={12} />
+          {storyBusy ? "Weaving…" : story ? "Hide the story" : "The story so far"}
+        </button>
       </div>
+      {story && (
+        <div className="dl-story">
+          <p className="dl-story-narrative">{story.narrative}</p>
+          {story.observations.map((o, i) => (
+            <div className="dl-check" key={i}>
+              <span
+                className={`dot ${o.severity === "critical" ? "danger" : o.severity === "warn" ? "warn" : "ok"}`}
+              />
+              <span>
+                {o.text}
+                {o.sources.length > 0 && (
+                  <span className="dl-story-src"> — {o.sources.join(", ")}</span>
+                )}
+              </span>
+            </div>
+          ))}
+          <p className="dl-note">
+            Woven from the structured record only (extracted terms and facts — never raw
+            documents). Advisory: verify anything surprising against the PDFs.
+          </p>
+        </div>
+      )}
       <div className="dl-split">
         <div className="dl-list" role="listbox" aria-label="Documents">
           {GROUPS.map((g) => {

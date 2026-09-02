@@ -65,6 +65,13 @@ export interface DealDocument {
   doc_type: string | null;
   // Human-readable name for 'other' documents (Terra's guess or the TC's words).
   label?: string | null;
+  // Universal read (docs without a typed §5 path): advisory facts + summary.
+  facts?: {
+    doc_kind?: string;
+    summary?: string;
+    signature_detected?: boolean;
+    facts?: { label: string; value: string; kind: string; confidence: number }[];
+  } | null;
   storage_path: string | null;
   status: string;
   created_at?: string;

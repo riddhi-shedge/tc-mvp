@@ -215,7 +215,10 @@ def test_manual_field_outside_s5_list_is_422(client, tc_headers, repo):
     assert repo.transactions == {}
 
 
-def test_non_pa_documents_skip_extraction(client, tc_headers, repo, extractor):
+def test_non_pa_documents_get_universal_read_not_fields(client, tc_headers, repo, extractor):
+    """Documents without a typed §5 path now get the UNIVERSAL read: one model
+    call for advisory facts + summary — but still zero extracted_fields (only
+    the human-verified §5 list may drive the SOR)."""
     txn_id = client.post(
         "/transactions", json={"property_address": "9 Existing Ct"}, headers=tc_headers
     ).json()["id"]
@@ -224,5 +227,9 @@ def test_non_pa_documents_skip_extraction(client, tc_headers, repo, extractor):
     )
     r = _confirm(client, tc_headers, item_id, {"decision": txn_id})
     assert r.status_code == 200
-    assert extractor.calls == []
-    assert repo.get_full_state(txn_id)["extracted_fields"] == []
+    assert len(extractor.calls) == 1  # the facts read — nothing else
+    state = repo.get_full_state(txn_id)
+    assert state["extracted_fields"] == []  # advisory facts never become fields
+    facts = state["documents"][0]["facts"]
+    assert facts["summary"]
+    assert facts["facts"][0]["label"] == "Effective date"

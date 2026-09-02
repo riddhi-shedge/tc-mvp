@@ -47,6 +47,12 @@ from app.contracts.fields import EXTRACTABLE_FIELD_NAMES
 from app.contracts.payload import Payload
 from app.master.dashboard import build_dashboard
 from app.master.assistant import AssistantError, ClaudeAssistant, DealAssistant, build_context
+from app.master.story import (
+    ClaudeStoryteller,
+    StoryFailed,
+    Storyteller,
+    build_story_digest,
+)
 from app.master.drafting import (
     ClaudeDrafter,
     DraftContext,
@@ -107,6 +113,10 @@ def _default_drafter() -> ClaudeDrafter:
 
 def get_drafter() -> Drafter:
     return _default_drafter()
+
+
+def get_storyteller() -> Storyteller:
+    return ClaudeStoryteller()
 
 
 @lru_cache(maxsize=1)
@@ -629,6 +639,41 @@ def build_timeline(
         "tasks": len(fresh.get("tasks", [])),
         "risk_flags": len(fresh.get("risk_flags", [])),
     }
+
+
+@router.post("/transactions/{transaction_id}/story")
+def tell_deal_story(
+    transaction_id: str,
+    tc: TCUser = Depends(require_tc),
+    repo: MasterRepo = Depends(get_repo),
+    storyteller: Storyteller = Depends(get_storyteller),
+) -> dict[str, Any]:
+    """Cross-document synthesis: one narrative + observations blending what was
+    read from every document (universal-read facts, effective terms, deadlines,
+    flags). The model sees ONLY structured SOR data — never raw documents — and
+    the output is advisory display text: no records created, nothing sent.
+    Money-language guarded like every model output (Rule 2)."""
+    state = repo.get_full_state(transaction_id)
+    if state is None:
+        raise HTTPException(status_code=404, detail="Transaction not found")
+    if not state.get("documents"):
+        raise HTTPException(status_code=409, detail="No documents on file yet — nothing to weave")
+    digest = build_story_digest(state)
+    try:
+        story = storyteller.tell(digest)
+    except ZdrNotConfirmed as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from None
+    except StoryFailed as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from None
+    joined = story.get("narrative", "") + "\n" + "\n".join(
+        o.get("text", "") for o in story.get("observations", [])
+    )
+    if _MONEY_FIELD_NAME.search(joined):
+        raise HTTPException(
+            status_code=422,
+            detail="Synthesis contained payment/wiring language and was rejected (Rule 2).",
+        )
+    return story
 
 
 @router.post("/transactions/{transaction_id}/timeline/stub", status_code=201)

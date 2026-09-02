@@ -917,6 +917,7 @@ class InMemoryRepo:
             "storage_path": payload.document_storage_ref,
             "status": "pending",
             "label": payload.document_label,
+            "facts": payload.document_facts,
         }
         self.documents[doc["id"]] = doc
         row = {

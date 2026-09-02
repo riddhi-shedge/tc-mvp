@@ -11,6 +11,8 @@ from app.contracts.documents import DocType
 from app.contracts.payload import CounterMeta, ExtractedField
 from app.ingestion.extractor import (
     ContingencyRemoval,
+    DocFact,
+    DocFacts,
     ExtractionBlocked,
     ExtractionFailed,
     ExtractionResult,
@@ -54,7 +56,9 @@ class FakeExtractor:
         preliminary: PreliminaryReport | None = None,
         inspection: InspectionReport | None = None,
         doc_guess: str = "",
+        doc_facts: DocFacts | None = None,
     ) -> None:
+        self.doc_facts = doc_facts
         self.doc_looks_like = doc_looks_like
         self.doc_guess = doc_guess
         self.signature_detected = signature_detected
@@ -87,6 +91,22 @@ class FakeExtractor:
             signature_detected=self.signature_detected,
             subject_to_counter_offer=self.subject_to_counter_offer,
             doc_guess=self.doc_guess,
+        )
+
+    def extract_facts(self, *, pdf_bytes: bytes) -> DocFacts:
+        self.calls.append(len(pdf_bytes))
+        if self.raise_blocked:
+            raise ExtractionBlocked("Extraction is disabled (synthetic test gate)")
+        if self.raise_failed:
+            raise ExtractionFailed("extraction service error (synthetic)")
+        return self.doc_facts or DocFacts(
+            doc_kind="Synthetic addendum",
+            summary="A synthetic one-page addendum used by the test suite.",
+            facts=[
+                DocFact(label="Effective date", value="2026-07-10", kind="date", confidence=0.9),
+                DocFact(label="Named party", value="Pat Buyer", kind="name", confidence=0.85),
+            ],
+            signature_detected=True,
         )
 
     def extract_counter_meta(self, *, pdf_bytes: bytes) -> CounterMeta:

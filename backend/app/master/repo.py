@@ -1205,15 +1205,18 @@ class SupabaseRepo:
         }
         if payload.document_label:
             doc_row["label"] = payload.document_label
+        if payload.document_facts:
+            doc_row["facts"] = payload.document_facts
         try:
             try:
                 doc = self._db.table("documents").insert(doc_row).execute().data[0]
             except Exception as exc:
                 # Graceful pre-migration: file the document even before the
-                # label column exists (the label is display-only).
-                if "label" not in doc_row or _is_unique_violation(exc):
+                # label/facts columns exist (both are display-only).
+                if ("label" not in doc_row and "facts" not in doc_row) or _is_unique_violation(exc):
                     raise
-                doc_row.pop("label")
+                doc_row.pop("label", None)
+                doc_row.pop("facts", None)
                 doc = self._db.table("documents").insert(doc_row).execute().data[0]
         except Exception as exc:
             # Concurrent duplicate confirm: the unique index rejected the second

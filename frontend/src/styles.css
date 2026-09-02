@@ -2420,3 +2420,11 @@ button.secondary.sm { padding: 0.28rem 0.55rem; font-size: var(--t-s); }
 .dl-missing .dl-title { margin: 6px 0 10px; }
 .dl-note { font-size: 0.7rem; color: var(--muted); margin-top: 8px; }
 .dl-empty { padding: 30px; font-size: var(--t-s); color: var(--muted); }
+/* Universal-read facts + the deal story */
+.dl-summary { font-size: var(--t-s); color: var(--ink-2); margin: 2px 0 8px; max-width: 72ch; }
+.dl-kind { font-size: 0.6rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase;
+  color: var(--muted); background: var(--surface-2); border-radius: 4px; padding: 1px 6px; flex: 0 0 auto; }
+.dl-story-btn { margin-left: auto; border-style: dashed; }
+.dl-story { padding: 14px 18px; border-bottom: 1px solid var(--line); background: var(--surface-2); }
+.dl-story-narrative { font-size: var(--t-b); color: var(--ink); max-width: 90ch; margin: 0 0 10px; line-height: 1.6; }
+.dl-story-src { color: var(--muted); font-size: 0.7rem; }

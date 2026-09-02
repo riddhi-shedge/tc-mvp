@@ -556,6 +556,29 @@ def _extract_counter(
 
 # Fields a counter offer may never override — identity comes from the PA.
 _COUNTER_IDENTITY_FIELDS = frozenset({"buyer_names", "seller_names", "property_address"})
+
+
+def _extract_doc_facts(
+    item: dict[str, Any], inbox: InboxRepo, extractor: Extractor
+) -> dict[str, Any] | None:
+    """Universal read for documents without a typed §5 path: key facts + a
+    summary from the model (ZDR-gated, same seam as everything else). Purely
+    best-effort — any failure returns None and the filing proceeds; the facts
+    are advisory display data, never SOR records."""
+    storage_path = item.get("storage_path")
+    if not storage_path:
+        return None
+    try:
+        pdf_bytes = inbox.download_attachment(storage_path)
+    except StorageUnavailable:
+        return None
+    readable = decrypt_pdf(pdf_bytes)
+    if readable is None:
+        return None
+    try:
+        return extractor.extract_facts(pdf_bytes=readable).as_dict()
+    except (ExtractionFailed, ExtractionBlocked):
+        return None
 # Non-deadline terms a counter legitimately restates and confirms.
 _COUNTER_TERM_FIELDS = frozenset({"purchase_price", "other_terms"})
 
@@ -902,6 +925,7 @@ def confirm_inbox_item(
         inspection_meta: InspectionMeta | None = None
         new_parties: list[PartyRef] = []
         pa_subject_to_counter = False
+        doc_facts: dict[str, Any] | None = None
         if doc_type == "purchase_agreement":
             if body.manual_fields:
                 fields: list[ExtractedField] = _manual_extracted_fields(body.manual_fields)
@@ -928,7 +952,11 @@ def confirm_inbox_item(
             new_parties, inspection_meta = _extract_inspection(item, inbox, extractor, role)
             fields = []
         else:
+            # No typed §5 path for this type — universal read instead: key facts
+            # + summary for the ledger. Best-effort and ADVISORY ONLY (never
+            # fields/parties/deadlines); a failed read never blocks the filing.
             fields = []
+            doc_facts = _extract_doc_facts(item, inbox, extractor)
 
         address = next(
             (f.value for f in fields if f.name == "property_address"),
@@ -958,6 +986,7 @@ def confirm_inbox_item(
             extracted_fields=fields,
             document_type=doc_type,
             document_label=document_label,
+            document_facts=doc_facts,
             document_storage_ref=item.get("storage_path"),
             counter_meta=counter_meta,
             preapproval_meta=preapproval_meta,

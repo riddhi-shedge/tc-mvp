@@ -104,8 +104,41 @@ class InspectionReport:
     inspector_phone: str | None = None
 
 
+@dataclass(frozen=True)
+class DocFact:
+    """One fact read off a document outside the typed §5 paths. ADVISORY ONLY:
+    facts inform the TC in the ledger — they never create fields, parties,
+    deadlines, or any SOR record. Only the human-verified §5 list drives those."""
+
+    label: str
+    value: str
+    kind: str  # date | amount | name | term | other
+    confidence: float
+
+
+@dataclass(frozen=True)
+class DocFacts:
+    doc_kind: str
+    summary: str
+    facts: list[DocFact]
+    signature_detected: bool
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "doc_kind": self.doc_kind,
+            "summary": self.summary,
+            "signature_detected": self.signature_detected,
+            "facts": [
+                {"label": f.label, "value": f.value, "kind": f.kind, "confidence": f.confidence}
+                for f in self.facts
+            ],
+        }
+
+
 class Extractor(Protocol):
     def extract(self, *, pdf_bytes: bytes, doc_type: DocType) -> ExtractionResult: ...
+
+    def extract_facts(self, *, pdf_bytes: bytes) -> DocFacts: ...
 
     def extract_counter_meta(self, *, pdf_bytes: bytes) -> CounterMeta: ...
 
@@ -116,6 +149,79 @@ class Extractor(Protocol):
     def extract_preliminary(self, *, pdf_bytes: bytes) -> PreliminaryReport: ...
 
     def extract_inspection(self, *, pdf_bytes: bytes) -> InspectionReport: ...
+
+
+def _facts_schema() -> dict[str, Any]:
+    return {
+        "type": "object",
+        "properties": {
+            "doc_kind": {"type": "string"},
+            "summary": {"type": "string"},
+            "signature_indicators": {"type": "boolean"},
+            "facts": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "label": {"type": "string"},
+                        "value": {"type": "string"},
+                        "kind": {"type": "string", "enum": ["date", "amount", "name", "term", "other"]},
+                        "confidence": {"type": "number"},
+                    },
+                    "required": ["label", "value", "kind", "confidence"],
+                    "additionalProperties": False,
+                },
+            },
+        },
+        "required": ["doc_kind", "summary", "signature_indicators", "facts"],
+        "additionalProperties": False,
+    }
+
+
+def _facts_prompt() -> str:
+    return (
+        "You are reading a document from a California residential real-estate "
+        "transaction for a transaction coordinator. It may be ANY document in the "
+        "real-estate universe — an addendum, FHA/VA amendatory clause, HOA packet, "
+        "escrow instructions, NHD report, home-warranty invoice, appraisal, email "
+        "printout, anything.\n\n"
+        "Report:\n"
+        "1. doc_kind: what this document is, in a few words a CA TC would use.\n"
+        "2. summary: 1–3 plain sentences — what the document does for the deal.\n"
+        "3. facts: up to 15 key facts PRINTED ON the document — dates, amounts, "
+        "names, obligations, elections/checkboxes, terms. Each with a short label, "
+        "the value exactly as written, its kind, and confidence 0.0–1.0. Only what "
+        "is actually on the page — NEVER infer or guess. Skip boilerplate.\n"
+        "4. signature_indicators: true only if signature blocks appear executed.\n\n"
+        "Rules:\n"
+        "- NEVER extract, summarize, or mention wiring instructions, bank account "
+        "numbers, routing numbers, or any payment-transfer details, even if "
+        "present. They must not appear anywhere in your output.\n"
+        "- These facts are informational context for a human. Report them plainly."
+    )
+
+
+def parse_doc_facts(data: dict[str, Any]) -> DocFacts:
+    facts: list[DocFact] = []
+    for entry in list(data.get("facts") or [])[:20]:
+        label = str(entry.get("label", "")).strip()[:80]
+        value = str(entry.get("value", "")).strip()[:240]
+        if not label or not value:
+            continue
+        kind = str(entry.get("kind", "other"))
+        if kind not in ("date", "amount", "name", "term", "other"):
+            kind = "other"
+        try:
+            conf = min(1.0, max(0.0, float(entry.get("confidence", 0.0))))
+        except (TypeError, ValueError):
+            conf = 0.0
+        facts.append(DocFact(label=label, value=value, kind=kind, confidence=conf))
+    return DocFacts(
+        doc_kind=str(data.get("doc_kind", "")).strip()[:120],
+        summary=str(data.get("summary", "")).strip()[:600],
+        facts=facts,
+        signature_detected=bool(data.get("signature_indicators", False)),
+    )
 
 
 def _inspection_schema() -> dict[str, Any]:
@@ -448,6 +554,11 @@ class ClaudeExtractor:
             return json.loads(text)
         except ValueError as exc:
             raise ExtractionFailed("extraction returned unparseable output") from exc
+
+    def extract_facts(self, *, pdf_bytes: bytes) -> DocFacts:
+        """Universal read: key facts from ANY real-estate document (the types
+        without a typed §5 path). Advisory output only — see DocFact."""
+        return parse_doc_facts(self._structured(pdf_bytes, _facts_schema(), _facts_prompt()))
 
     def extract_counter_meta(self, *, pdf_bytes: bytes) -> CounterMeta:
         check_zdr_gate()
