@@ -1,0 +1,73 @@
+{
+  "_comment": "Golden extraction evals. Labels come from audit-verified ground truth (docs/tc-universe.md era, deal 39ec2f4c). Values are regex patterns; extraction must match every one. Run: PYTHONPATH=. .venv/bin/python evals/run.py",
+  "cases": [
+    {
+      "name": "RPA-Ratified: core §5 fields",
+      "attachment_name": "6145 Camino Verde Drive,B RPA-Ratified.pdf",
+      "kind": "extract", "doc_type": "purchase_agreement",
+      "expect_fields": {
+        "buyer_names": "Alexandra\\s+Pedroza",
+        "seller_names": "Runthala",
+        "purchase_price": "625[,.]?000",
+        "property_address": "6145\\s+Camino\\s+Verde"
+      }
+    },
+    {
+      "name": "Seller Counter 1: changed terms",
+      "attachment_name": "Revised Seller Counter Offer 1 - 6145 Camino Verde Dr #B 2.pdf",
+      "kind": "extract", "doc_type": "seller_counter_offer",
+      "expect_fields": { "close_of_escrow": "30", "other_terms": "15[,.]?000" }
+    },
+    {
+      "name": "Old RPA classifies as purchase agreement",
+      "attachment_name": "6145 Camino Verde Drive,#B RPA 8_26.pdf",
+      "kind": "classify", "expect_type": ["purchase_agreement"]
+    },
+    {
+      "name": "FHA amendatory must NOT classify as a purchase agreement",
+      "attachment_name": "6145 Camino Verde Drive,#B FHA 8_26.pdf",
+      "kind": "classify", "expect_type": ["other"],
+      "why": "Regression guard: an FHA rider misfiled as a PA once created a deal"
+    },
+    {
+      "name": "Preapproval letter classifies as preapproval",
+      "attachment_name": "Raj_Rajeshwari_Underwritter_Preapproval.pdf",
+      "kind": "classify", "expect_type": ["preapproval"]
+    },
+    {
+      "name": "Property inspection classifies correctly",
+      "attachment_name": "C 4. PROPERTY INSPECTION.pdf",
+      "kind": "classify", "expect_type": ["property_inspection", "inspection_report"]
+    },
+    {
+      "name": "Termite inspection classifies correctly",
+      "attachment_name": "C 3. TERMITE INSPECTION.pdf",
+      "kind": "classify", "expect_type": ["termite_inspection"]
+    },
+    {
+      "name": "Preliminary report classifies correctly",
+      "attachment_name": "C 1. PRELIMINARY REPORT.pdf",
+      "kind": "classify", "expect_type": ["preliminary_report"]
+    },
+    {
+      "name": "Contingency removal classifies correctly",
+      "attachment_name": "A 7. CONTINGENCIES REMOVAL.pdf",
+      "kind": "classify", "expect_type": ["contingency_removal"]
+    },
+    {
+      "name": "FHA-Ratified universal read names the form",
+      "attachment_name": "6145 Camino Verde Drive,B FHA-Ratified.pdf",
+      "kind": "facts", "expect_match": "FHA|amendatory"
+    },
+    {
+      "name": "AAA universal read names the form",
+      "attachment_name": "6145 Camino Verde Drive,#B AAA 8_26.pdf",
+      "kind": "facts", "expect_match": "acknowledg|licensee"
+    },
+    {
+      "name": "TC email universal read recognizes correspondence",
+      "attachment_name": "TCEmail.pdf",
+      "kind": "facts", "expect_match": "coordinator|email|escrow"
+    }
+  ]
+}

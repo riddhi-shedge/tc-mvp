@@ -151,6 +151,26 @@ class Extractor(Protocol):
     def extract_inspection(self, *, pdf_bytes: bytes) -> InspectionReport: ...
 
 
+# The classify vocabulary — ONE source of truth for the model schema enum AND
+# parse-time validation. These two drifted once (schema knew 13 types, the
+# parser coerced 5 of them back to 'other'); the eval suite caught it.
+_DOC_LOOKS_LIKE = {
+    "purchase_agreement",
+    "counter_offer",
+    "seller_counter_offer",
+    "buyer_counter_offer",
+    "contingency_removal",
+    "preapproval",
+    "preliminary_report",
+    "proof_of_funds",
+    "disclosure",
+    "property_inspection",
+    "termite_inspection",
+    "inspection_report",
+    "other",
+}
+
+
 def _facts_schema() -> dict[str, Any]:
     return {
         "type": "object",
@@ -378,24 +398,7 @@ def _output_schema() -> dict[str, Any]:
     return {
         "type": "object",
         "properties": {
-            "doc_looks_like": {
-                "type": "string",
-                "enum": [
-                    "purchase_agreement",
-                    "counter_offer",
-                    "seller_counter_offer",
-                    "buyer_counter_offer",
-                    "contingency_removal",
-                    "preapproval",
-                    "preliminary_report",
-                    "proof_of_funds",
-                    "disclosure",
-                    "property_inspection",
-                    "termite_inspection",
-                    "inspection_report",
-                    "other",
-                ],
-            },
+            "doc_looks_like": {"type": "string", "enum": sorted(_DOC_LOOKS_LIKE)},
             "doc_guess": {"type": "string"},
             "signature_indicators": {"type": "boolean"},
             "subject_to_counter_offer": {"type": "boolean"},
@@ -444,7 +447,19 @@ def _prompt() -> str:
         "3. confidence is 0.0–1.0: how certain you are the value is exactly "
         "what the document says. Use low confidence (<0.7) for anything "
         "inferred, ambiguous, or partially legible.\n"
-        "4. Report doc_looks_like: what kind of document this actually is.\n"
+        "4. Report doc_looks_like: what kind of document this actually is — the "
+        "BEST match from this vocabulary (use 'other' only when none fits):\n"
+        "   - purchase_agreement: a residential purchase agreement (C.A.R. RPA)\n"
+        "   - seller_counter_offer / buyer_counter_offer / counter_offer: a counter "
+        "offer form (SCO/BCO/CO), whichever side made it\n"
+        "   - contingency_removal: a CR form removing buyer contingencies\n"
+        "   - preapproval: a lender/underwriter letter approving the borrower's loan\n"
+        "   - preliminary_report: a title company's preliminary (title) report\n"
+        "   - proof_of_funds: a bank/asset statement evidencing buyer funds\n"
+        "   - disclosure: a seller disclosure form (TDS, SPQ, NHD, lead paint, ...)\n"
+        "   - property_inspection: a general home inspection report\n"
+        "   - termite_inspection: a pest/wood-destroying-organism (WDO) report\n"
+        "   - inspection_report: any other inspection report (roof, sewer, ...)\n"
         "5. Report signature_indicators: true only if the document shows "
         "signature blocks that appear executed (names/marks/dates in them).\n"
         "6. Report subject_to_counter_offer: true if the agreement indicates "
@@ -694,16 +709,7 @@ class ClaudeExtractor:
         )
 
 
-_DOC_LOOKS_LIKE = {
-    "purchase_agreement",
-    "counter_offer",
-    "seller_counter_offer",
-    "buyer_counter_offer",
-    "proof_of_funds",
-    "disclosure",
-    "inspection_report",
-    "other",
-}
+
 
 
 def parse_extraction_output(data: dict[str, Any]) -> ExtractionResult:
