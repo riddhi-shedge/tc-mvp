@@ -51,7 +51,12 @@ function asSignals(s: ClassifyResponse["signals"]): BatchFile["signals"] {
 /** Higher = more likely the operative (final) version: fully executed and not
  *  subject to a counter beats everything; unsigned drafts rank last. */
 function versionRank(s: NonNullable<BatchFile["signals"]>): number {
-  return (s.signed ? 2 : 0) + (s.subject_to_counter_offer ? 0 : 1);
+  // Signatures ONLY. subject_to_counter must NOT down-rank: the FINAL ratified
+  // PA in a countered deal legitimately reads "subject to counter" (it
+  // references the SCO) — penalizing it made the compare demote the signed
+  // contract in favor of the unsigned offer (audit, deal 8dfeee52). A
+  // signature tie is a tie: Terra asks, never guesses.
+  return s.signed ? 1 : 0;
 }
 
 function sigText(s: BatchFile["signals"]): string {

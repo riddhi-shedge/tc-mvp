@@ -74,8 +74,10 @@ def test_counter_contact_fields_land_unconfirmed(client, tc_headers, extractor, 
     by_name = {f["name"]: f for f in repo.get_full_state(txn_id)["extracted_fields"]}
     assert by_name["purchase_price"]["confirmed"] is True
     assert by_name["close_of_escrow"]["confirmed"] is True
-    assert by_name["buyer_agent_phone"]["confirmed"] is False
-    assert by_name["listing_agent"]["confirmed"] is False
+    # Audit 8dfeee52: agent/contact fields are now DROPPED from counters
+    # entirely — a counter never changes who the agents are.
+    assert "buyer_agent_phone" not in by_name
+    assert "listing_agent" not in by_name
 
 
 def test_pa_supersession_is_audited(repo, client, tc_headers, extractor):

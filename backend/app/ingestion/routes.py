@@ -536,12 +536,16 @@ def _extract_counter(
             name=f.name,
             value=f.value,
             confidence=f.confidence,
+            evidence=f.evidence,
             # Only the deal's TERMS auto-confirm from a counter (they are the
             # agreed changes and supersede the PA). Contact/company fields land
             # unconfirmed: a low-confidence phone read off a counter must not
             # silently beat the PA's value (TC audit finding: a 0.5-confidence
             # buyer_agent_phone superseded the PA's 0.9 one).
-            confirmed=f.name in DEADLINE_DRIVING or f.name in _COUNTER_TERM_FIELDS,
+            # Floor (audit finding 5): a sub-0.8 read never self-confirms, even
+            # for agreed counter terms — deadline math must not build on a guess.
+            confirmed=(f.name in DEADLINE_DRIVING or f.name in _COUNTER_TERM_FIELDS)
+            and f.confidence >= 0.8,
         )
         for f in result.fields
         # A counter changes TERMS (price, dates), never who is buying or selling
@@ -555,7 +559,13 @@ def _extract_counter(
 
 
 # Fields a counter offer may never override — identity comes from the PA.
-_COUNTER_IDENTITY_FIELDS = frozenset({"buyer_names", "seller_names", "property_address"})
+_COUNTER_IDENTITY_FIELDS = frozenset({
+    "buyer_names", "seller_names", "property_address",
+    # Audit 8dfeee52 finding 2: the SCO's layout misread grafted the listing
+    # agent onto a phantom buyer_agent party — a counter never changes agents.
+    "buyer_agent", "buyer_agent_phone", "buyer_agent_email",
+    "listing_agent", "listing_agent_phone", "listing_agent_email",
+})
 
 
 def _extract_doc_facts(
