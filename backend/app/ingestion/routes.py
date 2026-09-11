@@ -477,7 +477,7 @@ def _classify_document(
     if readable is None:
         return OTHER_DOC_TYPE, "", {}
     try:
-        result = extractor.extract(pdf_bytes=readable, doc_type=OTHER_DOC_TYPE)
+        result = extractor.classify_light(pdf_bytes=readable)
     except (ExtractionFailed, ExtractionBlocked):
         return OTHER_DOC_TYPE, "", {}
     signals = {

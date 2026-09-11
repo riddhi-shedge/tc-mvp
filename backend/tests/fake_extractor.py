@@ -95,6 +95,20 @@ class FakeExtractor:
             doc_guess=self.doc_guess,
         )
 
+    def classify_light(self, *, pdf_bytes: bytes) -> ExtractionResult:
+        self.calls.append(len(pdf_bytes))
+        if self.raise_blocked:
+            raise ExtractionBlocked("Extraction is disabled (synthetic test gate)")
+        if self.raise_failed:
+            raise ExtractionFailed("extraction service error (synthetic)")
+        return ExtractionResult(
+            fields=[],
+            doc_looks_like=self.doc_looks_like,
+            signature_detected=self.signature_detected,
+            subject_to_counter_offer=self.subject_to_counter_offer,
+            doc_guess=self.doc_guess,
+        )
+
     def verify_identity(self, *, pdf_bytes: bytes) -> dict:
         self.calls.append(len(pdf_bytes))
         if self.raise_blocked:

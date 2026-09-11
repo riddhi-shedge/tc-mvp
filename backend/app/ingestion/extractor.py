@@ -140,6 +140,8 @@ class Extractor(Protocol):
 
     def extract_facts(self, *, pdf_bytes: bytes) -> DocFacts: ...
 
+    def classify_light(self, *, pdf_bytes: bytes) -> ExtractionResult: ...
+
     def verify_identity(self, *, pdf_bytes: bytes) -> dict[str, str | None]: ...
 
     def extract_counter_meta(self, *, pdf_bytes: bytes) -> CounterMeta: ...
@@ -580,6 +582,50 @@ class ClaudeExtractor:
             return json.loads(text)
         except ValueError as exc:
             raise ExtractionFailed("extraction returned unparseable output") from exc
+
+    def classify_light(self, *, pdf_bytes: bytes) -> ExtractionResult:
+        """Type + version signals ONLY — no field extraction. ~10x faster than
+        extract() for the classify/compare paths, which never need §5 values."""
+        data = self._structured(
+            pdf_bytes,
+            {
+                "type": "object",
+                "properties": {
+                    "doc_looks_like": {"type": "string", "enum": sorted(_DOC_LOOKS_LIKE)},
+                    "doc_guess": {"type": "string"},
+                    "signature_indicators": {"type": "boolean"},
+                    "subject_to_counter_offer": {"type": "boolean"},
+                },
+                "required": [
+                    "doc_looks_like", "doc_guess", "signature_indicators",
+                    "subject_to_counter_offer",
+                ],
+                "additionalProperties": False,
+            },
+            "Classify this California residential real-estate document.\n"
+            "1. doc_looks_like — the BEST match ('other' only when none fits): "
+            "purchase_agreement (C.A.R. RPA); seller_counter_offer / "
+            "buyer_counter_offer / counter_offer (SCO/BCO/CO, whichever side); "
+            "contingency_removal (CR form); preapproval (lender/underwriter "
+            "approval letter); preliminary_report (title company's prelim); "
+            "proof_of_funds; disclosure (TDS/SPQ/NHD/lead paint/...); "
+            "property_inspection (general home inspection); termite_inspection "
+            "(pest/WDO); inspection_report (other inspections).\n"
+            "2. doc_guess: when doc_looks_like is 'other', name the document in a "
+            "few words a CA TC would use; else empty string.\n"
+            "3. signature_indicators: true only if signature blocks appear executed.\n"
+            "4. subject_to_counter_offer: true if acceptance is subject to a counter "
+            "(SCO/BCO box checked or referenced).\n"
+            "Never mention wiring, bank, routing, or account details.",
+        )
+        looks = str(data.get("doc_looks_like", "other"))
+        return ExtractionResult(
+            fields=[],
+            doc_looks_like=looks if looks in _DOC_LOOKS_LIKE else "other",
+            signature_detected=bool(data.get("signature_indicators", False)),
+            subject_to_counter_offer=bool(data.get("subject_to_counter_offer", False)),
+            doc_guess=str(data.get("doc_guess", "")).strip()[:120],
+        )
 
     def verify_identity(self, *, pdf_bytes: bytes) -> dict[str, str | None]:
         """Generator-verifier (§ CLAUDE.md adversarial Q5): an INDEPENDENT

@@ -68,7 +68,7 @@ def run_case(case: dict, pdf: bytes, extractor) -> list[str]:
             elif not re.search(pattern, got, re.IGNORECASE):
                 fails.append(f"{field}: {got!r} !~ /{pattern}/")
     elif case["kind"] == "classify":
-        result = extractor.extract(pdf_bytes=pdf, doc_type="other")
+        result = extractor.classify_light(pdf_bytes=pdf)  # the production classify path
         if result.doc_looks_like not in case["expect_type"]:
             fails.append(f"classified {result.doc_looks_like!r}, expected {case['expect_type']}")
     elif case["kind"] == "facts":
