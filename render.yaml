@@ -1,26 +1,25 @@
-# Render blueprint — SYNTHETIC-ONLY staging for tc-mvp.
-# Supabase stays external. Secrets (sync:false) are set in the Render dashboard,
-# never committed. The safety gates are pinned CLOSED here: SYNTHETIC_ONLY=true
-# and SEND_ENABLED=false, so staging cannot process real data or send real email.
+# Render blueprint — one-click deploy after connecting the GitHub repo.
+# Secrets are NOT in this file (sync: false = fill them in the Render
+# dashboard, values from your local .env — see docs/deploy-runbook.md).
 services:
-  # ---- API + Postmark inbound webhook -------------------------------------
   - type: web
-    name: tc-mvp-api
-    runtime: docker
-    plan: free
-    dockerfilePath: ./backend/Dockerfile
-    dockerContext: ./backend
-    healthCheckPath: /health
+    name: terra-backend
+    runtime: python
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /openapi.json
     envVars:
-      - key: SYNTHETIC_ONLY        # ZDR gate: real docs blocked in staging
-        value: "true"
-      - key: SEND_ENABLED          # outbound email stays off
-        value: "false"
-      - key: CA_RULES_VERIFIED     # exercise the real 6/26 date math on synthetic deals
+      - key: PYTHON_VERSION
+        value: "3.13"
+      - key: APP_ENV
+        value: production
+      - key: CA_RULES_VERIFIED
         value: "true"
       - key: REQUIRE_MFA
         value: "true"
-      # Secrets — set in the Render dashboard (Environment tab):
+      - key: FRONTEND_ORIGIN
+        fromService: { type: web, name: terra-frontend, property: host }   # prefix https:// in dashboard if needed
       - key: SUPABASE_URL
         sync: false
       - key: SUPABASE_SERVICE_ROLE_KEY
@@ -31,48 +30,43 @@ services:
         sync: false
       - key: POSTMARK_SERVER_TOKEN
         sync: false
+      - key: POSTMARK_WEBHOOK_TOKEN
+        generateValue: true          # fresh production token (put in Postmark too)
+      - key: POSTMARK_INBOUND_ADDRESS
+        sync: false
       - key: POSTMARK_FROM_EMAIL
         sync: false
-      - key: POSTMARK_WEBHOOK_TOKEN
-        sync: false
       - key: COMPLIANCE_SERVICE_TOKEN
+        generateValue: true          # fresh; cron below shares it via env group if split later
+      - key: SYNTHETIC_ONLY
+        sync: false                  # "false" ONLY with ZDR_CONFIRMED=true (runbook B5)
+      - key: ZDR_CONFIRMED
         sync: false
-      - key: FRONTEND_ORIGIN       # the static site's URL, for CORS
+      - key: SEND_ENABLED
         sync: false
-      # Property enrichment for the party workspaces — both OPTIONAL (absent ⇒
-      # graceful address-only property card). Public-record data only.
-      - key: RENTCAST_API_KEY
+      - key: SEND_ALLOWLIST
+        sync: false
+      - key: TC_NAME
         sync: false
       - key: GOOGLE_MAPS_API_KEY
         sync: false
-
-  # ---- Frontend (static) --------------------------------------------------
-  - type: web
-    name: tc-mvp-frontend
-    runtime: static
-    buildCommand: cd frontend && npm ci && npm run build
-    staticPublishPath: ./frontend/dist
-    envVars:
-      - key: VITE_API_BASE         # the API service's URL
+      - key: RENTCAST_API_KEY
         sync: false
+
+  - type: web
+    name: terra-frontend
+    runtime: static
+    rootDir: frontend
+    buildCommand: npm ci && npm run build
+    staticPublishPath: dist
     routes:
-      - type: rewrite              # SPA fallback
+      - type: rewrite
         source: /*
         destination: /index.html
-
-  # ---- Compliance scheduler (daily sweep) ---------------------------------
-  # Talks to the API over HTTP only (decoupled) — needs no Supabase creds.
-  - type: cron
-    name: tc-mvp-scheduler
-    runtime: docker
-    dockerfilePath: ./backend/Dockerfile
-    dockerContext: ./backend
-    schedule: "0 14 * * *"         # daily 14:00 UTC (~06:00–07:00 PT)
-    dockerCommand: python -m app.compliance.scheduler
     envVars:
-      - key: CA_RULES_VERIFIED
-        value: "true"
-      - key: MASTER_API_BASE       # the tc-mvp-api service URL
+      - key: VITE_API_BASE
+        fromService: { type: web, name: terra-backend, property: host }    # prefix https:// in dashboard
+      - key: VITE_SUPABASE_URL
         sync: false
-      - key: COMPLIANCE_SERVICE_TOKEN
+      - key: VITE_SUPABASE_ANON_KEY
         sync: false
