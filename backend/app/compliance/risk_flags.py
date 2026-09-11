@@ -104,6 +104,37 @@ def detect_risk_flags(
             )
         )
 
+    # 3c. Contingency EXPIRED with no removal on file (audit 8dfeee52 F8).
+    # CA is active-removal: a contingency never lapses silently — if its
+    # deadline is still on the timeline (a confirmed CR would have dropped it
+    # on rebuild) and the date has passed, the buyer's exit right is still
+    # open and the seller side may serve a Notice to Perform. Persistent by
+    # design: this stays a problem until the CR-B arrives.
+    _CONTINGENCY_KEYS = (
+        ("inspection_contingency", "inspection"),
+        ("loan_contingency", "loan"),
+        ("appraisal_contingency", "appraisal"),
+        ("insurance_contingency", "insurance"),
+    )
+    expired = [
+        (key, label, d)
+        for key, label in _CONTINGENCY_KEYS
+        if (d := _deadline(deadlines, key)) is not None and d.due_date < as_of
+    ]
+    for key, label, d in expired:
+        flags.append(
+            RiskFlag(
+                case="contingency_expired_no_removal",
+                description=(
+                    f"The {label} contingency ended {_fmt(d.due_date)} and no signed "
+                    "Contingency Removal is on file — the buyer's right to exit is "
+                    "still open. Chase the CR-B, or the seller side may consider a "
+                    "Notice to Perform (trackable on the timeline)."
+                ),
+                deadline_key=key,
+            )
+        )
+
     # 3b. Buyer hasn't provided insurance info — insurance contingency approaching
     #     and no insurance task done (a lender typically requires the binder).
     ins = _deadline(deadlines, "insurance_contingency")

@@ -584,10 +584,16 @@ def _extract_doc_facts(
         return None
     readable = decrypt_pdf(pdf_bytes)
     if readable is None:
+        _log.info("universal read skipped (password-protected) item=%s", item.get("id"))
         return None
     try:
         return extractor.extract_facts(pdf_bytes=readable).as_dict()
-    except (ExtractionFailed, ExtractionBlocked):
+    except (ExtractionFailed, ExtractionBlocked) as exc:
+        # Best-effort by design, but a null facts blob must be traceable
+        # (audit 8dfeee52 F7: the operative contract had facts=null silently).
+        _log.warning(
+            "universal read failed item=%s: %s", item.get("id"), type(exc).__name__
+        )
         return None
 # Non-deadline terms a counter legitimately restates and confirms.
 _COUNTER_TERM_FIELDS = frozenset({"purchase_price", "other_terms"})
@@ -944,6 +950,24 @@ def confirm_inbox_item(
         # the content itself. An explicit label means the human already decided
         # ("file as Other, named X") — honor it, don't reclassify.
         doc_type, _guess, _signals = _classify_document(item, inbox, extractor)
+    if (
+        doc_type == OTHER_DOC_TYPE
+        and item.get("detected_doc_type") == "purchase_agreement"
+        and not body.label
+    ):
+        # Guard (audit 8dfeee52 F1): downgrading a detected PURCHASE AGREEMENT
+        # to a nameless 'other' is how the ratified contract got buried. A
+        # deliberate demotion always carries a label ("prior version …");
+        # anything else is almost certainly a mistake — make the human name it.
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "This file was detected as a purchase agreement. To file it as "
+                "'other' anyway, provide a label saying what it is (e.g. "
+                "'prior version of the purchase agreement') — or confirm it "
+                "with its real type."
+            ),
+        )
     if doc_type == UNKNOWN_DOC_TYPE:
         # Never guess: an unclassified document can't enter the SOR.
         raise HTTPException(

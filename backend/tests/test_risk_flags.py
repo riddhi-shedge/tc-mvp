@@ -163,3 +163,27 @@ def test_seller_forms_cleared_by_confirmed_disclosure():
     )
     dls = [_dl("disclosure_delivery", date(2026, 7, 13))]
     assert "seller_forms_incomplete" not in _cases(state, dls, date(2026, 7, 10))
+
+
+def test_contingency_expired_without_removal_flags_persistently():
+    """Case 3c (audit 8dfeee52 F8): a contingency deadline still on the timeline
+    past its date means no CR removed it — flag until it arrives, per expired
+    contingency, and keep firing well after the date (persistent)."""
+    state = DealState(transaction_id="t", parties=[DealPartyState(role="escrow")])
+    dls = [
+        _dl("inspection_contingency", date(2026, 7, 8)),   # expired
+        _dl("loan_contingency", date(2026, 7, 9)),          # expired
+        _dl("appraisal_contingency", date(2026, 7, 20)),    # future — no flag
+    ]
+    flags = detect_risk_flags(state, dls, RULES, as_of=date(2026, 7, 15))
+    expired = [f for f in flags if f.case == "contingency_expired_no_removal"]
+    assert {f.deadline_key for f in expired} == {"inspection_contingency", "loan_contingency"}
+    # Persistent: still firing weeks later.
+    later = detect_risk_flags(state, dls, RULES, as_of=date(2026, 8, 15))
+    assert any(f.case == "contingency_expired_no_removal" for f in later)
+
+
+def test_contingency_not_expired_no_3c_flag():
+    state = DealState(transaction_id="t", parties=[DealPartyState(role="escrow")])
+    dls = [_dl("inspection_contingency", date(2026, 7, 20))]
+    assert "contingency_expired_no_removal" not in _cases(state, dls, date(2026, 7, 15))

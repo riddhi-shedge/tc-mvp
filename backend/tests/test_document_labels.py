@@ -66,3 +66,30 @@ def test_typed_documents_never_carry_a_label(client, tc_headers, repo):
     docs = repo.get_full_state(txn_id)["documents"]
     assert docs[0]["doc_type"] == "proof_of_funds"
     assert docs[0]["label"] is None
+
+
+def test_pa_detected_item_cannot_become_nameless_other(client, tc_headers, extractor, repo):
+    """Guard (audit 8dfeee52 F1): burying a detected purchase agreement as a
+    nameless 'other' is how the ratified contract vanished. A deliberate
+    demotion carries a label and passes; a bare downgrade is refused."""
+    extractor.doc_looks_like = "other"  # content read also says 'other'
+    txn_id = client.post(
+        "/transactions", json={"property_address": "7 Guard Ct"}, headers=tc_headers
+    ).json()["id"]
+    item = client.post(
+        "/ingestion/manual-upload",
+        json={"filename": "RPA-signed.pdf", "content_base64": PDF_B64},
+        headers=tc_headers,
+    ).json()
+    assert item["detected_doc_type"] == "purchase_agreement"
+
+    bare = _confirm(client, tc_headers, item["id"], txn_id, doc_type="other")
+    assert bare.status_code == 422
+    assert "purchase agreement" in bare.json()["detail"]
+
+    labeled = _confirm(
+        client, tc_headers, item["id"], txn_id,
+        doc_type="other", label="prior version of the purchase agreement",
+    )
+    assert labeled.status_code == 200
+    assert repo.get_full_state(txn_id)["documents"][0]["label"].startswith("prior version")

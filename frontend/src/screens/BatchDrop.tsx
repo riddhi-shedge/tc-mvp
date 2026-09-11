@@ -299,24 +299,28 @@ export function BatchDrop({
           !r.signals &&
           !r.signalsFailed,
       );
-      for (const row of targets) {
-        try {
-          const label = await api.post<ClassifyResponse>(
-            `/ingestion/inbox/${row.itemId}/classify`,
-          );
-          const signals = asSignals(label.signals);
-          patch(row.key, {
-            ...(signals ? { signals } : { signalsFailed: true }),
-            // Content beats filename: if the read says it's actually something
-            // else (e.g. a counter offer), relabel it out of this pile.
-            ...(label.identified && label.doc_type !== row.docType
-              ? { docType: label.doc_type }
-              : {}),
-          });
-        } catch {
-          patch(row.key, { signalsFailed: true });
-        }
-      }
+      // All reads in PARALLEL — with classify_light this makes the compare
+      // near-instant even for multiple 10-page contracts.
+      await Promise.all(
+        targets.map(async (row) => {
+          try {
+            const label = await api.post<ClassifyResponse>(
+              `/ingestion/inbox/${row.itemId}/classify`,
+            );
+            const signals = asSignals(label.signals);
+            patch(row.key, {
+              ...(signals ? { signals } : { signalsFailed: true }),
+              // Content beats filename: if the read says it's actually something
+              // else (e.g. a counter offer), relabel it out of this pile.
+              ...(label.identified && label.doc_type !== row.docType
+                ? { docType: label.doc_type }
+                : {}),
+            });
+          } catch {
+            patch(row.key, { signalsFailed: true });
+          }
+        }),
+      );
     } finally {
       comparingRef.current = false;
       setComparing(null);
