@@ -56,6 +56,33 @@ Detail in `rules/testing.md`.
 - `rules/data-model.md` — the §10 schema (single source of truth)
 - `rules/code-style.md` — conventions
 
+## Pre-commit adversarial questions
+
+Before every commit that touches money language, authority, §5 fields, date math,
+or extraction, answer these out loud (they catch the bug class our audits actually
+find — domain/data bugs that a green suite misses):
+
+1. **What happens if this runs twice** (concurrent confirm, retried webhook, double-click)?
+2. **When a read comes back empty/missing, what does the user see** — and can they
+   tell it apart from a real measured zero?
+3. **Which test goes red if I break this on purpose?** Check by mutating one line —
+   don't assume. If nothing goes red, the coverage is decorative.
+4. **What did this change just make true, and where else is that fact stated**
+   (effective fields, tasks, drafts, party views, raw payloads)? Stale copies of a
+   corrected fact were our worst live bug (the buyer/seller swap residue).
+5. **Could extraction/model output be wrong here, and does a human get a real
+   chance to catch it** (confidence shown, confirm not rubber-stamped)?
+
+## Audit-sweep ritual
+
+After any meaningful batch of changes or a new real deal: run the **TC audit
+agent sweep** (a read-only subagent acting as a meticulous TC — recompute
+deadlines from `app/compliance/ca_rules.py`, party-role sanity, doc
+classification vs. inbox, field conflicts/supersession, flag coherence, repairs/
+notices/closing/ops consistency, inbox hygiene, audit-log gaps). Findings get
+fixed by the main session, never by the auditor. This ritual — not the test
+suite — has caught every production-shaped bug so far.
+
 ## Self-annealing
 
 When you repeat a mistake, **propose a new rule for `rules/`.**
