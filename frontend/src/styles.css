@@ -2499,3 +2499,7 @@ button.secondary.sm { padding: 0.28rem 0.55rem; font-size: var(--t-s); }
 .kbtn.icon.notif .notif-n { position: absolute; top: -4px; right: -5px; min-width: 15px; height: 15px;
   padding: 0 4px; border-radius: 8px; background: var(--red-600); color: #fff; font-size: 0.58rem;
   font-weight: 800; display: grid; place-items: center; }
+/* P3: mailbox filter chips + awaiting state (ledger recipe applied to comms) */
+.mbx-filters { display: flex; gap: 5px; padding: 8px 10px; border-bottom: 1px solid var(--line);
+  flex-wrap: wrap; background: var(--surface); }
+.mbx-time.awaiting { color: var(--amber-700); font-weight: 700; }

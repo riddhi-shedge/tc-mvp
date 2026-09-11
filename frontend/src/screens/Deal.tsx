@@ -80,6 +80,8 @@ export function Deal({ id, onBack }: { id: string; onBack: () => void }) {
   const [edits, setEdits] = useState<Record<string, { subject: string; body: string }>>({});
   // Split-inbox selection ("new" = composer) + which message the last WHY belongs to
   const [selMsg, setSelMsg] = useState<string | null>(null);
+  // P3: mailbox filter chips (the ledger recipe applied to comms).
+  const [msgFilter, setMsgFilter] = useState<"all" | "draft" | "awaiting" | "sent">("all");
   const [draftWhyFor, setDraftWhyFor] = useState<string | null>(null);
   // TC entries for deadline-driving fields the extraction missed: name -> value
   const [fieldVals, setFieldVals] = useState<Record<string, string>>({});
@@ -207,6 +209,16 @@ export function Deal({ id, onBack }: { id: string; onBack: () => void }) {
       const party = m?.party_id ? state.parties.find((p) => p.id === m.party_id) ?? null : null;
       return { r, m, party };
     });
+  // message_id -> its due reminder bundle (folds the old "Awaiting reply" card
+  // into the mailbox: a filter chip + inline actions on the selected message).
+  const awaitingByMsg = new Map(
+    dueReminders.filter((x) => x.m).map((x) => [(x.m as Message).id, x]),
+  );
+  const visibleMsgs =
+    msgFilter === "all" ? allMsgs
+    : msgFilter === "draft" ? allMsgs.filter((m) => m.status === "draft")
+    : msgFilter === "sent" ? allMsgs.filter((m) => m.status !== "draft")
+    : allMsgs.filter((m) => awaitingByMsg.has(m.id));
 
   // --- Log: resolve entity ids to human names for a readable audit table ---
   const taskTitleById = (tid?: string | null) => state.tasks.find((t) => t.id === tid)?.title;
@@ -581,48 +593,6 @@ export function Deal({ id, onBack }: { id: string; onBack: () => void }) {
             icon: <Icon name="mail" size={14} />,
             content: (
               <>
-      {dueReminders.length > 0 && (
-        <div className="card awaiting">
-          <h2><Icon name="clock" size={17} /> Awaiting reply · {dueReminders.length}</h2>
-          <p className="muted" style={{ margin: "-0.4rem 0 0.8rem" }}>
-            You sent these and no reply is logged yet — follow up, or dismiss if it's handled.
-          </p>
-          <div className="stack">
-            {dueReminders.map(({ r, m, party }) => (
-              <div key={r.id} className="await-row">
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div className="await-subj">{m?.subject ?? "(message)"}</div>
-                  <div className="muted" style={{ fontSize: "0.78rem" }}>
-                    to {party?.name ?? "recipient"}
-                    {m?.sent_at ? ` · sent ${fmtDate(m.sent_at)}` : ""}
-                  </div>
-                </div>
-                <button
-                  className="gold sm"
-                  disabled={busy || !party}
-                  onClick={() => {
-                    if (party) {
-                      setRecipientId(party.id);
-                      setPurpose("general");
-                      setSelMsg("new");
-                    }
-                  }}
-                >
-                  <Icon name="sparkle" size={13} /> Follow up
-                </button>
-                <button
-                  className="secondary sm"
-                  disabled={busy}
-                  onClick={() => void run(() => api.del(`/transactions/${id}/reminders/${r.id}`), "Dismissed")}
-                >
-                  Dismiss
-                </button>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
       <div className="card mailbox">
         <div className="mbx">
           <div className="mbx-list">
@@ -632,8 +602,22 @@ export function Deal({ id, onBack }: { id: string; onBack: () => void }) {
                 <Icon name="sparkle" size={13} /> New
               </button>
             </div>
-            {allMsgs.length === 0 && <div className="mbx-listempty">No messages yet — start one with “New”.</div>}
-            {allMsgs.map((m) => {
+            <div className="mbx-filters">
+              {([["all", "All", allMsgs.length], ["draft", "Drafts", drafts.length],
+                 ["awaiting", "Awaiting", awaitingByMsg.size],
+                 ["sent", "Sent", allMsgs.length - drafts.length]] as const).map(([k, label, n]) => (
+                <button key={k} className={`dl-fchip ${msgFilter === k ? "on" : ""}`}
+                  onClick={() => setMsgFilter(k)}>
+                  {label} <span className="dl-n">{n}</span>
+                </button>
+              ))}
+            </div>
+            {visibleMsgs.length === 0 && (
+              <div className="mbx-listempty">
+                {msgFilter === "all" ? "No messages yet — start one with “New”." : "Nothing under this filter."}
+              </div>
+            )}
+            {visibleMsgs.map((m) => {
               const party = msgPartyOf(m);
               return (
                 <div key={m.id} className={`mbx-item ${sel === m.id ? "on" : ""}`} onClick={() => setSelMsg(m.id)}>
@@ -643,8 +627,10 @@ export function Deal({ id, onBack }: { id: string; onBack: () => void }) {
                   <div className="mbx-meta">
                     <div className="mbx-row1">
                       <span className="mbx-to">{party?.name ?? "Recipient"}</span>
-                      <span className="mbx-time">
-                        {m.status === "sent" && m.sent_at ? fmtDate(m.sent_at) : m.status === "draft" ? "draft" : "queued"}
+                      <span className={`mbx-time ${awaitingByMsg.has(m.id) ? "awaiting" : ""}`}>
+                        {awaitingByMsg.has(m.id)
+                          ? "awaiting reply"
+                          : m.status === "sent" && m.sent_at ? fmtDate(m.sent_at) : m.status === "draft" ? "draft" : "queued"}
                       </span>
                     </div>
                     <div className="mbx-subj">{m.subject ?? "(no subject)"}</div>
@@ -797,6 +783,30 @@ export function Deal({ id, onBack }: { id: string; onBack: () => void }) {
                         <div className="mbx-subject">{m.subject}</div>
                         <div className="mbx-bodyview">{m.body}</div>
                         <div className="mbx-sentnote"><Icon name="check" size={13} /> Sent {m.sent_at ? fmtDateTime(m.sent_at) : ""}</div>
+                        {awaitingByMsg.has(m.id) && (() => {
+                          const aw = awaitingByMsg.get(m.id)!;
+                          return (
+                            <div className="why" style={{ marginTop: "0.8rem" }}>
+                              <strong>No reply logged yet.</strong> Follow up, or dismiss if it's handled.
+                              <div className="mbx-actions" style={{ marginTop: "0.5rem" }}>
+                                <button className="gold" disabled={busy || !aw.party}
+                                  onClick={() => {
+                                    if (aw.party) {
+                                      setRecipientId(aw.party.id);
+                                      setPurpose("chase");
+                                      setSelMsg("new");
+                                    }
+                                  }}>
+                                  <Icon name="sparkle" size={13} /> Follow up
+                                </button>
+                                <button className="secondary" disabled={busy}
+                                  onClick={() => void run(() => api.del(`/transactions/${id}/reminders/${aw.r.id}`), "Dismissed")}>
+                                  Dismiss
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })()}
                       </>
                     )}
                   </div>
