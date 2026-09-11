@@ -2496,3 +2496,6 @@ button.secondary.sm { padding: 0.28rem 0.55rem; font-size: var(--t-s); }
 .cx-card { border-left: 3px solid var(--red-600); }
 /* Provenance quote marker: hover shows the verbatim source phrase. */
 .dl-quote { font-size: 0.8rem; color: var(--accent); cursor: help; flex: 0 0 auto; line-height: 1; }
+.kbtn.icon.notif .notif-n { position: absolute; top: -4px; right: -5px; min-width: 15px; height: 15px;
+  padding: 0 4px; border-radius: 8px; background: var(--red-600); color: #fff; font-size: 0.58rem;
+  font-weight: 800; display: grid; place-items: center; }

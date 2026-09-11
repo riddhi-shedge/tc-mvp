@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { supabase } from "./lib/supabase";
+import { api } from "./lib/api";
 import { Deal } from "./screens/Deal";
 import { Home } from "./screens/Home";
 import { Calendar } from "./screens/Calendar";
@@ -70,6 +71,19 @@ function TcApp() {
   const [signedIn, setSignedIn] = useState(false);
   const [email, setEmail] = useState<string | null>(null);
   const [view, setView] = useState<View>(() => loadView());
+  // Live needs-you count for the topbar bell (P2): the decision queue's total.
+  const [attnTotal, setAttnTotal] = useState(0);
+  useEffect(() => {
+    let alive = true;
+    const pull = () =>
+      api
+        .get<{ total: number }>("/transactions/attention")
+        .then((d) => alive && setAttnTotal(d.total))
+        .catch(() => {});
+    pull();
+    const t = setInterval(pull, 60_000);
+    return () => { alive = false; clearInterval(t); };
+  }, []);
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem("sidebar_collapsed") === "1");
   const [supportOpen, setSupportOpen] = useState(false);
   const [adminOpen, setAdminOpen] = useState(false);
@@ -297,7 +311,8 @@ function TcApp() {
               onClick={toggleRail}
             >
               <Icon name="bell" size={15} />
-              <span className="dot" />
+              {attnTotal > 0 && <span className="dot" title={`${attnTotal} items need you`} />}
+              {attnTotal > 0 && <span className="notif-n">{attnTotal > 9 ? "9+" : attnTotal}</span>}
             </button>
           )}
           <button className="kbtn icon" title="Help &amp; support" aria-label="Help and support" onClick={() => setSupportOpen(true)}>
