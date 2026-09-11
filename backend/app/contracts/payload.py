@@ -32,6 +32,9 @@ class ExtractedField(BaseModel):
     value: str
     confidence: float = Field(ge=0.0, le=1.0)
     confirmed: bool = False
+    # Provenance (display-only): the verbatim quote the value was read from,
+    # produced by the evidence-first extraction schema. Never parsed or trusted.
+    evidence: str | None = Field(default=None, max_length=200)
 
 
 class CounterMeta(BaseModel):

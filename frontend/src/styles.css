@@ -2492,3 +2492,5 @@ button.secondary.sm { padding: 0.28rem 0.55rem; font-size: var(--t-s); }
   .packet .pk-foot { margin-top: 14pt; font-size: 8.5pt; color: #555; font-style: italic; }
 }
 .cx-card { border-left: 3px solid var(--red-600); }
+/* Provenance quote marker: hover shows the verbatim source phrase. */
+.dl-quote { font-size: 0.8rem; color: var(--accent); cursor: help; flex: 0 0 auto; line-height: 1; }

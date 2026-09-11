@@ -159,6 +159,8 @@ export interface ExtractedField {
   confidence: number;
   confirmed: boolean;
   deadline_driving: boolean;
+  // Provenance (display-only): the verbatim quote the value was read from.
+  evidence?: string | null;
   payload_id?: string | null; // provenance: the payload (and thus document) this value came from
 }
 

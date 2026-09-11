@@ -353,7 +353,7 @@ export function DocumentLedger({
     return (
       <div className="dl-fr" key={f.id}>
         <span className="dl-fn">{humanize(f.name)}</span>
-        <span className="dl-fv" title={f.value}>
+        <span className="dl-fv" title={f.evidence ? `Read from: "${f.evidence}"` : f.value}>
           {superseded ? (
             <>
               <s>{f.value}</s> → {e.value}
@@ -363,6 +363,9 @@ export function DocumentLedger({
             f.value
           )}
         </span>
+        {f.evidence && (
+          <span className="dl-quote" title={`Read from: "${f.evidence}"`}>❝</span>
+        )}
         <span className={`dl-conf ${low ? "low" : ""}`}>{f.confidence.toFixed(2)}</span>
         {f.confirmed ? (
           <span className="dl-okmark"><Icon name="check" size={13} /></span>

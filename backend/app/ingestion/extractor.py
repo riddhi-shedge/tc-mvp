@@ -767,11 +767,16 @@ def parse_extraction_output(data: dict[str, Any]) -> ExtractionResult:
         except (TypeError, ValueError):
             confidence = 0.0
         confidence = min(1.0, max(0.0, confidence))
+        evidence = str(entry.get("evidence", "")).strip()[:200] or None
         if name not in best:
             order.append(name)
-            best[name] = ExtractedField(name=name, value=value, confidence=confidence)
+            best[name] = ExtractedField(
+                name=name, value=value, confidence=confidence, evidence=evidence
+            )
         elif confidence > best[name].confidence:
-            best[name] = ExtractedField(name=name, value=value, confidence=confidence)
+            best[name] = ExtractedField(
+                name=name, value=value, confidence=confidence, evidence=evidence
+            )
     doc_looks_like = str(data.get("doc_looks_like", "other"))
     if doc_looks_like not in _DOC_LOOKS_LIKE:  # schema-enforced, re-validated anyway
         doc_looks_like = "other"

@@ -1270,21 +1270,27 @@ class SupabaseRepo:
                 .data[0]
             )
             if payload.extracted_fields:
-                self._db.table("extracted_fields").insert(
-                    [
-                        {
-                            "payload_id": row["id"],
-                            "transaction_id": transaction_id,
-                            # Stamped from the human-verified §5 list — the
-                            # payload's own flag is never trusted for this.
-                            **{
-                                **field.model_dump(),
-                                "deadline_driving": field.name in DEADLINE_DRIVING,
-                            },
-                        }
-                        for field in payload.extracted_fields
-                    ]
-                ).execute()
+                field_rows = [
+                    {
+                        "payload_id": row["id"],
+                        "transaction_id": transaction_id,
+                        # Stamped from the human-verified §5 list — the
+                        # payload's own flag is never trusted for this.
+                        **{
+                            **field.model_dump(),
+                            "deadline_driving": field.name in DEADLINE_DRIVING,
+                        },
+                    }
+                    for field in payload.extracted_fields
+                ]
+                try:
+                    self._db.table("extracted_fields").insert(field_rows).execute()
+                except Exception:
+                    # Graceful pre-migration: evidence (provenance, display-only)
+                    # may not have a column yet — file the fields without it.
+                    for fr in field_rows:
+                        fr.pop("evidence", None)
+                    self._db.table("extracted_fields").insert(field_rows).execute()
             self._audit(
                 transaction_id=transaction_id,
                 actor=actor,
