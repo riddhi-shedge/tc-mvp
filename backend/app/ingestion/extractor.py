@@ -406,15 +406,20 @@ def _output_schema() -> dict[str, Any]:
                 "type": "array",
                 "items": {
                     "type": "object",
+                    # Property ORDER is deliberate: the model writes `evidence`
+                    # (a verbatim quote) BEFORE `value`, grounding each answer in
+                    # the page — the quote-first technique measurably improves
+                    # extraction accuracy. Evidence is advisory (not yet stored).
                     "properties": {
                         "name": {
                             "type": "string",
                             "enum": [spec.name for spec in S5_FIELDS],
                         },
+                        "evidence": {"type": "string"},
                         "value": {"type": "string"},
                         "confidence": {"type": "number"},
                     },
-                    "required": ["name", "value", "confidence"],
+                    "required": ["name", "evidence", "value", "confidence"],
                     "additionalProperties": False,
                 },
             },
@@ -444,6 +449,10 @@ def _prompt() -> str:
         "2. Return one entry in `fields` per field you can actually read on "
         "the document. If a field is not present or not legible, OMIT it — "
         "never guess or infer a value.\n"
+        "2b. For each field, FIRST copy `evidence`: the exact short phrase from "
+        "the document (under 120 characters) that states the value — quote it "
+        "verbatim before writing `value`. If you cannot point to such a phrase "
+        "on the page, the field does not belong in your output.\n"
         "3. confidence is 0.0–1.0: how certain you are the value is exactly "
         "what the document says. Use low confidence (<0.7) for anything "
         "inferred, ambiguous, or partially legible.\n"
