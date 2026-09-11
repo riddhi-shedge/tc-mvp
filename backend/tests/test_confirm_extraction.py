@@ -233,3 +233,43 @@ def test_non_pa_documents_get_universal_read_not_fields(client, tc_headers, repo
     facts = state["documents"][0]["facts"]
     assert facts["summary"]
     assert facts["facts"][0]["label"] == "Effective date"
+
+
+def test_identity_verifier_clamps_swapped_names(client, tc_headers, repo, extractor):
+    """Generator-verifier (#4): when the independent who-buys/who-sells read
+    disagrees with extraction, the name fields drop to low confidence — forcing
+    the human-verify gate instead of silently filing an inversion."""
+    from app.contracts.payload import ExtractedField
+    from tests.fake_extractor import CANNED_FIELDS
+
+    extractor.fields = [
+        ExtractedField(name=n, value=v, confidence=c) for n, v, c in CANNED_FIELDS
+    ] + [
+        ExtractedField(name="buyer_names", value="Sally Seller", confidence=0.95),
+        ExtractedField(name="seller_names", value="Barry Buyer", confidence=0.95),
+    ]
+    extractor.identity = {"buyer": "Barry Buyer", "seller": "Sally Seller"}  # the truth
+
+    item_id = _inbound_item(client, subject="PA (synthetic)", attachment_name="rpa-synthetic.pdf")
+    r = _confirm(client, tc_headers, item_id, {"decision": "new"})
+    assert r.status_code == 200
+    fields = {f["name"]: f for f in repo.get_full_state(r.json()["transaction_id"])["extracted_fields"]}
+    assert fields["buyer_names"]["confidence"] == 0.4   # clamped — human must verify
+    assert fields["seller_names"]["confidence"] == 0.4
+    assert fields["purchase_price"]["confidence"] > 0.9  # untouched
+
+
+def test_identity_verifier_agreement_leaves_confidence(client, tc_headers, repo, extractor):
+    from app.contracts.payload import ExtractedField
+    from tests.fake_extractor import CANNED_FIELDS
+
+    extractor.fields = [
+        ExtractedField(name=n, value=v, confidence=c) for n, v, c in CANNED_FIELDS
+    ] + [ExtractedField(name="buyer_names", value="Pat Buyer", confidence=0.95)]
+    extractor.identity = {"buyer": "Pat Q. Buyer", "seller": None}  # token overlap = agree
+
+    item_id = _inbound_item(client, subject="PA (synthetic)", attachment_name="rpa-two-synthetic.pdf")
+    r = _confirm(client, tc_headers, item_id, {"decision": "new"})
+    assert r.status_code == 200
+    fields = {f["name"]: f for f in repo.get_full_state(r.json()["transaction_id"])["extracted_fields"]}
+    assert fields["buyer_names"]["confidence"] == 0.95

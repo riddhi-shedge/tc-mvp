@@ -140,6 +140,8 @@ class Extractor(Protocol):
 
     def extract_facts(self, *, pdf_bytes: bytes) -> DocFacts: ...
 
+    def verify_identity(self, *, pdf_bytes: bytes) -> dict[str, str | None]: ...
+
     def extract_counter_meta(self, *, pdf_bytes: bytes) -> CounterMeta: ...
 
     def extract_contingency_removal(self, *, pdf_bytes: bytes) -> ContingencyRemoval: ...
@@ -578,6 +580,30 @@ class ClaudeExtractor:
             return json.loads(text)
         except ValueError as exc:
             raise ExtractionFailed("extraction returned unparseable output") from exc
+
+    def verify_identity(self, *, pdf_bytes: bytes) -> dict[str, str | None]:
+        """Generator-verifier (§ CLAUDE.md adversarial Q5): an INDEPENDENT
+        read answering only 'who buys, who sells' from the signature blocks
+        and party designations — cross-checked against extraction. A layout
+        misread here once inverted every party on a live deal."""
+        data = self._structured(
+            pdf_bytes,
+            {
+                "type": "object",
+                "properties": {"buyer": {"type": "string"}, "seller": {"type": "string"}},
+                "required": ["buyer", "seller"],
+                "additionalProperties": False,
+            },
+            "Look ONLY at the party designations and signature blocks of this "
+            "California real-estate document. Who is the BUYER (the party "
+            "acquiring the property) and who is the SELLER? Answer with the "
+            "names exactly as printed. If a side is not determinable, use an "
+            "empty string. Never mention any payment or wiring details.",
+        )
+        return {
+            "buyer": (str(data.get("buyer", "")).strip() or None),
+            "seller": (str(data.get("seller", "")).strip() or None),
+        }
 
     def extract_facts(self, *, pdf_bytes: bytes) -> DocFacts:
         """Universal read: key facts from ANY real-estate document (the types

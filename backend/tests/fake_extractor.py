@@ -57,8 +57,10 @@ class FakeExtractor:
         inspection: InspectionReport | None = None,
         doc_guess: str = "",
         doc_facts: DocFacts | None = None,
+        identity: dict | None = None,
     ) -> None:
         self.doc_facts = doc_facts
+        self.identity = identity
         self.doc_looks_like = doc_looks_like
         self.doc_guess = doc_guess
         self.signature_detected = signature_detected
@@ -92,6 +94,17 @@ class FakeExtractor:
             subject_to_counter_offer=self.subject_to_counter_offer,
             doc_guess=self.doc_guess,
         )
+
+    def verify_identity(self, *, pdf_bytes: bytes) -> dict:
+        self.calls.append(len(pdf_bytes))
+        if self.raise_blocked:
+            raise ExtractionBlocked("Extraction is disabled (synthetic test gate)")
+        if self.raise_failed:
+            raise ExtractionFailed("extraction service error (synthetic)")
+        if self.identity is not None:
+            return self.identity
+        vals = {f.name: f.value for f in self.fields}
+        return {"buyer": vals.get("buyer_names"), "seller": vals.get("seller_names")}
 
     def extract_facts(self, *, pdf_bytes: bytes) -> DocFacts:
         self.calls.append(len(pdf_bytes))

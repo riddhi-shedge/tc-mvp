@@ -859,7 +859,45 @@ def _extract_pa_fields(
                 "enter the fields manually, or upload a clearer copy"
             ],
         )
-    return result.fields, result.subject_to_counter_offer
+    return _identity_checked(result.fields, pdf_bytes, extractor), result.subject_to_counter_offer
+
+
+def _name_tokens(s: str | None) -> set[str]:
+    return {t.lower().strip(".,") for t in (s or "").split() if len(t) > 2}
+
+
+def _identity_checked(
+    fields: list[ExtractedField], pdf_bytes: bytes, extractor: Extractor
+) -> list[ExtractedField]:
+    """Generator-verifier on WHO BUYS / WHO SELLS: an independent read of the
+    signature blocks, cross-checked against extraction. On disagreement the name
+    fields' confidence is CLAMPED to 0.4 — never blocking, but forcing the
+    existing low-confidence gates (amber Verify, excluded from confirm-all) to
+    put human eyes on them. Best-effort: a failed verify changes nothing.
+    Defense against the live buyer/seller inversion (deal 39ec2f4c)."""
+    by_name = {f.name: f for f in fields}
+    if "buyer_names" not in by_name and "seller_names" not in by_name:
+        return fields
+    try:
+        check = extractor.verify_identity(pdf_bytes=pdf_bytes)
+    except (ExtractionFailed, ExtractionBlocked):
+        return fields
+    out: list[ExtractedField] = []
+    for f in fields:
+        clamp = False
+        if f.name == "buyer_names" and check.get("buyer"):
+            clamp = not (_name_tokens(f.value) & _name_tokens(check["buyer"]))
+        elif f.name == "seller_names" and check.get("seller"):
+            clamp = not (_name_tokens(f.value) & _name_tokens(check["seller"]))
+        out.append(
+            ExtractedField(
+                name=f.name, value=f.value,
+                confidence=min(f.confidence, 0.4), confirmed=f.confirmed,
+            )
+            if clamp
+            else f
+        )
+    return out
 
 
 @router.post("/inbox/{item_id}/confirm")
