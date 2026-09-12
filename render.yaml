@@ -19,7 +19,9 @@ services:
       - key: REQUIRE_MFA
         value: "true"
       - key: FRONTEND_ORIGIN
-        fromService: { type: web, name: terra-frontend, property: host }   # prefix https:// in dashboard if needed
+        sync: false   # set EXPLICITLY to https://<frontend>.onrender.com — Render's
+                      # fromService host property bakes a bare name fragment (verified
+                      # live 2026-09-12: bundle contained the string "terra-backend-cftp")
       - key: SUPABASE_URL
         sync: false
       - key: SUPABASE_SERVICE_ROLE_KEY
@@ -65,7 +67,7 @@ services:
         destination: /index.html
     envVars:
       - key: VITE_API_BASE
-        fromService: { type: web, name: terra-backend, property: host }    # prefix https:// in dashboard
+        sync: false   # set EXPLICITLY to https://<backend>.onrender.com (same reason)
       - key: VITE_SUPABASE_URL
         sync: false
       - key: VITE_SUPABASE_ANON_KEY
