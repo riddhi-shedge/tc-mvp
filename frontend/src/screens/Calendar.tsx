@@ -134,14 +134,14 @@ export function Calendar({ onOpenDeal }: { onOpenDeal: (id: string) => void }) {
         <div className="row" style={{ gap: "0.5rem", flex: "0 0 auto" }}>
           <button
             className="secondary"
-            title="Copy a subscribe URL for Google/Apple Calendar — deadlines stay in sync"
+            title="Copy a calendar subscription URL"
             onClick={() =>
               void api
                 .get<{ available: boolean; url: string | null }>("/transactions/calendar/feed-url")
                 .then(async (r) => {
                   if (!r.available || !r.url) return toast("Calendar feed isn't configured on the server", { error: true });
                   await navigator.clipboard.writeText(r.url);
-                  toast("Feed URL copied — paste it into Google/Apple Calendar (subscribe by URL)");
+                  toast("Feed URL copied. Paste it into Google or Apple Calendar.");
                 })
                 .catch((e) => toast(e instanceof Error ? e.message : "Couldn't fetch the feed URL", { error: true }))
             }
@@ -156,7 +156,7 @@ export function Calendar({ onOpenDeal }: { onOpenDeal: (id: string) => void }) {
           ) : (
             <button
               className="secondary"
-              onClick={() => { setSchedule({}); toast("Schedule cleared — plan it your way by dragging tasks."); }}
+              onClick={() => { setSchedule({}); toast("Schedule cleared."); }}
               title="Remove the auto-generated plan and schedule tasks yourself"
             >
               <Icon name="x" size={14} /> Clear schedule
@@ -166,7 +166,7 @@ export function Calendar({ onOpenDeal }: { onOpenDeal: (id: string) => void }) {
       </div>
 
       <div className="cal-runway card" style={{ padding: "10px 13px", marginBottom: 14 }}>
-        <div className="pk-sect">Runway — every deal, next 10 business days</div>
+        <div className="pk-sect">Runway: next 10 business days</div>
         <Runway
           items={deadlines.map((d) => ({ name: d.name.replace(/ (ends|due|delivery).*$/i, ""), due_date: d.due_date, tag: (d.property_address ?? "").split(",")[0].replace(/^\d+ /, "") }))}
           maxPerDay={4}
@@ -303,7 +303,7 @@ export function Calendar({ onOpenDeal }: { onOpenDeal: (id: string) => void }) {
               </div>
               {planned.length === 0 ? (
                 <div className="muted" style={{ fontSize: "0.85rem", padding: "0.3rem 0" }}>
-                  Nothing planned for this day yet — drag tasks from the work queue, or use Auto-schedule.
+                  Nothing planned for this day. Drag tasks from the work queue or use Auto-schedule.
                 </div>
               ) : (
                 planned

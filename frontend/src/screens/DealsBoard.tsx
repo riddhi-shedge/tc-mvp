@@ -153,7 +153,7 @@ export function DealsBoard({ onOpenDeal }: { onOpenDeal: (id: string) => void })
       </div>
 
       {deals.length === 0 && (
-        <div className="card"><div className="empty"><span className="empty-ic"><Icon name="board" size={26} /></span>No active deals — confirm an inbound document to create one.</div></div>
+        <div className="card"><div className="empty"><span className="empty-ic"><Icon name="board" size={26} /></span>No active deals. Confirm an inbound document to create one.</div></div>
       )}
 
       {/* BOARD */}

@@ -48,7 +48,7 @@ export function SellerView({ ws, busy, docType, setDocType, cycle, onFile }: Rol
           <h1 className="sv-addr">{prop?.address ?? "Your sale"}</h1>
           {coe?.due_date && (
             <div className="sv-hero-count">
-              {nDays != null && nDays > 0 ? <>Closing in <b>{nDays}</b> days — you hand over the keys</> : nDays === 0 ? <>Closing today — keys change hands</> : <>Closed — congratulations on your sale</>}
+              {nDays != null && nDays > 0 ? <>Closing in <b>{nDays}</b> days</> : nDays === 0 ? <>Closing today</> : <>Closed. Congratulations on your sale</>}
               <span className="sv-hero-date"> · {fmtDate(coe.due_date)}</span>
             </div>
           )}
@@ -114,7 +114,7 @@ export function SellerView({ ws, busy, docType, setDocType, cycle, onFile }: Rol
 
         <div className="card">
           <h2><Icon name="doc" size={17} /> Deliver a document</h2>
-          <p className="muted" style={{ margin: "-0.4rem 0 0.8rem" }}>Your disclosures, repair receipts, or HOA docs — only your coordinator sees them.</p>
+          <p className="muted" style={{ margin: "-0.4rem 0 0.8rem" }}>Your disclosures, repair receipts, or HOA docs. Only your coordinator sees them.</p>
           <div className="inv-upload">
             <select value={docType} onChange={(e) => setDocType(e.target.value)} style={{ maxWidth: 240 }}>
               {DOCS.map((d, i) => <option key={i} value={d.v}>{d.label}</option>)}
@@ -133,7 +133,7 @@ export function SellerView({ ws, busy, docType, setDocType, cycle, onFile }: Rol
             </div>
           )}
         </div>
-        <p className="inv-foot muted"><Icon name="lock" size={13} /> Personalized to your role and scoped to this sale — you see only what you need.</p>
+        <p className="inv-foot muted"><Icon name="lock" size={13} /> Personalized to your role and scoped to this sale.</p>
       </div>
     </div>
   );

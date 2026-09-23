@@ -85,19 +85,19 @@ export function Home({
       toast(ok);
       await load();
     } catch (err) {
-      toast(err instanceof Error ? err.message : "That didn't stick — try from the deal.", { error: true });
+      toast(err instanceof Error ? err.message : "Something went wrong. Try again from the deal page.", { error: true });
     } finally {
       setBusy(false);
     }
   }
   const approveDraft = (it: AttentionItem, edited?: { subject?: string; body?: string }) =>
-    act(() => api.post(`/transactions/${it.dealId}/messages/${it.id}/approve-and-send`, edited ?? {}), "Approved & sent — logged to the deal");
+    act(() => api.post(`/transactions/${it.dealId}/messages/${it.id}/approve-and-send`, edited ?? {}), "Approved and sent.");
   const dismissReminder = (it: AttentionItem) =>
     it.kind === "risk"
       ? resolveRisk(it)
       : act(() => api.del(`/transactions/${it.dealId}/reminders/${it.id}`), "Dismissed");
   const draftChase = (it: AttentionItem) =>
-    act(() => api.post(`/transactions/${it.dealId}/messages/${it.messageId}/draft-chase`, {}), "Chase drafted — it's now in your Drafts bucket");
+    act(() => api.post(`/transactions/${it.dealId}/messages/${it.messageId}/draft-chase`, {}), "Follow-up drafted. See the Drafts filter.");
   const resolveRisk = (it: AttentionItem) =>
     act(() => api.post(`/transactions/${it.dealId}/risk-flags/${it.id}/resolve`, {}), "Resolved");
 
@@ -173,7 +173,7 @@ export function Home({
           </div>
           <div className="hm-list" ref={rowsRef} role="listbox" aria-label="Decisions">
             {items.length === 0 ? (
-              <Empty>{att ? (filter === "all" ? "Queue clear — nothing is waiting on you." : "Nothing in this bucket.") : "Loading your queue…"}</Empty>
+              <Empty>{att ? (filter === "all" ? "Queue clear." : "Nothing in this bucket.") : "Loading your queue…"}</Empty>
             ) : (
               items.map((it, i) => (
                 <div
@@ -201,7 +201,7 @@ export function Home({
           </div>
         </div>
 
-        <Section title="Deadline horizon — all deals" count={horizon.length}>
+        <Section title="Deadline horizon" count={horizon.length}>
           {horizon.length === 0 ? (
             <Empty>No deadlines through {att ? short(att.horizonCutoff) : "next week"}.</Empty>
           ) : (
@@ -220,7 +220,7 @@ export function Home({
 
         <Section title="Work queue" count={tasks.length}>
           {tasks.length === 0 ? (
-            <Empty>No open tasks — you're all caught up.</Empty>
+            <Empty>No open tasks.</Empty>
           ) : (
             [...tasks]
               .sort((a, b) => (a.due_date ?? "9999").localeCompare(b.due_date ?? "9999"))

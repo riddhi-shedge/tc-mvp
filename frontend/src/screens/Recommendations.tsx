@@ -126,7 +126,7 @@ export function Recommendations({ onOpenDeal, onClose }: { onOpenDeal: (id: stri
       {loaded && visible.length === 0 && (
         <div className="rail-empty">
           <span className="rail-empty-ic"><Icon name="checkCircle" size={22} /></span>
-          Nothing needs review right now — you're on top of it.
+          Nothing needs review right now.
         </div>
       )}
 

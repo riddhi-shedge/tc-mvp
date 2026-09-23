@@ -11,7 +11,7 @@ import { Icon } from "../lib/icons";
 const DISPOSITIONS: { value: string; label: string }[] = [
   { value: "released_to_buyer", label: "Deposit released to buyer" },
   { value: "released_to_seller", label: "Deposit released to seller" },
-  { value: "disputed", label: "Disputed — held in escrow" },
+  { value: "disputed", label: "Disputed (held in escrow)" },
   { value: "n_a", label: "No deposit involved" },
 ];
 
@@ -40,18 +40,16 @@ export function CancellationCard({
 
   return (
     <div className="card cx-card">
-      <h2><Icon name="x" size={17} /> Canceled deal — unwind record</h2>
+      <h2><Icon name="x" size={17} /> Cancellation record</h2>
       {recorded ? (
         <p style={{ margin: 0 }}>
           Effective <b>{txn.canceled_on ? fmtDate(txn.canceled_on) : "—"}</b> · {recorded}.
-          <span className="muted"> Per the signed Cancellation of Contract (CC) — upload it to the
-          Documents tab for the broker file.</span>
+          <span className="muted"> Upload the signed Cancellation of Contract to the Documents tab.</span>
         </p>
       ) : (
         <>
           <p className="muted" style={{ marginTop: 0 }}>
-            Record what the signed CC form says. This stores a status word only — never amounts
-            or movement.
+            Record the effective date and deposit disposition from the signed Cancellation of Contract.
           </p>
           <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", alignItems: "center" }}>
             <select value={disp} onChange={(e) => setDisp(e.target.value)} style={{ width: "auto" }}>

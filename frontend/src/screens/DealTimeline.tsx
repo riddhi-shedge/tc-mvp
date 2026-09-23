@@ -199,7 +199,7 @@ export function DealTimeline({
         <h2><Icon name="calendar" size={17} /> Timeline</h2>
         <div className="empty">
           <span className="empty-ic"><Icon name="calendar" size={26} /></span>
-          No deadlines computed yet — confirm the extracted fields to build the timeline.
+          No deadlines yet. Confirm the extracted fields to build the timeline.
         </div>
       </div>
     );
@@ -307,7 +307,7 @@ export function DealTimeline({
         .filter((t) => t.due_date)
         .map((t) => ({
           at: Date.parse(t.due_date as string),
-          label: `${t.title} — due ${fmtDate(t.due_date as string).replace(/,\s*\d{4}$/, "")}`,
+          label: `${t.title} · due ${fmtDate(t.due_date as string).replace(/,\s*\d{4}$/, "")}`,
           tone: isDone(t) ? "done" : Date.parse(t.due_date as string) < now - DAY ? "overdue" : "up",
         })),
     });
@@ -321,7 +321,7 @@ export function DealTimeline({
           at: Date.parse(d.created_at as string),
           label: `${
             d.doc_type === "other" && d.label ? d.label : (d.doc_type ?? "document").replace(/_/g, " ")
-          } — received ${fmtDate(d.created_at as string).replace(/,\s*\d{4}$/, "")}`,
+          } · received ${fmtDate(d.created_at as string).replace(/,\s*\d{4}$/, "")}`,
           tone: "doc",
           square: true,
         })),
@@ -428,7 +428,7 @@ export function DealTimeline({
             key={c.m.key}
             className={`tz-pip s-${c.st}`}
             style={{ left: c.x }}
-            title={`${c.m.names.join(", ")} — ${fmtDate(c.m.dateIso)}`}
+            title={`${c.m.names.join(", ")} · ${fmtDate(c.m.dateIso)}`}
           />
         ))}
 
@@ -482,7 +482,7 @@ export function DealTimeline({
                   if (notice) {
                     return (
                       <div className="tz-nbp">
-                        NBP served {notice.served_date} — cure expires <b>{notice.cure_expires}</b>
+                        NBP served {notice.served_date}. Cure expires <b>{notice.cure_expires}</b>
                         {notice.status === "cured" ? (
                           <span className="tz-nbp-ok"> · cured</span>
                         ) : (
@@ -510,12 +510,12 @@ export function DealTimeline({
                     <div className="tz-nbp">
                       <button
                         disabled={busy}
-                        title="Record that the agent served a Notice to Perform (Terra tracks the D2/D3 clocks — it never sends the notice)"
+                        title="Record that a Notice to Perform was served"
                         onClick={() =>
                           void (async () => {
                             try {
                               await api.post(`/transactions/${id}/notices`, { deadline_id: c.m.deadlineIds[0] });
-                              toast("NBP recorded — cure clock running");
+                              toast("Notice recorded. Cure period started.");
                               onChanged();
                             } catch (err) {
                               toast(err instanceof Error ? err.message : "Failed", { error: true });
@@ -570,7 +570,7 @@ export function DealTimeline({
               key={i}
               className="tz-more"
               style={{ left: cx, top: LANE_TOPS[LANE_TOPS.length - 1] - 32 }}
-              title={g.items.map((c) => `${c.m.names.join(", ")} — ${fmtDate(c.m.dateIso)}`).join("\n")}
+              title={g.items.map((c) => `${c.m.names.join(", ")} · ${fmtDate(c.m.dateIso)}`).join("\n")}
               onClick={() =>
                 zoomTo(Math.max(start, lo - 1.5 * DAY), Math.min(end, hi + 1.5 * DAY))
               }

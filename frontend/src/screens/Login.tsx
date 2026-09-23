@@ -16,12 +16,12 @@ function friendlyError(err: unknown): string {
   const m = raw.toLowerCase();
   if (m.includes("invalid login credentials")) return "Wrong email or password.";
   if (m.includes("invalid totp") || m.includes("invalid code") || m.includes("expired"))
-    return "That code didn't match — codes rotate every 30 seconds, try the current one.";
+    return "Incorrect code. Codes refresh every 30 seconds.";
   if (m.includes("rate limit") || m.includes("too many"))
-    return "Too many attempts — wait a minute, then try again.";
+    return "Too many attempts. Please wait a minute and try again.";
   if (m.includes("fetch") || m.includes("network"))
-    return "Can't reach the server — it may be waking up. Give it a minute and retry.";
-  return raw || "Something went wrong — try again.";
+    return "Unable to reach the server. Please try again in a moment.";
+  return raw || "Something went wrong. Please try again.";
 }
 
 // Deterministic topographic contour: a wobbled closed loop (Terra = land).
@@ -59,18 +59,18 @@ function ApproveLoopDemo() {
   }, [phase]);
   return (
     <div className="lg-demo" aria-label="Interactive demo of the approval loop">
-      <div className="lg-demo-eyebrow">Terra drafted this — try the core loop</div>
+      <div className="lg-demo-eyebrow">Preview: message approval</div>
       <div className="lg-demo-card">
         <div className="lg-demo-to">
           To: Hector R. <span>· buyer's agent</span>
         </div>
-        <div className="lg-demo-subj">Inspection report — gentle nudge</div>
+        <div className="lg-demo-subj">Inspection report follow-up</div>
         <div className="lg-demo-body">
-          Hi Hector — the inspection contingency ends Friday. Could you send the report
+          Hi Hector, the inspection contingency ends Friday. Could you send the report
           when it's in? Happy to help with anything.
         </div>
         {phase === "sent" ? (
-          <div className="lg-demo-sent">✓ Sent &amp; logged to the audit trail</div>
+          <div className="lg-demo-sent">✓ Sent</div>
         ) : (
           <button
             className="lg-demo-btn"
@@ -81,7 +81,7 @@ function ApproveLoopDemo() {
           </button>
         )}
       </div>
-      <div className="lg-demo-note">Nothing sends without that tap. Ever.</div>
+      <div className="lg-demo-note">Every message requires manual approval.</div>
     </div>
   );
 }
@@ -211,25 +211,24 @@ export function Login({ onSignedIn }: { onSignedIn: () => void }) {
           <div className="lg-wordmark">Terra</div>
           <p className="auth-tagline">
             Transaction coordination for California residential real estate.
-            Every deadline computed. Every document read. Nothing sent without your tap.
           </p>
           <ul className="auth-props">
             <li>
               <span className="ic"><Icon name="calendar" size={16} /></span>
-              Contingencies &amp; deadlines computed to the day — RPA 6/26, human-verified
+              Deadlines computed from the current California RPA
             </li>
             <li>
               <span className="ic"><Icon name="doc" size={16} /></span>
-              Reads any document in the deal — and tells you the story across them
+              Reads and cross-checks every document in the deal
             </li>
             <li>
               <span className="ic"><Icon name="shield" size={16} /></span>
-              Approval-gated outbound, append-only audit trail
+              Messages send only with your approval, and every action is logged
             </li>
           </ul>
           <ApproveLoopDemo />
           <span className="auth-trust">
-            <Icon name="lock" size={12} /> Invite-only · synthetic demo data — safe to explore
+            <Icon name="lock" size={12} /> Invite-only · demo data
           </span>
         </div>
       </div>
@@ -345,7 +344,7 @@ export function Login({ onSignedIn }: { onSignedIn: () => void }) {
             )}
             {error && <p className="error" role="alert">{error}</p>}
             <p className="lg-invite">
-              Access is invite-only. Need an account or a reset? Contact your administrator.
+              Access is invite-only. Contact your administrator for an account or password reset.
             </p>
           </div>
         </div>

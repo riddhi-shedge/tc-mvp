@@ -32,20 +32,20 @@ const DOC_LABEL: Record<string, string> = {
   unknown: "Unknown",
 };
 const DOC_ROLE: Record<string, string> = {
-  purchase_agreement: "The deal's terms, parties and timeline — every deadline computes from this document.",
-  seller_counter_offer: "Supersedes the agreement's price and terms — these are the agreed final terms.",
-  buyer_counter_offer: "Supersedes the agreement's price and terms — these are the agreed final terms.",
+  purchase_agreement: "Sets the deal's terms, parties, and deadlines.",
+  seller_counter_offer: "Supersedes the agreement's price and terms.",
+  buyer_counter_offer: "Supersedes the agreement's price and terms.",
   counter_offer: "Supersedes the agreement's price and terms.",
-  contingency_removal: "Removes contingencies from the timeline — the buyer can no longer back out on that basis.",
-  cancellation: "Ends the deal — record the unwind (effective date + deposit disposition) on the overview.",
-  request_for_repairs: "The buyer's repair asks after inspections — track each item below and resolve as work completes.",
-  repair_response: "The seller's answer to the repair request — agreed items become tracked repairs.",
+  contingency_removal: "Removes contingencies from the timeline.",
+  cancellation: "Ends the deal. Record the effective date and deposit disposition on the Overview tab.",
+  request_for_repairs: "The buyer's repair requests. Track each item and resolve as work completes.",
+  repair_response: "The seller's response to the repair request.",
   preapproval: "Adds the loan officer; Terra checks borrower, amount and expiry against the contract.",
-  preliminary_report: "Title search — checks APN, owner of record and recency against the contract.",
+  preliminary_report: "Title report. Checked against the contract's APN and owner of record.",
   property_inspection: "Adds the inspector; checks address and recency.",
   termite_inspection: "Adds the pest company; checks address and recency.",
   proof_of_funds: "Evidence the buyer's funds are real.",
-  disclosure: "Seller's statutory disclosure packet — the buyer's review clock starts on delivery.",
+  disclosure: "Part of the seller's disclosure packet.",
 };
 const DOC_ICON: Record<string, IconName> = {
   purchase_agreement: "contract",
@@ -136,30 +136,30 @@ const byType = (...types: string[]) => (docs: DealDocument[]) =>
   docs.some((d) => types.includes(d.doc_type ?? ""));
 const byMatch = (re: RegExp) => (docs: DealDocument[]) => docs.some((d) => re.test(docText(d)));
 const DISCLOSURE_FORMS: { key: string; name: string; re: RegExp }[] = [
-  { key: "tds", name: "TDS — Transfer Disclosure Statement", re: /transfer disclosure|\bTDS\b/i },
-  { key: "spq", name: "SPQ — Seller Property Questionnaire", re: /property questionnaire|\bSPQ\b/i },
-  { key: "nhd", name: "NHD — Natural Hazard Disclosure report", re: /natural hazard|\bNHD\b/i },
-  { key: "fld", name: "FLD — Lead-Based Paint disclosure", re: /lead[- ]based paint|\bFLD\b/i },
-  { key: "avid", name: "AVID — Agent Visual Inspection Disclosure", re: /\bAVID\b|visual inspection/i },
-  { key: "whsd", name: "WHSD — Water Heater & Smoke Detector", re: /water heater|smoke detector|\bWHSD\b/i },
+  { key: "tds", name: "TDS (Transfer Disclosure Statement)", re: /transfer disclosure|\bTDS\b/i },
+  { key: "spq", name: "SPQ (Seller Property Questionnaire)", re: /property questionnaire|\bSPQ\b/i },
+  { key: "nhd", name: "NHD (Natural Hazard Disclosure)", re: /natural hazard|\bNHD\b/i },
+  { key: "fld", name: "FLD (Lead-Based Paint Disclosure)", re: /lead[- ]based paint|\bFLD\b/i },
+  { key: "avid", name: "AVID (Agent Visual Inspection Disclosure)", re: /\bAVID\b|visual inspection/i },
+  { key: "whsd", name: "WHSD (Water Heater & Smoke Detector)", re: /water heater|smoke detector|\bWHSD\b/i },
 ];
 const EXPECTED: Ghost[] = [
   { key: "gh-pa", group: "Contract", name: "Purchase agreement", icon: "contract",
     role: "The deal cannot compute without it.", why: "No purchase agreement is on file.",
     askRole: "buyer_agent", purpose: "general", has: byType("purchase_agreement") },
   { key: "gh-fin", group: "Financing", name: "Preapproval or proof of funds", icon: "bank",
-    role: "Evidence the buyer's financing is real — adds the loan officer, checks borrower/amount/expiry.",
+    role: "Preapproval letter or proof of funds for the buyer's financing.",
     why: "The loan contingency needs financing evidence behind it.",
     askRole: "buyer_agent", purpose: "lender_status", has: byType("preapproval", "proof_of_funds") },
   ...DISCLOSURE_FORMS.map((f) => ({
     key: `gh-${f.key}`, group: "Reports & disclosures", name: f.name,
     icon: "clipboard" as IconName,
-    role: "Part of the seller's statutory disclosure packet — delivered to the buyer, signed by both sides.",
+    role: "Part of the seller's disclosure packet. Delivered to the buyer and signed by both parties.",
     why: "Statutory delivery deadline applies; the buyer's review clock starts on delivery.",
     askRole: "listing_agent", purpose: "disclosure_reminder", has: byMatch(f.re),
   })),
   { key: "gh-prelim", group: "Reports & disclosures", name: "Preliminary (title) report", icon: "pin",
-    role: "Title search — APN, owner of record and recency cross-checks.",
+    role: "Title report from the title company.",
     why: "Needed before contingencies clear.", askRole: "escrow", purpose: "escrow_checkin",
     has: byType("preliminary_report") },
   { key: "gh-insp", group: "Reports & disclosures", name: "Property & termite inspections", icon: "search",
@@ -293,7 +293,7 @@ export function DocumentLedger({
       const anyParty = state.parties.find((p) => p.role === g.askRole);
       toast(
         anyParty
-          ? `${anyParty.name ?? "That party"} has no email — add one on the Overview tab first`
+          ? `${anyParty.name ?? "This party"} has no email address. Add one on the Overview tab.`
           : `No ${g.askRole.replace("_", " ")} on this deal yet`,
         { error: true },
       );
@@ -302,7 +302,7 @@ export function DocumentLedger({
     void run(
       () =>
         api.post(`/transactions/${id}/messages/draft`, { party_id: party.id, purpose: g.purpose }),
-      `Request drafted to ${party.name ?? "party"} — review it in Communication`,
+      `Draft created for ${party.name ?? "recipient"}. Review it in Communication.`,
     );
   };
 
@@ -394,7 +394,7 @@ export function DocumentLedger({
                 void confirmFields([f.id], `${humanize(f.name)} confirmed`);
               }
             }}
-            title={low ? "Low confidence — check the PDF, correct if needed" : undefined}
+            title={low ? "Low confidence. Verify against the PDF." : undefined}
           >
             {low ? "Verify" : "Confirm"}
           </button>
@@ -411,7 +411,7 @@ export function DocumentLedger({
       return (
         <div className="dl-missing">
           <div className="dl-eyebrow"><Icon name="plus" size={13} /> Missing document</div>
-          <div className="dl-title">{g.name} — not received</div>
+          <div className="dl-title">{g.name} · not received</div>
           <p>{g.role}</p>
           <p className="why">{g.why}</p>
           <p>
@@ -421,7 +421,7 @@ export function DocumentLedger({
           <button className="dl-act pri" disabled={busy} onClick={() => draftRequest(g)}>
             Draft the request
           </button>
-          <p className="dl-note">Drafting never sends — you approve it in Communication (Rule 3).</p>
+          <p className="dl-note">The message is saved as a draft for your approval in Communication.</p>
         </div>
       );
     }
@@ -474,7 +474,7 @@ export function DocumentLedger({
             return w ? (
               <div className="dl-rescission">
                 Statutory buyer rescission window: through <b>{w.p3}</b> (personal delivery) /{" "}
-                <b>{w.p5}</b> (by mail) — fixed by statute, never rolls for weekends. Computed
+                <b>{w.p5}</b> (by mail). Computed
                 from the received date; the real clock runs from delivery to the buyer.
               </div>
             ) : null;
@@ -504,7 +504,7 @@ export function DocumentLedger({
                       onClick={() =>
                         void confirmFields(
                           openHere.map((f) => f.id),
-                          `${openHere.length} fields confirmed — low-confidence ones still need your eyes`,
+                          `${openHere.length} fields confirmed. Low-confidence fields still need review.`,
                         )
                       }
                     >
@@ -553,8 +553,7 @@ export function DocumentLedger({
                 </div>
               ))}
               <p className="dl-note">
-                Informational — read from the document for your context; these never set fields,
-                parties, or deadlines.
+                For reference only. These values do not affect fields, parties, or deadlines.
               </p>
             </div>
           )}
@@ -562,8 +561,7 @@ export function DocumentLedger({
             <div className="dl-facet">
               <div className="dl-faceth"><h4>No structured data</h4></div>
               <p className="dl-note">
-                Filed before the universal read existed — re-uploading (or the backfill) will
-                populate its facts.
+                No extracted data for this document.
               </p>
             </div>
           )}
@@ -575,7 +573,7 @@ export function DocumentLedger({
               onClick={() =>
                 void confirmFields(
                   open.map((f) => f.id),
-                  `${open.length} fields confirmed — low-confidence ones still need your eyes`,
+                  `${open.length} fields confirmed. Low-confidence fields still need review.`,
                 )
               }
             >
@@ -640,7 +638,7 @@ export function DocumentLedger({
                   <span className="dl-when">{shortDate(a.created_at)}</span>
                   <span>
                     {a.action === "payload.written"
-                      ? `Filed — ${(a.details as { field_count?: number }).field_count ?? 0} fields extracted`
+                      ? `Filed. ${(a.details as { field_count?: number }).field_count ?? 0} fields extracted.`
                       : a.action === "document.superseded"
                         ? "Superseded an earlier version (one agreement per deal)"
                         : `Labeled: ${(a.details as { label?: string }).label ?? ""}`}
@@ -671,10 +669,10 @@ export function DocumentLedger({
           className="dl-fchip dl-story-btn"
           disabled={storyBusy || state.documents.length === 0}
           onClick={() => (story ? setStory(null) : void weaveStory())}
-          title="Blend what Terra read from every document into one narrative with cross-document observations"
+          title="Summarize the deal across all documents"
         >
           <Icon name="sparkle" size={12} />
-          {storyBusy ? "Weaving…" : story ? "Hide the story" : "The story so far"}
+          {storyBusy ? "Generating…" : story ? "Hide summary" : "Deal summary"}
         </button>
       </div>
       {story && (
@@ -688,14 +686,13 @@ export function DocumentLedger({
               <span>
                 {o.text}
                 {o.sources.length > 0 && (
-                  <span className="dl-story-src"> — {o.sources.join(", ")}</span>
+                  <span className="dl-story-src"> ({o.sources.join(", ")})</span>
                 )}
               </span>
             </div>
           ))}
           <p className="dl-note">
-            Woven from the structured record only (extracted terms and facts — never raw
-            documents). Advisory: verify anything surprising against the PDFs.
+            Generated from extracted data only. Verify anything unexpected against the documents.
           </p>
         </div>
       )}

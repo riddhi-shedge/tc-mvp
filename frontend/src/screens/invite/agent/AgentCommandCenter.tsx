@@ -259,7 +259,7 @@ export function ApprovalQueue({ items, onApprove, onDismiss, onOpenDeal }: {
     <>
       <div className="aw-queue-note"><Icon name="shield" size={14} /> Your co-pilot drafts every outbound message. Nothing leaves without your review and approval.</div>
       {items.length === 0
-        ? <div className="aw-empty">Queue clear — no drafts waiting. Use “Draft outreach” to have your co-pilot check the book.</div>
+        ? <div className="aw-empty">No drafts waiting. Use “Draft outreach” to generate new ones.</div>
         : <div aria-live="polite">{items.map((it) => <ApprovalRow key={it.id} item={it} onApprove={onApprove} onDismiss={onDismiss} onOpenDeal={onOpenDeal} />)}</div>}
     </>
   );
@@ -408,7 +408,7 @@ function ClientsView({ clients, onOpen, onDraftUpdate, drafting }: {
   if (clients === null) return <div className="aw-empty">Loading clients…</div>;
   return (
     <>
-      <div className="aw-h"><h1>Clients</h1><span className="muted">{clients.length} — everything you recite when their name lights up</span></div>
+      <div className="aw-h"><h1>Clients</h1><span className="muted">{clients.length} active</span></div>
       {clients.length === 0 ? <div className="aw-empty">No clients yet.</div> : clients.map((c) => (
         <div className="aw-card aw-cc" key={c.dealId}>
           <div className="aw-cc-top">
@@ -448,7 +448,7 @@ function ClientsView({ clients, onOpen, onDraftUpdate, drafting }: {
 
           {c.talkingPoints.length > 0 && (
             <div className="aw-cc-talk">
-              <div className="aw-cc-talk-h">Talking points — before you call</div>
+              <div className="aw-cc-talk-h">Talking points</div>
               {c.talkingPoints.map((t) => (
                 <div key={t.id} className="aw-cc-talk-row">
                   <span className={`dot ${t.mode}`} style={{ width: 6, height: 6, borderRadius: "50%", background: t.mode === "needs_you" ? "var(--ai)" : "var(--sage)", flex: "none", marginTop: 6 }} />
@@ -553,7 +553,7 @@ export function EarningsView({ data, onOpen, totalsDefs, personHeader = "Client 
         </div>
       )}
       <p className="muted" style={{ fontSize: "var(--t-s, 12px)", marginTop: 8 }}>
-        Estimates use a default buyer-side rate; your actual commission is set by your representation agreement. Display only — nothing here moves money.
+        Estimates use a default buyer-side rate; your actual commission is set by your representation agreement. Display only.
       </p>
     </>
   );

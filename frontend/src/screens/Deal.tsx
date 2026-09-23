@@ -354,7 +354,7 @@ export function Deal({ id, onBack }: { id: string; onBack: () => void }) {
       </div>
       {state.transaction.status === "canceled" && (
         <div className="deal-canceled">
-          <Icon name="warning" size={16} /> This deal fell through / was canceled — kept for your records. Use
+          <Icon name="warning" size={16} /> This deal was canceled and is kept for your records. Use
           “Reactivate deal” to resume it.
         </div>
       )}
@@ -427,7 +427,7 @@ export function Deal({ id, onBack }: { id: string; onBack: () => void }) {
           {gate.missing_fields.length > 0 && (
             <div className="gate-sec">
               <div className="gate-sec-label">
-                Missing — enter from the purchase agreement
+                Missing. Enter from the purchase agreement.
               </div>
               {gate.missing_fields.map((name) => {
                 const val = fieldVals[name] ?? fieldSuggestion(name);
@@ -459,7 +459,7 @@ export function Deal({ id, onBack }: { id: string; onBack: () => void }) {
 
           {gate.unconfirmed_fields.length > 0 && (
             <div className="gate-sec">
-              <div className="gate-sec-label">Extracted — confirm to lock in</div>
+              <div className="gate-sec-label">Extracted. Confirm to save.</div>
               <div className="gate-chips">
                 {gate.unconfirmed_fields.map((name) => (
                   <span key={name} className="gate-chip">
@@ -498,7 +498,7 @@ export function Deal({ id, onBack }: { id: string; onBack: () => void }) {
             <div>
               <h2 style={{ margin: 0 }}>Ready to build</h2>
               <p className="muted" style={{ margin: "3px 0 0" }}>
-                Every deadline-driving field is in and confirmed — build the CA timeline.
+                All deadline fields are confirmed. Build the timeline.
               </p>
             </div>
           </div>
@@ -514,9 +514,9 @@ export function Deal({ id, onBack }: { id: string; onBack: () => void }) {
                   // real deadline count the server returned.
                   const n = Number((res as { deadlines?: number })?.deadlines ?? 0);
                   return n > 0
-                    ? { msg: `Timeline built — ${n} deadline${n === 1 ? "" : "s"}` }
+                    ? { msg: `Timeline built: ${n} deadline${n === 1 ? "" : "s"}` }
                     : {
-                        msg: "No deadlines were computed — check the deal's dates and try again.",
+                        msg: "No deadlines were computed. Check the deal's dates and try again.",
                         error: true,
                       };
                 },
@@ -614,7 +614,7 @@ export function Deal({ id, onBack }: { id: string; onBack: () => void }) {
             </div>
             {visibleMsgs.length === 0 && (
               <div className="mbx-listempty">
-                {msgFilter === "all" ? "No messages yet — start one with “New”." : "Nothing under this filter."}
+                {msgFilter === "all" ? "No messages yet. Select New to start one." : "Nothing under this filter."}
               </div>
             )}
             {visibleMsgs.map((m) => {
@@ -653,13 +653,13 @@ export function Deal({ id, onBack }: { id: string; onBack: () => void }) {
                 {recipients.length === 0 ? (
                   <div className="empty">
                     <span className="empty-ic"><Icon name="mail" size={26} /></span>
-                    No recipients with an email yet — add emails on the Parties (Overview) tab.
+                    No recipients have an email address yet. Add one on the Overview tab.
                   </div>
                 ) : (
                   <>
                     <label>To</label>
                     <select value={recipientId} onChange={(e) => setRecipientId(e.target.value)}>
-                      <option value="">— choose recipient —</option>
+                      <option value="">Select a recipient</option>
                       {recipients.map((p) => (
                         <option key={p.id} value={p.id}>{p.name} · {humanize(p.role)} ({p.email})</option>
                       ))}
@@ -716,7 +716,7 @@ export function Deal({ id, onBack }: { id: string; onBack: () => void }) {
                         )}
                         <label>Subject</label>
                         <input value={edit.subject} onChange={(e) => setEdits({ ...edits, [m.id]: { ...edit, subject: e.target.value } })} />
-                        <label>Body — edit before sending</label>
+                        <label>Body</label>
                         <textarea rows={11} value={edit.body} onChange={(e) => setEdits({ ...edits, [m.id]: { ...edit, body: e.target.value } })} />
                         <div className="mbx-actions">
                           <button
@@ -828,8 +828,7 @@ export function Deal({ id, onBack }: { id: string; onBack: () => void }) {
       <div className="card">
         <h2><Icon name="receipt" size={17} /> Log</h2>
         <p className="muted" style={{ margin: "-0.4rem 0 0.85rem" }}>
-          Every action on this deal — uploads, field confirmations, timeline builds, assignments, messages, and
-          approvals — newest first. {state.audit_log.length} entries.
+          Every action on this deal, newest first. {state.audit_log.length} entries.
         </p>
         <div className="log-wrap">
           <table className="log-table">
@@ -864,7 +863,7 @@ export function Deal({ id, onBack }: { id: string; onBack: () => void }) {
             <div className="chat-ptitle"><Icon name="sparkle" size={15} /> Ask about this deal</div>
             <button className="chat-x" onClick={() => setChatOpen(false)} title="Close"><Icon name="x" size={15} /></button>
           </div>
-          <div className="chat-sub">Answered only from this deal's records — the contract, dates, parties, and documents.</div>
+          <div className="chat-sub">Answers come only from this deal's records.</div>
           <div className="ask-log">
             {chat.length === 0 && (
               <div className="ask-suggest">

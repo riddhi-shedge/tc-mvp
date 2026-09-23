@@ -104,10 +104,10 @@ export function BuyerView({ ws, busy, docType, setDocType, cycle, onFile }: Role
       {keysDate && (
         <div className="bv-count card">
           <div className="bv-count-main">
-            <div className="bv-count-n">{nDays != null && nDays > 0 ? shownDays : nDays === 0 ? "🎉" : "✓"}</div>
+            <div className="bv-count-n">{nDays != null && nDays > 0 ? shownDays : nDays === 0 ? "0" : "✓"}</div>
             <div>
               <div className="bv-count-lbl">
-                {nDays != null && nDays > 0 ? `days until you get the keys` : nDays === 0 ? "Closing day — it's yours today!" : "You've closed — congratulations!"}
+                {nDays != null && nDays > 0 ? `days until you get the keys` : nDays === 0 ? "Closing day." : "Closed. Congratulations!"}
               </div>
               <div className="bv-count-date muted">Closing {fmtDate(keysDate)}</div>
             </div>
@@ -171,7 +171,7 @@ export function BuyerView({ ws, busy, docType, setDocType, cycle, onFile }: Role
       <div className="card">
         <h2><Icon name="checkCircle" size={17} /> What needs you</h2>
         {openTasks.length === 0 ? (
-          <div className="bv-clear"><span>🎉</span> You're all caught up — nothing needs you right now.</div>
+          <div className="bv-clear"><span>✓</span> You're all caught up.</div>
         ) : (
           <div className="stack">
             {openTasks.map((t) => (
@@ -204,7 +204,7 @@ export function BuyerView({ ws, busy, docType, setDocType, cycle, onFile }: Role
       {/* UPLOAD */}
       <div className="card">
         <h2><Icon name="doc" size={17} /> Send a document</h2>
-        <p className="muted" style={{ margin: "-0.4rem 0 0.8rem" }}>Anything your coordinator asked for — only they see it.</p>
+        <p className="muted" style={{ margin: "-0.4rem 0 0.8rem" }}>Anything your coordinator asked for. Only they see it.</p>
         <div className="inv-upload">
           <select value={docType} onChange={(e) => setDocType(e.target.value)} style={{ maxWidth: 220 }}>
             {DOC_TYPES.map((t) => <option key={t.v} value={t.v}>{t.label}</option>)}

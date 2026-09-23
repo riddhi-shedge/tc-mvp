@@ -234,14 +234,14 @@ export function BatchDrop({
           const dupName = item.duplicate_of.attachment_name ?? "a file already in the queue";
           patch(row.key, {
             phase: "skipped",
-            note: `exact duplicate of "${dupName}" — only one copy kept`,
+            note: `duplicate of "${dupName}"`,
             file: null,
           });
           return;
         }
         if (item.already_filed) {
           patch(row.key, {
-            note: `an identical file was already filed${item.already_filed.attachment_name ? ` ("${item.already_filed.attachment_name}")` : ""} — confirm only if you mean to re-file it`,
+            note: `an identical file was already filed${item.already_filed.attachment_name ? ` ("${item.already_filed.attachment_name}")` : ""}. Confirm again only to re-file.`,
           });
         }
         const detected = item.detected_doc_type ?? "unknown";
@@ -388,14 +388,14 @@ export function BatchDrop({
     blockReason = `${asks.length} file${asks.length > 1 ? "s" : ""} need${asks.length > 1 ? "" : "s"} a type from you`;
   else if (fileable.length === 0) blockReason = "Nothing to file yet";
   else if (target === "new" && paCount === 0)
-    blockReason = "A new deal needs a purchase agreement — label one, or attach to an existing deal";
+    blockReason = "A new deal requires a purchase agreement. Label one or attach to an existing deal.";
   else if (target === "new" && paCount > 1)
     blockReason =
       comparing === "purchase_agreement"
         ? "Terra is comparing the purchase agreements…"
         : paSuggestion
-          ? "Two purchase agreements — apply Terra's suggestion above, or relabel one"
-          : "Two purchase agreements and Terra can't tell which is current — relabel one yourself";
+          ? "Two purchase agreements. Apply the suggestion above or relabel one."
+          : "Two purchase agreements. Relabel one before filing.";
 
   async function fileBatch() {
     setFiling(true);
@@ -421,7 +421,7 @@ export function BatchDrop({
           patch(pa.key, {
             phase: "error",
             note: extraction?.manual_fields_required
-              ? "extraction needs manual field entry — confirm it from the queue below"
+              ? "Extraction needs manual field entry. Confirm it from the queue below."
               : err instanceof Error
                 ? err.message
                 : "confirm failed",
@@ -458,7 +458,7 @@ export function BatchDrop({
   return (
     <div className="card">
       <h2>
-        <Icon name="inbox" size={17} /> Batch upload — drop a whole folder
+        <Icon name="inbox" size={17} /> Batch upload
       </h2>
       <div
         className={`dropzone batchdrop${dragOver ? " over" : ""}`}
@@ -470,8 +470,7 @@ export function BatchDrop({
         onDrop={onDrop}
       >
         <p style={{ margin: 0 }}>
-          <strong>Drop files or a folder here.</strong> Terra reads each PDF and labels it — you
-          stay the one who files.
+          <strong>Drop files or a folder here.</strong> Each PDF is labeled automatically for your review.
         </p>
         <div style={{ marginTop: "0.6rem", display: "flex", gap: "0.5rem", justifyContent: "center" }}>
           <label className="batchpick">
@@ -507,7 +506,7 @@ export function BatchDrop({
                 )}
                 {row.phase === "labeling" && (
                   <span className="badge navy">
-                    <span className="spinner" /> Terra is reading…
+                    <span className="spinner" /> Reading…
                   </span>
                 )}
                 {row.phase === "confirming" && (
@@ -516,7 +515,7 @@ export function BatchDrop({
                   </span>
                 )}
                 {row.phase === "done" && <span className="badge ok">filed</span>}
-                {row.phase === "skipped" && <span className="badge">skipped — {row.note}</span>}
+                {row.phase === "skipped" && <span className="badge">skipped: {row.note}</span>}
                 {row.phase === "error" && (
                   <span className="badge danger" title={row.note}>
                     {row.note ?? "failed"}
@@ -530,15 +529,15 @@ export function BatchDrop({
                       </span>
                     )}
                     {row.phase === "ask" && !row.docType && !row.guess && (
-                      <span className="badge warn">What is this?</span>
+                      <span className="badge warn">Needs a type</span>
                     )}
                     {row.phase === "ask" && !row.docType && row.guess && (
                       <button
                         className="secondary batchguess"
-                        title={`Terra's best guess — click to file as "Other document" under this name`}
+                        title={`File as Other with this label`}
                         onClick={() => patch(row.key, { docType: "other" })}
                       >
-                        Terra thinks: {row.guess} — use it?
+                        Suggested: {row.guess}
                       </button>
                     )}
                     <select
@@ -578,15 +577,13 @@ export function BatchDrop({
               <div key={type} className="why" style={{ marginTop: "0.7rem" }}>
                 {reading && (
                   <span>
-                    <span className="spinner" /> {group.length} files read as {label} — Terra is
-                    reading each to tell the versions apart…
+                    <span className="spinner" /> Comparing {group.length} {label} files…
                   </span>
                 )}
                 {!reading && verdict === null && unread && !isPA && (
                   <>
-                    {group.length} files are labeled <strong>{label}</strong>. They may simply be
-                    different documents of the same kind — but if they're two versions of one
-                    document, Terra can read both and flag the outdated one.
+                    {group.length} files are labeled <strong>{label}</strong>. If these are
+                    two versions of the same document, a comparison can identify the outdated one.
                     <div style={{ marginTop: "0.45rem" }}>
                       <button className="secondary" onClick={() => void runCompare(type)}>
                         Compare versions
@@ -611,7 +608,7 @@ export function BatchDrop({
                           )
                         }
                       >
-                        Keep "{verdict.keep.name}" — file the other{" "}
+                        Keep "{verdict.keep.name}" and file the other{" "}
                         {verdict.demote.length === 1 ? "as a prior version" : "s as prior versions"}
                       </button>
                     </div>
@@ -619,8 +616,7 @@ export function BatchDrop({
                 )}
                 {!reading && verdict === "tie" && (
                   <span>
-                    Terra read {group.length === 2 ? "both" : "all"} {label} files and they look
-                    alike ({sigText(group[0]?.signals)}) — it won't guess.{" "}
+                    These files look alike ({sigText(group[0]?.signals)}).{" "}
                     {isPA
                       ? "Pick one to keep and relabel the other."
                       : "If they're genuinely different documents (say, a TDS and an SPQ), leave both as they are."}
@@ -659,8 +655,7 @@ export function BatchDrop({
           )}
           {batchError && <p className="error">{batchError}</p>}
           <p className="muted" style={{ marginTop: "0.5rem" }}>
-            Terra only labels — filing is your decision, and extracted terms still wait for your
-            per-field confirmation inside the deal.
+            Labels are suggestions. Extracted terms require confirmation inside the deal.
           </p>
         </>
       )}

@@ -49,7 +49,7 @@ export function buildBuyerDeal(ws: BuyerWorkspacePayload): BuyerDeal {
   const next = upcoming[0] ?? null;
   const level = overdue.length ? "at_risk" : next && (daysTo(next.date) ?? 99) <= 5 ? "action_soon" : "on_track";
   const nextActionLabel = overdue.length
-    ? `${overdue[0].label} — overdue`
+    ? `${overdue[0].label} (overdue)`
     : next ? `${next.label} · ${fmtDate(next.date)}` : "You're all set for now";
 
   // Contingencies live in the extracted fields (`<kind>_contingency_present` /

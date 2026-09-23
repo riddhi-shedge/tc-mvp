@@ -77,7 +77,7 @@ export function BrokerFile({ state }: { state: FullState }) {
 
       {/* Printable close-out packet: hidden on screen, the only thing on paper. */}
       <div className="packet">
-        <h1>Close-out packet — {prop}</h1>
+        <h1>Close-out packet: {prop}</h1>
         <p className="pk-sub">Prepared {short(new Date().toISOString())} · Terra transaction record</p>
         <h2>Parties</h2>
         <table><tbody>
@@ -122,8 +122,7 @@ export function BrokerFile({ state }: { state: FullState }) {
             <tr key={r.key}><td>{r.name}</td><td>{r.doc ? `on file · ${short(r.doc.created_at)}` : "NOT ON FILE"}</td></tr>
           ))}
         </tbody></table>
-        <p className="pk-foot">Generated from the system of record. Deposit and disbursement details
-        are deliberately absent — money movement is never stored or displayed.</p>
+        <p className="pk-foot">Generated from the transaction record. Deposit and disbursement details are not stored in this system.</p>
       </div>
     </div>
   );

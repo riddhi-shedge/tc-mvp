@@ -408,7 +408,7 @@ export function InviteView({ token }: { token: string }) {
           {ws.sections.map(renderSection)}
 
           <p className="inv-foot muted">
-            <Icon name="lock" size={13} /> This view is personalized to your role and scoped to this deal — you see only
+            <Icon name="lock" size={13} /> This view is personalized to your role and scoped to this deal. You see only
             what you need, complete only your own tasks, and can't see other parties' private information or any other transaction.
           </p>
         </main>

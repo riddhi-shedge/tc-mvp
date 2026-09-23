@@ -10,11 +10,11 @@ import { Icon } from "../lib/icons";
  *  The client mirrors the TRID math for display only — enforcement is server-side. */
 
 const STEPS: { key: string; label: string; hint: string }[] = [
-  { key: "docs_ordered", label: "Loan docs ordered", hint: "Lender drew docs to escrow" },
+  { key: "docs_ordered", label: "Loan docs ordered", hint: "Loan documents sent to escrow" },
   { key: "cd_delivered", label: "CD delivered", hint: "Starts the federal 3-business-day review" },
-  { key: "signed", label: "Signed", hint: "Buyer + seller signed with the notary" },
+  { key: "signed", label: "Signed", hint: "Buyer and seller signed with the notary" },
   { key: "funded", label: "Funded", hint: "Lender wired funds to title" },
-  { key: "recorded", label: "Recorded", hint: "County recorded the deed — THIS is the close" },
+  { key: "recorded", label: "Recorded", hint: "Deed recorded with the county" },
   { key: "keys_released", label: "Keys released", hint: "Possession per the contract" },
 ];
 
@@ -69,7 +69,7 @@ export function ClosingStepper({
     setBusy(true);
     try {
       await api.post(`/transactions/${id}/closing/${step}`, { occurred_on: dateVal });
-      toast(step === "recorded" ? "Recorded — the deal is closed 🎉" : "Step recorded");
+      toast(step === "recorded" ? "Recorded. The deal is closed." : "Step recorded");
       onChanged();
     } catch (err) {
       toast(err instanceof Error ? err.message : "Failed", { error: true });
@@ -83,10 +83,10 @@ export function ClosingStepper({
       <h2><Icon name="key" size={17} /> Closing week</h2>
       {earliestSigning && (
         <div className="cs-trid">
-          CD review running — earliest signing <b>{fmtDate(earliestSigning).replace(/,\s*\d{4}$/, "")}</b>{" "}
+          CD review period in progress. Earliest signing: <b>{fmtDate(earliestSigning).replace(/,\s*\d{4}$/, "")}</b>{" "}
           (3 federal business days: Saturdays count, Sundays &amp; federal holidays don't).
           {coe && Date.parse(earliestSigning) > Date.parse(coe.due_date) && (
-            <b className="cs-collide"> That lands AFTER your close-of-escrow date — talk to escrow.</b>
+            <b className="cs-collide"> This falls after the scheduled close of escrow. Contact escrow.</b>
           )}
         </div>
       )}
@@ -121,8 +121,7 @@ export function ClosingStepper({
         })}
       </div>
       <p className="muted" style={{ marginTop: "0.5rem", fontSize: "0.74rem" }}>
-        Each step is your confirmation of something that happened outside Terra — recording is
-        what closes the deal, not signing.
+        Record each step as it happens. The deal closes when the deed is recorded.
       </p>
     </div>
   );

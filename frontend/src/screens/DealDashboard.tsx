@@ -339,7 +339,7 @@ export function DealDashboard({
           )}
         </div>
         {myTasks.length === 0 && (
-          <div className="empty"><span className="empty-ic"><Icon name="clipboard" size={26} /></span>Nothing on your own plate — add a task, or assign deadline tasks to parties below.</div>
+          <div className="empty"><span className="empty-ic"><Icon name="clipboard" size={26} /></span>No tasks assigned to you. Add one, or assign deadline tasks to parties below.</div>
         )}
         <div className="stack">
           {myTasks.map((t) => {
@@ -442,7 +442,7 @@ export function DealDashboard({
             </span>
           </div>
           {toAssign.length === 0 ? (
-            <div className="ta-empty"><Icon name="checkCircle" size={15} /> Every deadline task has an owner — nice.</div>
+            <div className="ta-empty"><Icon name="checkCircle" size={15} /> Every deadline task has an owner.</div>
           ) : (
             <div className="ta-grid">
               {toAssign.map((t) => {
@@ -545,7 +545,7 @@ export function DealDashboard({
                 <div className="peek-sec">Assigned tasks · {peek.open_tasks.length} open</div>
                 {peek.open_tasks.length === 0 && peek.done_tasks.length === 0 ? (
                   <div className="muted" style={{ fontSize: "0.85rem" }}>
-                    Nothing assigned yet — drag a task from “To assign” onto this person.
+                    Nothing assigned yet. Drag a task from “To assign” onto this person.
                   </div>
                 ) : (
                   <>
@@ -590,7 +590,7 @@ export function DealDashboard({
                           if (r.sent) toast(`Invite emailed to ${r.to}`);
                           else {
                             if (r.link) await navigator.clipboard?.writeText(r.link);
-                            toast(`${r.detail ?? "Email sending isn't enabled yet"} — link copied instead`);
+                            toast(`${r.detail ?? "Email sending isn't enabled yet"}. Link copied instead.`);
                           }
                         })
                       }
@@ -606,8 +606,8 @@ export function DealDashboard({
                     <div className="between" style={{ marginBottom: "0.4rem" }}>
                       <span className="muted" style={{ fontSize: "0.76rem" }}>
                         {isCollaborator(peek.party)
-                          ? "Read-only view of this deal — no other party's private info."
-                          : "Scoped to their own task only — enforced by the database."}
+                          ? "Read-only view of this deal. No other party's private information."
+                          : "Scoped to their own task only."}
                       </span>
                       <button
                         className="secondary sm"

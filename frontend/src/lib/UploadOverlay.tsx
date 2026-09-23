@@ -60,7 +60,7 @@ export function UploadOverlay({ show, docName }: { show: boolean; docName?: stri
         <div className="uplo-title">Processing your document</div>
         <div className="uplo-step" key={i}>{steps[i]}</div>
         <div className="uplo-bar"><span /></div>
-        <div className="uplo-foot">This usually takes a few seconds — no need to wait here.</div>
+        <div className="uplo-foot">This usually takes a few seconds.</div>
       </div>
     </div>
   );

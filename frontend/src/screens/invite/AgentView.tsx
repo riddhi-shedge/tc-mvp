@@ -103,7 +103,7 @@ export function AgentView({ ws, busy, docType, setDocType, cycle, onFile }: Role
             </div>
           )}
         </div>
-        <p className="inv-foot muted"><Icon name="lock" size={13} /> A read-only view of your deal — you complete your own tasks and upload your side's documents.</p>
+        <p className="inv-foot muted"><Icon name="lock" size={13} /> A read-only view of your deal. You complete your own tasks and upload your side's documents.</p>
       </div>
     </div>
   );

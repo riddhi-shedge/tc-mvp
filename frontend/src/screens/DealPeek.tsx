@@ -47,7 +47,7 @@ export function DealPeek({
 
   useEffect(() => { setBody(item?.body ?? ""); }, [item?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  if (!item) return <div className="pk pk-empty">Select a decision — its deal appears here.<br /><span className="muted">j/k to move · Enter to act · o opens the full deal</span></div>;
+  if (!item) return <div className="pk pk-empty">Select an item to preview its deal.<br /><span className="muted">j/k to move · Enter to act · o opens the full deal</span></div>;
 
   const eff = state?.effective_fields ?? {};
   const price = eff.purchase_price?.value ?? null;
@@ -77,7 +77,7 @@ export function DealPeek({
 
       {item.kind === "draft" && (
         <div className="pk-card">
-          <div className="pk-sect">Approve &amp; send — full review</div>
+          <div className="pk-sect">Approve &amp; send</div>
           <div className="pk-to">
             To <b>{item.recipientName ?? "recipient"}</b>
             {item.recipientRole ? ` · ${item.recipientRole.replace(/_/g, " ")}` : ""} · email

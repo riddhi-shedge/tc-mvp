@@ -14,7 +14,7 @@ export function Support({ onClose }: { onClose: () => void }) {
   const errors = recentErrors();
 
   function send() {
-    toast(`Sent to support with ticket #TERRA-${Math.floor(1000 + Math.random() * 9000)} — we'll email you an update.`);
+    toast(`Sent to support as ticket #TERRA-${Math.floor(1000 + Math.random() * 9000)}. We'll email you an update.`);
     setMsg("");
     onClose();
   }
@@ -38,7 +38,7 @@ export function Support({ onClose }: { onClose: () => void }) {
         <div className="sup-block">
           <div className="sup-bt"><Icon name="warning" size={14} /> Auto-captured this session</div>
           <p className="muted sup-p">
-            If something breaks, Terra captures it and routes it to engineering automatically — your work is saved first.
+            If something breaks, it's logged and routed to engineering automatically. Your work is saved first.
           </p>
           {errors.length === 0 ? (
             <div className="sup-empty">No issues captured. Everything's running smoothly.</div>
@@ -72,7 +72,7 @@ export function Support({ onClose }: { onClose: () => void }) {
           <button className="sup-link" onClick={() => toast("Opens the help center")}>
             <Icon name="doc" size={14} /> Help center &amp; guides <Icon name="chevron" size={14} />
           </button>
-          <button className="sup-link" onClick={() => toast("Live chat — average reply under 5 minutes")}>
+          <button className="sup-link" onClick={() => toast("Live chat: average reply under 5 minutes")}>
             <Icon name="mail" size={14} /> Chat with support · avg 4 min <Icon name="chevron" size={14} />
           </button>
         </div>

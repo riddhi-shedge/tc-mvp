@@ -17,7 +17,7 @@ export const ROLE_THEMES: Record<string, RoleTheme> = {
     accent: "#5257ea", soft: "#5257ea1a", icon: "home",
     eyebrow: "Your future home",
     greeting: (n) => `Welcome${n ? `, ${n.split(" ")[0]}` : ""}`,
-    tagline: "Everything about your new home — the details, the money, and what happens next.",
+    tagline: "Everything about your new home: the details, the money, and what happens next.",
   },
   seller: {
     accent: "#0e9488", soft: "#0e94881a", icon: "key",
@@ -29,13 +29,13 @@ export const ROLE_THEMES: Record<string, RoleTheme> = {
     accent: "#4f5a6a", soft: "#4f5a6a1a", icon: "bank",
     eyebrow: "Escrow file",
     greeting: (n) => n ?? "Escrow file",
-    tagline: "The closing file — figures, parties, and what's still outstanding to close.",
+    tagline: "The closing file: figures, parties, and outstanding items.",
   },
   inspector: {
     accent: "#b8720f", soft: "#b8720f1a", icon: "clipboard",
     eyebrow: "Your inspection",
     greeting: (n) => `Hi${n ? `, ${n.split(" ")[0]}` : ""}`,
-    tagline: "Your inspection for this property — complete it and upload your report.",
+    tagline: "Your inspection for this property. Complete it and upload your report.",
   },
   lender: {
     accent: "#2563a8", soft: "#2563a81a", icon: "money",
@@ -47,7 +47,7 @@ export const ROLE_THEMES: Record<string, RoleTheme> = {
     accent: "#c07512", soft: "#c075121a", icon: "contract",
     eyebrow: "Deal cockpit",
     greeting: (n) => `Hi${n ? `, ${n.split(" ")[0]}` : ""}`,
-    tagline: "The full deal — dates, terms, parties, and your tasks.",
+    tagline: "The full deal: dates, terms, parties, and your tasks.",
   },
   default: {
     accent: "#8457d6", soft: "#8457d61a", icon: "folder",

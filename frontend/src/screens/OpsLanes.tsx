@@ -22,13 +22,13 @@ type LaneDef = {
 const LANES: LaneDef[] = [
   { key: "hoa", name: "HOA document package", icon: "home",
     orderedLabel: "Ordered", doneLabel: "Delivered", askRole: "escrow", purpose: "escrow_checkin",
-    hint: "Condo/PUD deals — CC&Rs, financials, minutes; statutory delivery duty" },
+    hint: "CC&Rs, financials, and minutes for condo/PUD sales" },
   { key: "warranty", name: "Home warranty", icon: "shield",
     orderedLabel: "Ordered", doneLabel: "Confirmed", askRole: "listing_agent", purpose: "general",
-    hint: "Per the contract's allocation — order and confirm the invoice" },
+    hint: "Order per the contract and confirm the invoice" },
   { key: "nhd", name: "NHD report", icon: "map" as IconName,
     orderedLabel: "Ordered", doneLabel: "Delivered", askRole: "listing_agent", purpose: "disclosure_reminder",
-    hint: "Natural hazard disclosure — starts the buyer's statutory review clock" },
+    hint: "Natural hazard disclosure report" },
   { key: "utilities", name: "Utilities transfer", icon: "spark",
     orderedLabel: "Buyer reminded", doneLabel: "Switched", askRole: "buyer", purpose: "general",
     hint: "Power/water/gas in the buyer's name by possession day" },
@@ -71,7 +71,7 @@ export function OpsLanes({
         party_id: party.id,
         purpose: lane.purpose,
       });
-      toast(`Chase drafted to ${party.name ?? "party"} — approve it in Communication`);
+      toast(`Draft created for ${party.name ?? "recipient"}. Review it in Communication.`);
       onChanged();
     } catch (err) {
       toast(err instanceof Error ? err.message : "Draft failed", { error: true });
@@ -128,7 +128,7 @@ export function OpsLanes({
         <button
           className="dl-act pri"
           disabled={busy === "__weekly"}
-          title="Draft this week's status update to every key party (role-aware voice) — all land in Communication for your approval"
+          title="Draft a status update for each party"
           onClick={() =>
             void (async () => {
               setBusy("__weekly");
@@ -138,8 +138,8 @@ export function OpsLanes({
                 );
                 toast(
                   `${r.drafted.length} update${r.drafted.length === 1 ? "" : "s"} drafted` +
-                    (r.skipped.length ? ` — ${r.skipped.length} skipped (${r.skipped.map((s) => s.reason)[0]})` : "") +
-                    " — review in Communication",
+                    (r.skipped.length ? `, ${r.skipped.length} skipped (${r.skipped.map((s) => s.reason)[0]})` : "") +
+                    ". Review in Communication.",
                 );
                 onChanged();
               } catch (err) {
@@ -153,7 +153,7 @@ export function OpsLanes({
           {busy === "__weekly" ? "Drafting…" : "Draft weekly updates"}
         </button>
         <span className="muted" style={{ fontSize: "0.74rem" }}>
-          Chase and weekly updates only draft — nothing sends without your approval.
+          Drafts require your approval before sending.
         </span>
       </div>
     </div>

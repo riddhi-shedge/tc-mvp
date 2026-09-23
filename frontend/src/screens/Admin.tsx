@@ -22,7 +22,7 @@ const HCOLOR: Record<Health, string> = { ok: "var(--green-600)", warn: "var(--am
 
 type Sev = "crit" | "warn" | "info" | "ok";
 const SAMPLE_ERRS: { ref: string; sev: Sev; msg: string; tc: string; when: string; status: string }[] = [
-  { ref: "TERRA-4831", sev: "crit", msg: "Unhandled render error — deal timeline", tc: "Sana Kapoor", when: "2 min ago", status: "Open" },
+  { ref: "TERRA-4831", sev: "crit", msg: "Unhandled render error: deal timeline", tc: "Sana Kapoor", when: "2 min ago", status: "Open" },
   { ref: "TERRA-4825", sev: "warn", msg: "Supabase timeout on documents fetch", tc: "Aisha Mensah", when: "41 min ago", status: "Acknowledged" },
   { ref: "TERRA-4788", sev: "warn", msg: "AI extraction confidence below threshold ×3", tc: "Diego Lara", when: "Yesterday", status: "Resolved" },
 ];
@@ -96,7 +96,7 @@ export function Admin({ onClose }: { onClose: () => void }) {
               </div>
               <div className="adm-cols">
                 <div className="card">
-                  <div className="card-h"><h3>Errors — last 14 days</h3><span className="chip-sample">sample</span></div>
+                  <div className="card-h"><h3>Errors (last 14 days)</h3><span className="chip-sample">sample</span></div>
                   <div className="adm-spark">
                     {[9, 7, 11, 6, 8, 5, 7, 4, 6, 3, 5, 4, 3, 2].map((v, i) => (
                       <i key={i} style={{ height: v * 7 }} />
@@ -109,8 +109,8 @@ export function Admin({ onClose }: { onClose: () => void }) {
                 </div>
                 <div className="card">
                   <div className="card-h"><h3>Needs an admin's eyes</h3><span className="chip-sample">sample</span></div>
-                  <div className="adm-alert"><span className="sev-dot crit" /><div><b>Sana Kapoor — workspace degraded</b><div className="muted">1 open crash · timeline render error</div></div></div>
-                  <div className="adm-alert"><span className="sev-dot warn" /><div><b>Aisha Mensah — Supabase timeouts ×3</b><div className="muted">documents fetch · last 40 min</div></div></div>
+                  <div className="adm-alert"><span className="sev-dot crit" /><div><b>Sana Kapoor: workspace degraded</b><div className="muted">1 open crash · timeline render error</div></div></div>
+                  <div className="adm-alert"><span className="sev-dot warn" /><div><b>Aisha Mensah: Supabase timeouts ×3</b><div className="muted">documents fetch · last 40 min</div></div></div>
                 </div>
               </div>
             </>

@@ -73,7 +73,7 @@ export function Quarter() {
       <div className="qtr-head">
         <div>
           <h1>Your quarter</h1>
-          <div className="muted">{quarterLabel} · your personal performance — visible only to you</div>
+          <div className="muted">{quarterLabel} · your personal performance, visible only to you</div>
         </div>
         <div className="seg-static">
           <span className="on">This quarter</span>

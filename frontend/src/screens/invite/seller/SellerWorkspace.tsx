@@ -169,7 +169,7 @@ export function SellerWorkspace({ ws, papi, reload, busy, cycle }: Props) {
             </div>
             <PhaseTimeline phase={s.phase} />
             <p className="bw-now">{SELLER_NOW[s.phase]}</p>
-            <p className="bw-inert-note" style={{ marginTop: ".8rem" }}>You can't act on these — they're the buyer's steps. Shown so you always know where the deal stands.</p>
+            <p className="bw-inert-note" style={{ marginTop: ".8rem" }}>These are the buyer's steps, shown so you always know where the deal stands.</p>
             {!deal.dealHealth || deal.dealHealth.milestones.length === 0
               ? <div className="bw-empty">The buyer's progress will appear here as escrow moves.</div>
               : (
@@ -211,7 +211,7 @@ export function SellerWorkspace({ ws, papi, reload, busy, cycle }: Props) {
           <section id="sw-requests" className="bw-sec bw-card" style={{ scrollMarginTop: 72 }}>
             <h2>Requests from the buyer</h2>
             {deal.requests.length === 0
-              ? <div className="bw-empty">No requests from the buyer yet — if they ask for repairs or a credit after their inspection, we'll surface it here with its impact on your proceeds.</div>
+              ? <div className="bw-empty">No requests from the buyer yet. If they ask for repairs or a credit after their inspection, it will appear here with its impact on your proceeds.</div>
               : deal.requests.map((r) => (
                   <RequestCard key={r.id} r={r} currentProceeds={deal.netSheet?.estimatedNetProceedsCents ?? 0} />
                 ))}
@@ -384,7 +384,7 @@ function DisclosureCard({ d, papi, reload }: { d: Disclosure; papi: Props["papi"
             <div className="bw-warn" role="alertdialog" aria-label="Confirm disclosure attestation" style={{ marginTop: ".7rem" }}>
               <div className="bw-warn-h"><Icon name="warning" size={16} /> You're signing an attestation</div>
               <p style={{ fontSize: 13, margin: ".4rem 0 0" }}>
-                By marking the <b>{d.title}</b> delivered, you attest it's accurate and complete. Incomplete disclosure can create liability that <b>survives closing</b> — when in doubt, disclose.
+                By marking the <b>{d.title}</b> delivered, you attest it's accurate and complete. Incomplete disclosure can create liability that <b>survives closing</b>. When in doubt, disclose.
               </p>
               <label style={{ display: "flex", gap: ".5rem", alignItems: "flex-start", marginTop: ".6rem", fontSize: 13 }}>
                 <input type="checkbox" checked={checked} onChange={(e) => setChecked(e.target.checked)} />
@@ -427,7 +427,7 @@ function NetProceeds({ net, escrowPhone, papi, reload }: { net: NetSheet; escrow
     <div className="bw-money">
       <h2>What you'll walk away with</h2>
       <div className="bw-money-amt">{usd(net.estimatedNetProceedsCents)}</div>
-      <div className="bw-money-meta"><b>Estimated</b>{net.beforeMortgagePayoff ? ", before your mortgage payoff" : ""} — a live estimate, not a guaranteed figure.</div>
+      <div className="bw-money-meta"><b>Estimated</b>{net.beforeMortgagePayoff ? ", before your mortgage payoff" : ""}. A live estimate, not a guaranteed figure.</div>
       <div className="bw-money-meta" style={{ marginTop: 4 }}>Once the sale records, <Define>escrow</Define> typically sends your proceeds the same or next business day.</div>
 
       <button type="button" className={`bw-net-toggle ${openLines ? "open" : ""}`} aria-expanded={openLines} onClick={() => setOpenLines((o) => !o)}>
@@ -446,7 +446,7 @@ function NetProceeds({ net, escrowPhone, papi, reload }: { net: NetSheet; escrow
             <span className="amt">{usd(net.estimatedNetProceedsCents)}</span>
           </div>
           {net.beforeMortgagePayoff && (
-            <p className="bw-net-note">This estimate doesn't include your existing <Define>mortgage payoff</Define> — only your lender has that exact figure. Ask them for a payoff quote.</p>
+            <p className="bw-net-note">This estimate doesn't include your existing <Define>mortgage payoff</Define>; only your lender has that exact figure. Ask them for a payoff quote.</p>
           )}
         </div>
       )}
@@ -498,7 +498,7 @@ function RequestCard({ r, currentProceeds }: { r: import("./types").BuyerRequest
         Accepting reduces your estimated net proceeds from <b>{usd(currentProceeds)}</b> to <b>{usd(r.proceedsAfterAcceptCents)}</b>.
       </div>
       {resolved ? (
-        <div className="bw-req-state"><Icon name="check" size={15} /> {r.state === "accepted" ? "Accepted — amendment sent to your agent for signature." : humanize(r.state)}</div>
+        <div className="bw-req-state"><Icon name="check" size={15} /> {r.state === "accepted" ? "Accepted. Amendment sent to your agent for signature." : humanize(r.state)}</div>
       ) : !confirming ? (
         <div className="bw-req-actions">
           <button type="button" className="bw-btn bw-btn-p" onClick={() => setConfirming(true)}>Accept</button>
@@ -512,7 +512,7 @@ function RequestCard({ r, currentProceeds }: { r: import("./types").BuyerRequest
             Accepting brings your estimated net proceeds to <b>{usd(r.proceedsAfterAcceptCents)}</b>. Once your agent countersigns the amendment, this can't be undone.
           </p>
           <div className="bw-req-actions">
-            <button type="button" className="bw-btn bw-btn-p">Confirm — prepare the amendment</button>
+            <button type="button" className="bw-btn bw-btn-p">Confirm and prepare the amendment</button>
             <button type="button" className="bw-btn bw-btn-g" onClick={() => setConfirming(false)}>Go back</button>
           </div>
         </div>
@@ -528,10 +528,10 @@ const SELLER_TEAM_ROLES = new Set(["listing_agent", "broker", "escrow", "title",
 const SELLER_NOW: Record<SellerPhase, JSX.Element> = {
   offer: <>The offer is signed and <Define>escrow</Define> is being opened. Your side's next job is the disclosure paperwork.</>,
   escrow_open: <><Define>Escrow</Define> is open and holding the buyer's deposit. Your disclosures are the main thing moving right now.</>,
-  disclosures: <>Your <Define>disclosure</Define> paperwork is the main thing moving right now — the buyer's clock starts when they receive it.</>,
-  buyer_contingencies: <>The buyer is doing their checking — inspections, loan, <Define>appraisal</Define>. Watch the deal-health panel above; most of this happens on their side.</>,
+  disclosures: <>Your <Define>disclosure</Define> paperwork is the main thing moving right now. The buyer's clock starts when they receive it.</>,
+  buyer_contingencies: <>The buyer is doing their checking: inspections, loan, and <Define>appraisal</Define>. Most of this happens on their side.</>,
   closing: <>The finish line: the buyer's final <Define>walkthrough</Define>, signing, funding, and recording. Keep packing.</>,
-  closed: <>Recorded and complete — the sale is done. Anything left here is wrap-up.</>,
+  closed: <>Recorded and complete. The sale is done.</>,
 };
 
 function SellerHomeSection({ ws }: { ws: import("../types").Workspace }) {
@@ -577,7 +577,7 @@ function SellerHomeSection({ ws }: { ws: import("../types").Workspace }) {
           {taking && (
             <div className="bw-stays-row not">
               <Icon name="key" size={14} />
-              <span><b>Goes with you:</b> {taking} — remember these on moving day.</span>
+              <span><b>Goes with you:</b> {taking}. Remember these on moving day.</span>
             </div>
           )}
         </div>
@@ -631,7 +631,7 @@ function MoveOutSection({
   const steps = [
     moveOut.walkthrough && {
       date: moveOut.walkthrough.due_date, label: "Buyer's final walkthrough",
-      note: "The home should look the way the contract promises — agreed repairs done, included items in place.",
+      note: "The home should match the contract: agreed repairs done, included items in place.",
     },
     moveOut.close && {
       date: moveOut.close.due_date, label: "Closing & recording",
@@ -647,7 +647,7 @@ function MoveOutSection({
     <section id="sw-moveout" className="bw-sec bw-card" style={{ scrollMarginTop: 72 }}>
       <h2>Your move-out</h2>
       <p className="muted" style={{ margin: "-.3rem 0 .8rem", fontSize: 13 }}>
-        The last three dates of this sale — and the ones that matter most for your actual life.
+        The last three dates of this sale.
       </p>
       {steps.length === 0 ? (
         <div className="bw-empty">Your closing dates will appear here once the timeline is set.</div>

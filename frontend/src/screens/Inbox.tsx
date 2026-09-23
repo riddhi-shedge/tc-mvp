@@ -24,8 +24,8 @@ const DOC_TYPE_LABELS: Record<string, string> = {
   property_inspection: "Property inspection",
   termite_inspection: "Termite inspection",
   inspection_report: "Inspection report",
-  other: "Other — let Terra identify it",
-  unknown: "Unknown — pick a type",
+  other: "Other (identify from contents)",
+  unknown: "Unknown (select a type)",
 };
 
 /** HITL screen: pending inbound documents from the dedicated deal address plus
@@ -171,11 +171,11 @@ export function Inbox({ onOpenDeal }: { onOpenDeal: (id: string) => void }) {
       });
       if (resp.duplicate_of) {
         setUploadNotice(
-          `"${uploadName}" is byte-for-byte identical to "${resp.duplicate_of.attachment_name ?? "a file"}" already in your queue — not added again. Dismiss the queued one first if you meant to replace it.`,
+          `"${uploadName}" is identical to "${resp.duplicate_of.attachment_name ?? "a file"}" already in the queue and was not added.`,
         );
       } else if (resp.already_filed) {
         setUploadNotice(
-          `Heads up: an identical file${resp.already_filed.attachment_name ? ` ("${resp.already_filed.attachment_name}")` : ""} was already filed to a deal. The upload is queued — confirm only if you mean to re-file it.`,
+          `An identical file${resp.already_filed.attachment_name ? ` ("${resp.already_filed.attachment_name}")` : ""} was already filed to a deal. Confirm this one only to re-file it.`,
         );
       }
       setUploadName(null);
@@ -205,7 +205,7 @@ export function Inbox({ onOpenDeal }: { onOpenDeal: (id: string) => void }) {
       <DealsBoard onOpenDeal={onOpenDeal} />
 
       <div className="card">
-        <h2><Icon name="inbox" size={17} /> Inbound — dedicated deal address</h2>
+        <h2><Icon name="inbox" size={17} /> Inbound email</h2>
         {pending.length === 0 && (
           <div className="empty">
             <span className="empty-ic"><Icon name="mail" size={26} /></span>
@@ -230,8 +230,8 @@ export function Inbox({ onOpenDeal }: { onOpenDeal: (id: string) => void }) {
               )}
               {item.detected_doc_type === "unknown" && item.doc_guess && (
                 <div className="muted">
-                  Terra's guess: <strong>{item.doc_guess}</strong> — pick "Other document" to
-                  file it as that.
+                  Suggested: <strong>{item.doc_guess}</strong>. Select "Other" to
+                  file it under this name.
                 </div>
               )}
             </div>
@@ -317,7 +317,7 @@ export function Inbox({ onOpenDeal }: { onOpenDeal: (id: string) => void }) {
         ))}
         {manualFor && (
           <div className="why" style={{ borderLeftColor: "#b35c00" }}>
-            <strong>Extraction needs your help — enter the fields manually.</strong>
+            <strong>Extraction was incomplete. Enter the fields manually.</strong>
             <ul>
               {manualReasons.map((reason, i) => (
                 <li key={i}>{reason}</li>
@@ -398,7 +398,7 @@ export function Inbox({ onOpenDeal }: { onOpenDeal: (id: string) => void }) {
               <div>
                 <strong>{item.subject ?? "(no subject)"}</strong>
                 <div className="muted">
-                  from {item.from_email} — {item.needs_manual_reason}
+                  from {item.from_email} · {item.needs_manual_reason}
                 </div>
               </div>
               <div style={{ flex: "0 0 auto" }}>

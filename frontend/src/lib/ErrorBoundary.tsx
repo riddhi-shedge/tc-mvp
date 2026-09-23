@@ -37,7 +37,7 @@ export class ErrorBoundary extends Component<Props, State> {
             <div className="crash-ic"><Icon name="warning" size={26} /></div>
             <h2>Something went wrong on this screen</h2>
             <p>
-              Your work is saved. We've logged what happened and sent it to Terra engineering — no action needed from
+              Your work is saved. The error was logged and sent to engineering. No action is needed from
               you.
             </p>
             <div className="crash-ref">Error reference · {this.state.ref}</div>

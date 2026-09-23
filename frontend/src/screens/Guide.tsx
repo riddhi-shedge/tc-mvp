@@ -23,7 +23,7 @@ const SECTIONS: { id: string; title: string; blurb: string; features: Feature[] 
     blurb:
       "Terra is one place to run a residential transaction from contract to close. You navigate on the left, work in the center, and inspect or act in the right-hand rail. Everything connects: a deadline knows its document, a task knows its party, an AI suggestion knows its source.",
     features: [
-      { icon: "home", term: "Home", what: "Your cross-deal command center — what's due, what's at risk, and this week's deadlines across every active transaction.", can: ["See a morning briefing", "Jump straight into any deal that needs attention", "Scan your open work queue"] },
+      { icon: "home", term: "Home", what: "What's due, what's at risk, and this week's deadlines across every active transaction.", can: ["See a morning briefing", "Jump straight into any deal that needs attention", "Scan your open work queue"] },
       { icon: "search", term: "Ask Terra (⌘K)", what: "A command bar and assistant in one. Search a deal or ask a plain-English question grounded only in your data.", can: ["\"What needs my attention today?\"", "Jump to any deal or screen", "Draft a follow-up for review"] },
     ],
   },
@@ -34,10 +34,10 @@ const SECTIONS: { id: string; title: string; blurb: string; features: Feature[] 
       "A transaction (a \"deal\") is a single property sale you're coordinating. Open one and you get a mini-workspace with its own tabs: timeline, tasks, documents, parties, communication, and notes.",
     features: [
       { icon: "deals", term: "Transaction", what: "One property, one escrow, one side (buyer or seller). Its header shows the stage, close-of-escrow countdown, price, and any risks.", can: ["Track a deal through its stages", "See the next contractual deadline", "Open everything related to it in one place"] },
-      { icon: "calendar", term: "Timeline & deadlines", what: "The contractual dates Terra computed from the contract — inspection, loan and appraisal contingencies, close of escrow. Fixed dates you schedule work around.", can: ["See every deadline in order", "Tell fixed contract dates from flexible work", "Build the timeline once key fields are confirmed"] },
-      { icon: "check", term: "Tasks", what: "The work items on a deal — yours and ones assigned to a party. Each moves through not-started → in-progress → done.", can: ["Check items off inline", "Assign a task to a party", "Set a due date and priority"] },
-      { icon: "doc", term: "Documents", what: "Everything filed against the deal — the purchase agreement, disclosures, appraisal, escrow instructions. Terra reads them and extracts key fields.", can: ["Upload and open documents", "Review AI-extracted fields", "See exceptions like a missing disclosure or a price mismatch"] },
-      { icon: "users", term: "Parties", what: "Everyone involved — buyer, seller, both agents, escrow, lender, inspectors, appraiser. Each can be invited to their own scoped workspace.", can: ["See the full cast of the deal", "Invite a party to their own view", "Track who still owes you something"] },
+      { icon: "calendar", term: "Timeline & deadlines", what: "The contractual dates computed from the contract: inspection, loan, and appraisal contingencies, and close of escrow.", can: ["See every deadline in order", "Tell fixed contract dates from flexible work", "Build the timeline once key fields are confirmed"] },
+      { icon: "check", term: "Tasks", what: "The work items on a deal, both yours and those assigned to a party.", can: ["Check items off inline", "Assign a task to a party", "Set a due date and priority"] },
+      { icon: "doc", term: "Documents", what: "Everything filed against the deal. Each document is read and key fields are extracted for your review.", can: ["Upload and open documents", "Review AI-extracted fields", "See exceptions like a missing disclosure or a price mismatch"] },
+      { icon: "users", term: "Parties", what: "Everyone involved in the deal. Each party can be invited to their own scoped workspace.", can: ["See the full cast of the deal", "Invite a party to their own view", "Track who still owes you something"] },
       { icon: "mail", term: "Communication", what: "The deal's message history and drafts. Terra can prepare a draft, but nothing ever sends without your explicit approval.", can: ["Review and approve drafts", "See what's awaiting a reply", "Keep internal notes separate from outbound"] },
       { icon: "pin", term: "Sticky notes", what: "Quick notes you jot on a deal, like paper stickies on a desk. Terra reads them and suggests to-dos you can accept.", can: ["Jot anything, anytime", "Let Terra turn a note into a task", "Keep context that doesn't fit a field"] },
     ],
@@ -49,26 +49,26 @@ const SECTIONS: { id: string; title: string; blurb: string; features: Feature[] 
     features: [
       { icon: "calendar", term: "Calendar", what: "Every contractual deadline and your scheduled work in one grid. Drag unscheduled work onto a day, or let auto-schedule place it around fixed dates.", can: ["See all deadlines at once", "Drag work onto a day", "Preview an auto-schedule before applying it"] },
       { icon: "inbox", term: "Deals & Inbox", what: "The pipeline board of active deals plus incoming documents waiting to be filed to the right transaction.", can: ["Scan the pipeline by stage", "Confirm an inbound document into a deal", "Open any deal"] },
-      { icon: "board", term: "My quarter", what: "Your personal scorecard — deals closed, on-time rate, cycle time, and how this quarter compares to the last. Visible only to you.", can: ["See how you're trending", "Spot your slowest recurring task", "Review the quarter at a glance"] },
+      { icon: "board", term: "My quarter", what: "Your personal metrics: deals closed, on-time rate, and cycle time. Visible only to you.", can: ["See how you're trending", "Spot your slowest recurring task", "Review the quarter at a glance"] },
     ],
   },
   {
     id: "help",
     title: "AI, help & safety",
     blurb:
-      "Terra prepares work; you stay in control. Every consequential AI action shows what it found, why, and its source — and waits for your review. Nothing sends or changes silently.",
+      "Terra prepares work for your review. Every suggestion shows its source, and nothing is sent or changed without your approval.",
     features: [
-      { icon: "sparkle", term: "Recommendations", what: "Source-backed suggestions in the right rail — a risk flag, a document mismatch, a follow-up. Each has Review, Approve, and Dismiss.", can: ["See the evidence behind every suggestion", "Approve, edit, or dismiss", "Undo where possible"] },
+      { icon: "sparkle", term: "Recommendations", what: "Suggestions in the right rail, such as a risk flag or a document mismatch. Each can be reviewed, approved, or dismissed.", can: ["See the evidence behind every suggestion", "Approve, edit, or dismiss", "Undo where possible"] },
       { icon: "shield", term: "Help & support", what: "Report a problem, check system status, and see any errors Terra captured automatically. If something breaks, your work is saved and the issue is logged for engineering.", can: ["Report a problem with context attached", "See auto-captured error references", "Reach support fast"] },
     ],
   },
 ];
 
 const STEPS = [
-  { icon: "home" as IconName, title: "Welcome to Terra", body: "This is your transaction workspace — everything you need to run a deal from contract to close, in one place. Here's a 60-second tour." },
+  { icon: "home" as IconName, title: "Welcome to Terra", body: "Your transaction workspace: everything needed to run a deal from contract to close." },
   { icon: "deals" as IconName, title: "Navigate on the left", body: "Home shows what needs attention today. Transactions, Tasks, Calendar, Documents and Parties pull work together across every deal you're running." },
-  { icon: "doc" as IconName, title: "Each deal is its own workspace", body: "Open a transaction to get its timeline, tasks, documents, parties, communication and sticky notes — all connected, so a deadline knows its document and a task knows its party." },
-  { icon: "sparkle" as IconName, title: "Terra prepares, you approve", body: "Terra reads your documents and notes and suggests next steps with the evidence attached. Nothing sends or changes without your tap — you're always in control." },
+  { icon: "doc" as IconName, title: "Each deal is its own workspace", body: "Open a transaction for its timeline, tasks, documents, parties, communication, and notes." },
+  { icon: "sparkle" as IconName, title: "Terra prepares, you approve", body: "Terra reads your documents and suggests next steps with evidence attached. Nothing is sent or changed without your approval." },
   { icon: "search" as IconName, title: "Ask anything with ⌘K", body: "Press ⌘K to search a deal or ask a plain-English question. You can reopen this guide any time from Help in the sidebar." },
 ];
 
@@ -121,7 +121,7 @@ export function GuidePage() {
         <div>
           <h1>How Terra works</h1>
           <p className="muted">
-            A plain-English guide to every part of your workspace — what each thing is, and what you can do with it.
+            A guide to every part of your workspace.
           </p>
         </div>
       </div>

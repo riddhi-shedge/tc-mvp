@@ -95,7 +95,7 @@ export function LenderView({ ws, busy, docType, setDocType, cycle, onFile }: Rol
             </div>
           )}
         </div>
-        <p className="inv-foot muted"><Icon name="lock" size={13} /> Scoped to this loan — no wiring data, and drafts never send without the coordinator's approval.</p>
+        <p className="inv-foot muted"><Icon name="lock" size={13} /> Scoped to this loan. No wiring data is stored, and drafts require the coordinator's approval.</p>
       </div>
     </div>
   );

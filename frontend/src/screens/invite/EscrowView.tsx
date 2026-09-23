@@ -116,7 +116,7 @@ export function EscrowView({ ws, busy, docType, setDocType, cycle, onFile }: Rol
             </div>
           )}
         </div>
-        <p className="inv-foot muted"><Icon name="lock" size={13} /> Scoped to this file — no wiring data, and nothing sends without the coordinator's approval.</p>
+        <p className="inv-foot muted"><Icon name="lock" size={13} /> Scoped to this file. No wiring data is stored, and messages require the coordinator's approval.</p>
       </div>
     </div>
   );

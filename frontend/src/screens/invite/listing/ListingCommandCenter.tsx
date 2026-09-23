@@ -168,7 +168,7 @@ export function ListingCommandCenter({ papi }: { papi: Papi }) {
               data={earnings}
               onOpen={openListing}
               personHeader="Seller & property"
-              totalsDefs={[["activeCents", "on market — potential (est.)"], ["inEscrowCents", "in escrow (est.)"], ["closedCents", "closed (est.)"]]}
+              totalsDefs={[["activeCents", "on market, potential (est.)"], ["inEscrowCents", "in escrow (est.)"], ["closedCents", "closed (est.)"]]}
             />
           )}
           {view === "activity" && (<><div className="aw-h"><h1>What your co-pilot did</h1></div><ActivityList activity={activity} onOpen={openListing} full /></>)}
@@ -299,7 +299,7 @@ function OfferComparisonBlock({ data, onDraft, drafting, onOpenListing }: { data
   const meter = data.buyerHealth.meter;
   return (
     <>
-      {hasSample && <div className="aw-offers-banner"><Icon name="sparkle" size={13} /> Illustrative comparison — the SOR holds one accepted offer for this listing; sample competing offers are shown to demonstrate the present-to-seller workflow.</div>}
+      {hasSample && <div className="aw-offers-banner"><Icon name="sparkle" size={13} /> Illustrative comparison. Sample competing offers are shown alongside the one accepted offer on record.</div>}
       <div className="aw-offers" role="list" aria-label="Offers">
         {data.offers.map((o) => <OfferCard key={o.id} o={o} />)}
       </div>
@@ -321,7 +321,7 @@ function OfferComparisonBlock({ data, onDraft, drafting, onOpenListing }: { data
           </div>
         ))}
       </div>
-      <p className="muted" style={{ fontSize: 12, marginTop: ".4rem" }}>Read-only — these are the buyer's steps. Shown so you can answer “will it close?” for your seller.</p>
+      <p className="muted" style={{ fontSize: 12, marginTop: ".4rem" }}>Read-only. These are the buyer's steps, shown so you can answer “will it close?” for your seller.</p>
     </>
   );
 }
@@ -352,7 +352,7 @@ function SellersView({ sellers, onOpen, onOffers, onDraftUpdate, drafting }: {
   const STATUS: Record<string, string> = { pre_market: "Pre-market", active: "Active", in_escrow: "In escrow", closed: "Closed" };
   return (
     <>
-      <div className="aw-h"><h1>Sellers</h1><span className="muted">{sellers.length} — everything you recite when they call asking "so… what's happening?"</span></div>
+      <div className="aw-h"><h1>Sellers</h1><span className="muted">{sellers.length} active</span></div>
       {sellers.length === 0 ? <div className="aw-empty">No sellers yet.</div> : sellers.map((c) => (
         <div className="aw-card aw-cc" key={c.listingId}>
           <div className="aw-cc-top">
@@ -384,7 +384,7 @@ function SellersView({ sellers, onOpen, onOffers, onDraftUpdate, drafting }: {
               </span>
             )}
             {c.disclosures.length > 0 && (
-              <span className="aw-cc-conts" title="Disclosure delivery — the listing agent's liability clock">
+              <span className="aw-cc-conts" title="Disclosure delivery status">
                 {c.disclosures.map((x) => (
                   <span key={x.kind} className={`aw-cdot ${x.delivered ? "done" : "open"}`}>
                     {x.delivered ? "✓" : "○"} {x.kind.toUpperCase()}
@@ -405,7 +405,7 @@ function SellersView({ sellers, onOpen, onOffers, onDraftUpdate, drafting }: {
 
           {c.talkingPoints.length > 0 && (
             <div className="aw-cc-talk">
-              <div className="aw-cc-talk-h">Talking points — before you pick up</div>
+              <div className="aw-cc-talk-h">Talking points</div>
               {c.talkingPoints.map((t) => (
                 <div key={t.id} className="aw-cc-talk-row">
                   <span style={{ width: 6, height: 6, borderRadius: "50%", background: t.mode === "needs_you" ? "var(--ai)" : "var(--sage)", flex: "none", marginTop: 6 }} />

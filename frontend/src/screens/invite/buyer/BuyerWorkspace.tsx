@@ -36,9 +36,9 @@ const prefersReduced = () => typeof matchMedia !== "undefined" && matchMedia("(p
 const PHASE_NOW: Record<DealPhase, JSX.Element> = {
   offer: <>Your offer is accepted and the paperwork is being opened. Nothing is needed from you today.</>,
   escrow_open: <><Define>Escrow</Define> is holding the deal together while your lender works on the loan. Nothing is needed from you today unless a task appears above.</>,
-  contingencies: <>This is the checking period — inspections and the loan get finished, and your <Define>contingencies</Define> protect you while they do.</>,
+  contingencies: <>This is the checking period. Inspections and the loan get finished, and your <Define>contingencies</Define> protect you while they do.</>,
   closing: <>The finish line: final <Define>walkthrough</Define>, signing, and funding. Your team will tell you exactly where to be and when.</>,
-  keys: <>Closing is complete — the home is yours. Anything left here is wrap-up.</>,
+  keys: <>Closing is complete. The home is yours.</>,
 };
 
 // The buyer's service team (callable); principals and the listing side appear
@@ -84,10 +84,10 @@ export function BuyerWorkspace({ ws, papi, reload, busy, cycle }: Props) {
       try {
         const b64 = (reader.result as string).split(",", 2)[1] ?? "";
         await papi("/party/documents", { method: "POST", body: JSON.stringify({ filename: file.name, content_base64: b64, doc_type: docType }) });
-        setUploadMsg("Received — your coordinator has it.");
+        setUploadMsg("Received. Your coordinator has it.");
         await reload();
       } catch (err) {
-        setUploadMsg(err instanceof Error ? err.message : "Upload failed — try again.");
+        setUploadMsg(err instanceof Error ? err.message : "Upload failed. Please try again.");
       } finally {
         setUploading(false);
       }
@@ -165,13 +165,13 @@ export function BuyerWorkspace({ ws, papi, reload, busy, cycle }: Props) {
                   </div>
                 ) : s.phase === "keys" ? (
                   <div className="bw-keys">
-                    <div className="bw-keys-n date">🎉</div>
+                    <div className="bw-keys-n date">✓</div>
                     <div className="bw-keys-l">closing complete</div>
                   </div>
                 ) : s.estimatedKeysDate ? (
                   <div className="bw-keys">
                     <div className="bw-keys-n date">{fmtDate(s.estimatedKeysDate).replace(/, \d{4}$/, "")}</div>
-                    <div className="bw-keys-l">est. keys — date passed, ask your agent</div>
+                    <div className="bw-keys-l">estimated keys (date passed; ask your agent)</div>
                   </div>
                 ) : null}
               </div>
@@ -200,7 +200,7 @@ export function BuyerWorkspace({ ws, papi, reload, busy, cycle }: Props) {
                   {deal.deposit
                     ? deal.deposit.verifiedByBuyer
                       ? <><Icon name="checkCircle" size={13} /> {deal.deposit.amountLabel} verified</>
-                      : `${deal.deposit.amountLabel} — verify by phone`
+                      : `${deal.deposit.amountLabel} (verify by phone)`
                     : "No deposit on file"}
                 </span>
               </button>
@@ -218,7 +218,7 @@ export function BuyerWorkspace({ ws, papi, reload, busy, cycle }: Props) {
             <p className="bw-now">{PHASE_NOW[s.phase]}</p>
             {s.estimatedKeysDate && (
               <p className="muted" style={{ marginTop: ".4rem", fontSize: 13 }}>
-                Estimated keys on <b>{fmtDate(s.estimatedKeysDate)}</b>. Dates can shift — your team will keep this current.
+                Estimated keys on <b>{fmtDate(s.estimatedKeysDate)}</b>. Dates can shift; your team will keep this current.
               </p>
             )}
           </section>
@@ -235,7 +235,7 @@ export function BuyerWorkspace({ ws, papi, reload, busy, cycle }: Props) {
           <section id="bw-contingencies" className="bw-sec bw-card" style={{ scrollMarginTop: 72 }}>
             <h2>Your protections</h2>
             <p className="muted" style={{ margin: "-.3rem 0 .8rem", fontSize: 13 }}>
-              <Define>Contingencies</Define> are conditions that protect you. In California they don't lapse on their own — removing one is a step you take with your team.
+              <Define>Contingencies</Define> are conditions that protect you. In California they don't lapse on their own; removing one is a step you take with your team.
             </p>
             {deal.contingencies.length === 0
               ? <div className="bw-empty">No active contingencies are on file for your deal yet.</div>
@@ -246,7 +246,7 @@ export function BuyerWorkspace({ ws, papi, reload, busy, cycle }: Props) {
           <section id="bw-docs" className="bw-sec bw-card" style={{ scrollMarginTop: 72 }}>
             <h2>Your documents</h2>
             <p className="muted" style={{ margin: "-.3rem 0 .8rem", fontSize: 13 }}>
-              Anything you send goes only to your coordinator — other parties never see it.
+              Anything you send goes only to your coordinator. Other parties never see it.
             </p>
             {ws.my_documents.length > 0 && (
               <div style={{ marginBottom: ".8rem" }}>
@@ -419,7 +419,7 @@ function ContingencyCard({ c }: { c: Contingency }) {
         <div className="bw-cont-body">
           {removed && (
             <p style={{ margin: ".2rem 0 .5rem", color: "var(--ink)" }}>
-              You <b>waived</b> this protection when your offer was accepted — a common move in a competitive market. Here's what it would have covered:
+              You <b>waived</b> this protection when your offer was accepted, which is common in a competitive market. Here's what it would have covered:
             </p>
           )}
           <p>{c.explanation}</p>
@@ -492,7 +492,7 @@ function MoneyStep({ deposit, papi, reload }: { deposit: NonNullable<ReturnType<
           <ul>
             <li>Wire fraud is the #1 scam in home sales. Criminals send fake "updated" instructions that look real.</li>
             <li>We will <b>never</b> email or message you wiring changes. No one on your team will rush you.</li>
-            <li>Call escrow at a number <b>you</b> look up or already trust — not one from an email — and confirm the instructions by voice before sending.</li>
+            <li>Call escrow at a number <b>you</b> look up or already trust (never one from an email) and confirm the instructions by voice before sending.</li>
           </ul>
           <div className="bw-money-actions">
             {deposit.escrowPhone
@@ -584,7 +584,7 @@ function HomeSection({ ws }: { ws: Workspace }) {
             referrerPolicy="no-referrer-when-downgrade"
           />
           <p className="muted" style={{ margin: ".4rem 0 0", fontSize: 12 }}>
-            Drag to look around{look === "street" ? " — this is the view from your street" : ""}.
+            Drag to look around{look === "street" ? ". This is the view from your street" : ""}.
           </p>
         </div>
       )}
@@ -612,7 +612,7 @@ function HomeSection({ ws }: { ws: Workspace }) {
           <Icon name="shield" size={15} />
           <span>
             You&apos;re covered by a <Define>home warranty</Define> from <b>{warrantyBy}</b>
-            {warrantyPaid === "seller" ? " — the seller is paying for it" : ""}.
+            {warrantyPaid === "seller" ? " (paid by the seller)" : ""}.
           </span>
         </div>
       )}

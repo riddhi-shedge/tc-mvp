@@ -28,8 +28,8 @@ export function Runway({ items, maxPerDay = 3 }: { items: RunwayItem[]; maxPerDa
       const due = items.filter((x) => x.due_date === day);
       const overdue = today ? items.filter((x) => x.due_date < todayIso) : [];
       const chips = [
-        ...overdue.map((x) => ({ text: x.tag ? `${x.tag} · ${x.name}` : x.name, cls: "overdue", title: `${x.name} — overdue (${x.due_date})${x.tag ? ` · ${x.tag}` : ""}` })),
-        ...due.map((x) => ({ text: x.tag ? `${x.tag} · ${x.name}` : x.name, cls: today ? "today" : biz <= 3 ? "soon" : "later", title: `${x.name} — ${x.due_date}${x.tag ? ` · ${x.tag}` : ""}` })),
+        ...overdue.map((x) => ({ text: x.tag ? `${x.tag} · ${x.name}` : x.name, cls: "overdue", title: `${x.name} · overdue (${x.due_date})${x.tag ? ` · ${x.tag}` : ""}` })),
+        ...due.map((x) => ({ text: x.tag ? `${x.tag} · ${x.name}` : x.name, cls: today ? "today" : biz <= 3 ? "soon" : "later", title: `${x.name} · ${x.due_date}${x.tag ? ` · ${x.tag}` : ""}` })),
       ];
       cols.push({
         key: day, today,

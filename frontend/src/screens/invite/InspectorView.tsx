@@ -48,8 +48,8 @@ export function InspectorView({ ws, busy, cycle, onFile }: RoleViewProps) {
       <div className="role-body iw-body">
         {/* one big action */}
         <div className={`iw-action ${uploaded ? "has" : ""}`}>
-          <div className="iw-action-h">{uploaded ? "Report received — thank you" : "Upload your report"}</div>
-          <p className="iw-action-p">{uploaded ? "Your coordinator has your report and takes it from here. You can add another file if needed." : `When your ${sub.label.toLowerCase()} is complete, upload the report — that's all we need from you.`}</p>
+          <div className="iw-action-h">{uploaded ? "Report received" : "Upload your report"}</div>
+          <p className="iw-action-p">{uploaded ? "Your coordinator has your report and takes it from here. You can add another file if needed." : `When your ${sub.label.toLowerCase()} is complete, upload the report here.`}</p>
           <label className={`iw-drop ${busy ? "off" : ""}`}>
             <span className="iw-drop-ic"><Icon name="attach" size={26} /></span>
             <span className="iw-drop-t">{busy ? "Uploading…" : `Choose your ${sub.docLabel.toLowerCase()}`}</span>
@@ -75,7 +75,7 @@ export function InspectorView({ ws, busy, cycle, onFile }: RoleViewProps) {
             <div className="stack">{openTasks.map((t) => <TaskRow key={t.id} t={t} busy={busy} cycle={cycle} fmt={fmtDate} />)}</div>
           </div>
         )}
-        <p className="inv-foot muted"><Icon name="lock" size={13} /> Scoped to your inspection on this property — you don't see the deal's price, parties, or other transactions.</p>
+        <p className="inv-foot muted"><Icon name="lock" size={13} /> Scoped to your inspection on this property.</p>
       </div>
     </div>
   );
