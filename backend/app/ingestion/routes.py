@@ -22,6 +22,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from fastapi.security import HTTPAuthorizationCredentials
 from pydantic import BaseModel, Field
 
+from app.common import orgs
 from app.common.auth import TCUser, bearer_scheme, require_tc
 from app.master.routes import get_repo as get_master_repo
 from app.contracts.documents import (
@@ -143,10 +144,40 @@ def _referenced_message_ids(headers: list[PostmarkHeader]) -> list[str]:
     return out
 
 
+def _match_inbound_recipient(recipients: set[str], deal_address: str) -> tuple[bool, str | None]:
+    """Was this mail addressed to our inbound mailbox, and with which org tag?
+
+    Accepts the bare address (deal@dom) and plus-addressed forms
+    (deal+<inbound_key>@dom). Returns (matched, tag): tag is the plus-suffix
+    that names the org, or None for the bare address. A tagged match wins over
+    a bare one when both appear (forwarding chains)."""
+    local, _, domain = deal_address.lower().partition("@")
+    matched, tag = False, None
+    for recipient in recipients:
+        r_local, _, r_domain = (recipient or "").partition("@")
+        if r_domain != domain:
+            continue
+        if r_local == local:
+            matched = True
+        elif r_local.startswith(local + "+") and len(r_local) > len(local) + 1:
+            matched, tag = True, r_local[len(local) + 1 :]
+    return matched, tag
+
+
+def _resolve_inbound_org(tag: str | None) -> str | None:
+    """Which org owns this delivery. A plus-tag names the org (orgs.inbound_key);
+    untagged mail goes to INBOUND_DEFAULT_ORG_ID, or — the common single-tenant
+    deployment — the only org that exists. None ⇒ unroutable ⇒ absorbed."""
+    if tag:
+        return orgs.org_for_inbound_key(tag)
+    return os.environ.get("INBOUND_DEFAULT_ORG_ID") or orgs.sole_org_id()
+
+
 def _ingest_email_attachment(
     inbox: InboxRepo,
     att: "PostmarkAttachment",
     *,
+    org_id: str,
     from_email: str,
     to_email: str,
     subject: str | None,
@@ -172,13 +203,14 @@ def _ingest_email_attachment(
 
     if storage_path is not None:
         duplicate = inbox.find_duplicate_by_storage_path(
-            storage_path=storage_path, attachment_count=1
+            org_id=org_id, storage_path=storage_path, attachment_count=1
         )
         if duplicate is not None:
             _log.info("ingestion.webhook.duplicate_absorbed item=%s", duplicate["id"])
             return {"id": duplicate["id"], "status": duplicate["status"], "duplicate": True}
 
     item = inbox.add_item(
+        org_id=org_id,
         from_email=from_email,
         to_email=to_email,
         subject=subject,
@@ -214,11 +246,19 @@ def postmark_inbound_webhook(
         raise HTTPException(status_code=401, detail="Invalid webhook token")
 
     # Dedicated inbox only (rules/security.md): mail addressed elsewhere is
-    # dropped, never stored. 200 so Postmark does not retry.
+    # dropped, never stored. 200 so Postmark does not retry. Plus-addressed
+    # recipients (deal+<inbound_key>@...) route the delivery to that org;
+    # untagged mail falls back to the default/sole org. Unroutable mail is
+    # absorbed — never stored against a guessed tenant.
     recipients = {r.Email.lower() for r in body.ToFull}
     recipients.add(body.To.lower())
     recipients.add(body.OriginalRecipient.lower())
-    if deal_address.lower() not in recipients:
+    matched, org_tag = _match_inbound_recipient(recipients, deal_address)
+    if not matched:
+        return {"ignored": True}
+    org_id = _resolve_inbound_org(org_tag)
+    if org_id is None:
+        _log.info("ingestion.webhook.unroutable_org tag=%s", org_tag or "<none>")
         return {"ignored": True}
 
     from_email = (body.FromFull.Email if body.FromFull else "") or body.From
@@ -243,7 +283,12 @@ def postmark_inbound_webhook(
     try:
         items = [
             _ingest_email_attachment(
-                inbox, att, from_email=from_email, to_email=deal_address, subject=body.Subject
+                inbox,
+                att,
+                org_id=org_id,
+                from_email=from_email,
+                to_email=deal_address,
+                subject=body.Subject,
             )
             for att in attachments
         ]
@@ -306,7 +351,7 @@ def manual_upload(
     digest = parts[1] if len(parts) >= 3 else None
     already_filed: dict[str, Any] | None = None
     if digest:
-        dups = inbox.find_items_by_digest(digest)
+        dups = inbox.find_items_by_digest(digest, org_id=tc.org_id)
         open_dup = next(
             (d for d in dups if d["status"] in ("pending", "needs_manual", "processing")), None
         )
@@ -321,6 +366,7 @@ def manual_upload(
             }
 
     item = inbox.add_item(
+        org_id=tc.org_id,
         from_email=tc.actor,
         to_email="manual-upload",
         subject=body.subject,
@@ -350,7 +396,8 @@ def classify_inbox_item(
     so the TC is asked, never guessed for. The label is only a suggestion; the
     HITL confirm still decides."""
     item = inbox.get(item_id)
-    if item is None:
+    if item is None or item.get("org_id") != tc.org_id:
+        # Cross-org item ids read as not-found: existence is never confirmed.
         raise HTTPException(status_code=404, detail="Inbox item not found")
     if item["status"] != "pending":
         raise HTTPException(status_code=409, detail="Only pending items can be classified")
@@ -381,14 +428,14 @@ def list_inbox(
     inbox: InboxRepo = Depends(get_inbox_repo),
     master: HttpMasterClient = Depends(get_master_client),
 ) -> list[dict[str, Any]]:
-    items = inbox.list_open()
+    items = inbox.list_open(org_id=tc.org_id)
     if not items:
         return []
     # Suggestions use the TC's own view of the deals (their token, forwarded).
     # If the master is unreachable, items still list — just without suggestions.
     status, transactions = master.list_transactions(token=_tc_token(credentials))
     known = transactions if status < 400 and isinstance(transactions, list) else []
-    history = inbox.sender_history()
+    history = inbox.sender_history(org_id=tc.org_id)
     return [
         {
             **item,
@@ -927,7 +974,8 @@ def confirm_inbox_item(
     extractor: Extractor = Depends(get_extractor),
 ) -> dict[str, Any]:
     item = inbox.get(item_id)
-    if item is None:
+    if item is None or item.get("org_id") != tc.org_id:
+        # Cross-org item ids read as not-found: existence is never confirmed.
         raise HTTPException(status_code=404, detail="Inbox item not found")
     if item["status"] == "needs_manual":
         raise HTTPException(
@@ -1104,7 +1152,8 @@ def dismiss_inbox_item(
     """Close out an item that shouldn't become a payload (e.g. superseded by a
     manual upload, or junk that made it to the deal address)."""
     item = inbox.get(item_id)
-    if item is None:
+    if item is None or item.get("org_id") != tc.org_id:
+        # Cross-org item ids read as not-found: existence is never confirmed.
         raise HTTPException(status_code=404, detail="Inbox item not found")
     ignored = inbox.mark_ignored(item_id)
     if ignored is None:

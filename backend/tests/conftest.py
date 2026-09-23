@@ -37,11 +37,42 @@ from app.master.routes import (
 from tests.fake_extractor import FakeExtractor
 from tests.fake_inbox import FakeMasterClient, InMemoryInboxRepo
 from tests.fake_mailer import FakeAssistant, FakeDrafter, FakeMailer, FakePartyAccessIssuer
-from tests.fake_repo import InMemoryRepo
+from tests.fake_repo import TEST_ORG_B_ID, TEST_ORG_ID, InMemoryRepo
 
 TEST_JWT_SECRET = os.environ["SUPABASE_JWT_SECRET"]
 WEBHOOK_TOKEN = os.environ["POSTMARK_WEBHOOK_TOKEN"]
 DEAL_ADDRESS = os.environ["POSTMARK_INBOUND_ADDRESS"]
+
+# Tenancy: the in-memory org directory require_tc resolves memberships from.
+# Default user(s) belong to org A; the dedicated "tc-user-b" sub belongs to
+# org B so tests can act as a second, unrelated TC business.
+ORG_B_SUB = "tc-user-b"
+
+
+class FakeOrgDirectory:
+    def membership(self, user_id: str) -> dict | None:
+        if user_id == ORG_B_SUB:
+            return {"org_id": TEST_ORG_B_ID, "role": "owner"}
+        return {"org_id": TEST_ORG_ID, "role": "owner"}
+
+    def org_for_inbound_key(self, key: str) -> str | None:
+        return {"terra": TEST_ORG_ID, "org-b": TEST_ORG_B_ID}.get(key)
+
+    def sole_org_id(self) -> str | None:
+        return TEST_ORG_ID
+
+
+@pytest.fixture(autouse=True)
+def org_directory():
+    """Every test runs with the fake org directory installed (and the membership
+    cache cleared on both sides), so require_tc resolves synthetic orgs and the
+    webhook can route untagged mail to org A."""
+    from app.common import orgs as orgs_module
+
+    directory = FakeOrgDirectory()
+    orgs_module.set_directory(directory)
+    yield directory
+    orgs_module.set_directory(None)
 
 FIXTURES = Path(__file__).parent / "fixtures"
 SYNTHETIC_PA_BYTES = (FIXTURES / "synthetic_pa_signed.pdf").read_bytes()

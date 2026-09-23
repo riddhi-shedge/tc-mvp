@@ -1,0 +1,333 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Prototype — Today split-pane (queue + deal context)</title>
+<style>
+/* ── Normalized system preview (P-C): semantic tokens, one type scale, 4px grid ── */
+:root {
+  --accent: #5b5ef0; --accent-strong: #4245c9; --accent-soft: #ececfe;
+  --bg: #eef1f6; --surface: #ffffff; --surface-2: #f5f7fb;
+  --ink: #14171f; --ink-2: #515765; --ink-3: #868d9c;
+  --line: #e2e7ee; --line-2: #d5dbe5;
+  --ok-fg: #268049; --ok-bg: #e8f5ec;
+  --warn-fg: #8f5e13; --warn-bg: #f8efdc;
+  --danger-fg: #b23528; --danger-bg: #fbe6e3;
+  --r: 8px; --r-lg: 12px;
+  --ring: 0 0 0 3px rgba(91,94,240,.28);
+  /* type scale: 11 / 12 / 13 / 14 / 16 / 20 — nothing else */
+  --t-xs: 11px; --t-s: 12px; --t-m: 13px; --t-b: 14px; --t-l: 16px; --t-xl: 20px;
+}
+* { box-sizing: border-box; margin: 0; }
+body {
+  font: 400 var(--t-b)/1.45 Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
+  background: var(--bg); color: var(--ink-2); height: 100vh; overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+button { font: inherit; cursor: pointer; background: none; border: 0; color: inherit; }
+:focus-visible { outline: none; box-shadow: var(--ring); border-radius: 6px; }
+.tnum { font-variant-numeric: tabular-nums; }
+
+/* ── shell: rail · queue · context panel ── */
+.shell { display: grid; grid-template-columns: 52px minmax(430px, 1fr) minmax(380px, 44%); height: 100vh; }
+.rail { background: var(--surface); border-right: 1px solid var(--line); display: flex; flex-direction: column; align-items: center; padding: 12px 0; gap: 4px; }
+.rail button { width: 36px; height: 36px; border-radius: var(--r); display: grid; place-items: center; font-size: var(--t-l); color: var(--ink-3); }
+.rail button.on { background: var(--accent-soft); color: var(--accent-strong); }
+.rail .logo { width: 30px; height: 30px; border-radius: 8px; background: var(--accent); color: #fff; display: grid; place-items: center; font-weight: 700; font-size: var(--t-b); margin-bottom: 12px; }
+
+/* queue column */
+.queue { display: flex; flex-direction: column; min-width: 0; border-right: 1px solid var(--line); }
+.q-head { padding: 12px 16px 8px; }
+.q-title { font-size: var(--t-xl); font-weight: 650; color: var(--ink); letter-spacing: -.01em; }
+.q-sub { font-size: var(--t-s); color: var(--ink-3); margin-top: 2px; }
+.chips { display: flex; gap: 6px; padding: 8px 16px 12px; flex-wrap: wrap; border-bottom: 1px solid var(--line); }
+.chip { display: inline-flex; align-items: center; gap: 6px; font-size: var(--t-s); font-weight: 550; color: var(--ink-2); background: var(--surface); border: 1px solid var(--line); border-radius: 999px; padding: 4px 10px; }
+.chip.on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); color: var(--ink); }
+.chip b { font-size: var(--t-s); min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; display: inline-grid; place-items: center; background: var(--surface-2); color: var(--ink-2); }
+.chip.warn b { background: var(--warn-bg); color: var(--warn-fg); }
+.chip.danger b { background: var(--danger-bg); color: var(--danger-fg); }
+.chip.acc b { background: var(--accent-soft); color: var(--accent-strong); }
+
+.rows { flex: 1; overflow-y: auto; background: var(--surface); }
+.row { display: flex; align-items: center; gap: 10px; height: 40px; padding: 0 16px; border-bottom: 1px solid var(--line); cursor: pointer; }
+.row:hover { background: var(--surface-2); }
+.row.sel { background: var(--accent-soft); box-shadow: inset 2px 0 0 var(--accent); }
+.row .ic { width: 24px; height: 24px; flex: none; border-radius: 6px; display: grid; place-items: center; font-size: var(--t-s); }
+.ic.draft { background: var(--accent-soft); color: var(--accent-strong); }
+.ic.reminder { background: var(--warn-bg); color: var(--warn-fg); }
+.ic.gate { background: var(--warn-bg); color: var(--warn-fg); }
+.ic.risk { background: var(--danger-bg); color: var(--danger-fg); }
+.row .addr { font-weight: 600; font-size: var(--t-m); color: var(--ink); white-space: nowrap; }
+.row .what { font-size: var(--t-m); color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+.row .pill { font-size: var(--t-xs); font-weight: 650; padding: 2px 8px; border-radius: 999px; flex: none; }
+.pill.overdue, .pill.today { background: var(--danger-bg); color: var(--danger-fg); }
+.pill.soon { background: var(--warn-bg); color: var(--warn-fg); }
+.pill.later { background: var(--surface-2); color: var(--ink-3); }
+.q-foot { border-top: 1px solid var(--line); padding: 6px 16px; font-size: var(--t-xs); color: var(--ink-3); display: flex; gap: 14px; background: var(--surface); }
+.q-foot b { color: var(--ink-2); font-weight: 650; background: var(--surface-2); border: 1px solid var(--line); border-radius: 4px; padding: 0 5px; font-size: var(--t-xs); }
+
+/* context panel */
+.panel { overflow-y: auto; background: var(--bg); padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg); padding: 12px 14px; }
+.p-head .addr { font-size: var(--t-l); font-weight: 650; color: var(--ink); }
+.p-head .meta { display: flex; gap: 14px; margin-top: 6px; font-size: var(--t-s); color: var(--ink-2); flex-wrap: wrap; }
+.p-head .meta b { color: var(--ink); font-weight: 600; }
+.stage { font-size: var(--t-xs); font-weight: 650; padding: 2px 8px; border-radius: 999px; background: var(--accent-soft); color: var(--accent-strong); }
+.sect { font-size: var(--t-xs); font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 8px; }
+
+/* runway (P-D): 10 CA business days as columns */
+.runway { display: flex; gap: 3px; align-items: stretch; }
+.day { flex: 1; min-width: 0; border-radius: 6px; background: var(--surface-2); padding: 4px 3px 5px; }
+.day.today { outline: 2px solid var(--accent); flex: 1.35; }
+.day.gap { flex: .18; background: repeating-linear-gradient(-45deg, var(--surface-2) 0 3px, var(--line) 3px 4px); padding: 0; }
+.day .d { font-size: var(--t-xs); font-weight: 650; color: var(--ink-3); text-align: center; }
+.day.today .d { color: var(--accent-strong); }
+.dl { margin-top: 3px; font-size: 10px; font-weight: 650; line-height: 1.25; padding: 2px 3px; border-radius: 4px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.dl.overdue, .dl.today { background: var(--danger-bg); color: var(--danger-fg); }
+.dl.soon { background: var(--warn-bg); color: var(--warn-fg); }
+.dl.later { background: var(--accent-soft); color: var(--accent-strong); }
+
+/* approval card (Rule 3, fast) */
+.appr .to { font-size: var(--t-s); color: var(--ink-2); margin-bottom: 6px; }
+.appr .to b { color: var(--ink); }
+.why { display: flex; gap: 6px; font-size: var(--t-s); color: var(--accent-strong); background: var(--accent-soft); border-radius: 6px; padding: 6px 8px; margin-bottom: 8px; }
+.appr textarea { width: 100%; min-height: 132px; font: 400 var(--t-m)/1.5 inherit; color: var(--ink); background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r); padding: 8px 10px; resize: vertical; }
+.actions { display: flex; gap: 8px; margin-top: 10px; align-items: center; }
+.btn { font-size: var(--t-m); font-weight: 600; border-radius: var(--r); padding: 6px 12px; border: 1px solid var(--line-2); background: var(--surface); color: var(--ink); }
+.btn.pri { background: var(--accent); border-color: transparent; color: #fff; }
+.btn kbd { font-size: var(--t-xs); background: rgba(255,255,255,.25); border-radius: 3px; padding: 0 4px; margin-left: 6px; }
+.btn:not(.pri) kbd { background: var(--surface-2); color: var(--ink-3); }
+
+.digest .ev { display: flex; gap: 8px; padding: 5px 0; font-size: var(--t-m); border-top: 1px solid var(--line); align-items: baseline; }
+.digest .ev:first-of-type { border-top: 0; }
+.digest .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--ok-fg); flex: none; position: relative; top: -1px; }
+.digest .dot.you { background: var(--accent); }
+.digest .t { margin-left: auto; font-size: var(--t-xs); color: var(--ink-3); flex: none; }
+.people { display: flex; flex-wrap: wrap; gap: 6px; }
+.person { display: inline-flex; gap: 6px; align-items: center; font-size: var(--t-s); background: var(--surface-2); border-radius: 999px; padding: 3px 10px 3px 4px; }
+.person i { width: 20px; height: 20px; border-radius: 50%; background: var(--accent-soft); color: var(--accent-strong); font-style: normal; font-size: 10px; font-weight: 700; display: grid; place-items: center; }
+.person span { color: var(--ink-3); }
+
+.empty { text-align: center; color: var(--ink-3); font-size: var(--t-m); padding: 48px 16px; }
+.toast { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); background: var(--ink); color: #fff; font-size: var(--t-m); padding: 8px 16px; border-radius: 999px; opacity: 0; transition: opacity .15s; pointer-events: none; z-index: 60; }
+.toast.on { opacity: 1; }
+
+/* overlays: ⌘K stub + shortcuts */
+.overlay { position: fixed; inset: 0; background: rgba(20,23,31,.4); display: none; place-items: start center; padding-top: 14vh; z-index: 50; }
+.overlay.on { display: grid; }
+.sheet { width: min(480px, 92vw); background: var(--surface); border-radius: var(--r-lg); box-shadow: 0 20px 60px rgba(0,0,0,.25); padding: 16px; font-size: var(--t-m); }
+.sheet h3 { font-size: var(--t-b); color: var(--ink); margin-bottom: 10px; }
+.sheet .k { display: flex; justify-content: space-between; padding: 5px 0; border-top: 1px solid var(--line); }
+.sheet .k:first-of-type { border-top: 0; }
+.sheet kbd { background: var(--surface-2); border: 1px solid var(--line); border-radius: 4px; padding: 0 6px; font-size: var(--t-s); }
+
+@media (max-width: 1100px) { .shell { grid-template-columns: 52px 1fr; } .panel { display: none; } }
+</style>
+</head>
+<body>
+<div class="shell">
+  <nav class="rail" aria-label="Navigation">
+    <div class="logo">T</div>
+    <button class="on" title="Today">☰</button>
+    <button title="Board">▦</button>
+    <button title="Calendar">▤</button>
+    <button title="Inbox">✉</button>
+  </nav>
+
+  <section class="queue" aria-label="Decision queue">
+    <div class="q-head">
+      <div class="q-title">Good morning</div>
+      <div class="q-sub" id="qsub"></div>
+    </div>
+    <div class="chips" id="chips" role="tablist"></div>
+    <div class="rows" id="rows" role="listbox" aria-label="Decisions" tabindex="0"></div>
+    <div class="q-foot">
+      <span><b>j/k</b> move</span><span><b>↵</b> approve / act</span><span><b>d</b> dismiss</span>
+      <span><b>o</b> open deal</span><span><b>⌘K</b> jump</span><span><b>?</b> all shortcuts</span>
+    </div>
+  </section>
+
+  <aside class="panel" id="panel" aria-label="Deal context"></aside>
+</div>
+
+<div class="toast" id="toast"></div>
+<div class="overlay" id="ovK"><div class="sheet"><h3>⌘K — jump / command (stub)</h3>
+  <div class="k"><span>21989 McClellan Rd, Cupertino</span><kbd>deal</kbd></div>
+  <div class="k"><span>1428 Juniper St, Pasadena</span><kbd>deal</kbd></div>
+  <div class="k"><span>Show everything at risk</span><kbd>view</kbd></div>
+  <div class="k"><span>Go to Calendar</span><kbd>nav</kbd></div>
+</div></div>
+<div class="overlay" id="ovH"><div class="sheet"><h3>Keyboard</h3>
+  <div class="k"><span>Move selection</span><span><kbd>j</kbd> <kbd>k</kbd> or <kbd>↑</kbd><kbd>↓</kbd></span></div>
+  <div class="k"><span>Approve draft / primary action</span><span><kbd>Enter</kbd> or <kbd>e</kbd></span></div>
+  <div class="k"><span>Dismiss / resolve</span><kbd>d</kbd></div>
+  <div class="k"><span>Open the full deal page</span><kbd>o</kbd></div>
+  <div class="k"><span>Focus edit body</span><kbd>i</kbd></div>
+  <div class="k"><span>Jump / command palette</span><kbd>⌘K</kbd></div>
+</div></div>
+
+<script>
+/* ── mock data shaped like /transactions/attention + deal state ── */
+const day = (n) => { const d = new Date(); d.setDate(d.getDate() + n); return d.toISOString().slice(0,10); };
+const fmt = (iso) => new Date(iso + "T00:00:00").toLocaleDateString("en-US", { month:"short", day:"numeric" });
+
+const DEALS = {
+  mcclellan: { addr: "21989 McClellan Rd", city: "Cupertino", stage: "Contingencies", price: "$1,900,000", coe: day(9),
+    parties: [["Rajkumar Methuku","buyer"],["Karthik Anantharaman","seller"],["Dinesh Shedge","buyer agent"],["Coco Tan","listing agent"],["CA Escrow Group","escrow"]],
+    deadlines: [["Loan contingency", day(1)], ["Appraisal contingency", day(3)], ["Close of escrow", day(9)]],
+    digest: [["Reply from lender — follow-up cleared", "9:02a", false],["Appraisal report filed from inbound email", "8:41a", false],["You approved the disclosure reminder", "yday", true]] },
+  juniper:  { addr: "1428 Juniper St", city: "Pasadena", stage: "New offer", price: "$985,000", coe: day(21),
+    parties: [["Alicia Fong","buyer"],["M. Delgado","seller"],["R. Whitcomb","buyer agent"],["Foothill Escrow","escrow"]],
+    deadlines: [["EMD due", day(0)], ["Seller disclosures", day(5)], ["Inspection contingency", day(12)]],
+    digest: [["Purchase agreement extracted — 4 fields need you", "8:15a", false],["Deal created from inbound email", "8:14a", false]] },
+  oakknoll: { addr: "8 Oak Knoll Ter", city: "San Rafael", stage: "Closing", price: "$2,340,000", coe: day(4),
+    parties: [["The Okafors","buyer"],["J. Marsh","seller"],["S. Lindqvist","buyer agent"],["GoldenGate Title","title"]],
+    deadlines: [["Walkthrough", day(2)], ["Loan funding", day(3)], ["Close of escrow", day(4)]],
+    digest: [["Clear to close from lender", "yday", false],["Timeline refreshed by compliance", "yday", false]] },
+  sycamore: { addr: "77 Sycamore Ave", city: "Fresno", stage: "Contingencies", price: "$610,000", coe: day(16),
+    parties: [["B. Tran","buyer"],["Estate of R. Cole","seller"],["L. Park","buyer agent"],["Valley Escrow","escrow"]],
+    deadlines: [["Termite report", day(-1)], ["Inspection contingency", day(6)]],
+    digest: [["Inspection scheduled for Thursday", "yday", false]] },
+};
+
+let items = [
+  { id:"d1", kind:"draft", deal:"mcclellan", title:"Loan status check-in — Wells Fargo", urgency:"soon", date:day(1),
+    to:"Belana Chechelnitsky", role:"lender", why:"Loan contingency removes in 1 day and no status is on file — a nudge now protects the buyer's deposit.",
+    body:"Hi Belana,\n\nThis is your TC on the Methuku/Vanamala purchase of 21989 McClellan Rd, Cupertino. With the loan contingency scheduled to remove tomorrow, could you confirm underwriting status and any conditions outstanding?\n\nThank you!" },
+  { id:"d2", kind:"draft", deal:"juniper", title:"EMD reminder — buyer wire-verification steps", urgency:"today", date:day(0),
+    to:"Alicia Fong", role:"buyer", why:"EMD is due today and escrow hasn't confirmed receipt; the draft routes her to verify wire details by phone (never email).",
+    body:"Hi Alicia,\n\nA reminder that your earnest-money deposit is due to Foothill Escrow today. Before sending, please call escrow at the number on your workspace to verify wire instructions by voice — never trust wiring details from email.\n\nYou've got this!" },
+  { id:"r1", kind:"reminder", deal:"sycamore", title:"No reply: termite inspection scheduling", urgency:"overdue", date:day(-1),
+    to:"Valley Pest Co", role:"inspector", why:null, body:null },
+  { id:"g1", kind:"gate", deal:"juniper", title:"Timeline blocked — 3 fields to confirm, 1 to enter", urgency:"soon", date:day(0) },
+  { id:"k1", kind:"risk", deal:"mcclellan", title:"Appraisal not yet received; contingency in 3 days", urgency:"soon", date:day(3) },
+  { id:"k2", kind:"risk", deal:"sycamore", title:"Termite report overdue", urgency:"overdue", date:day(-1) },
+  { id:"d3", kind:"draft", deal:"oakknoll", title:"Walkthrough confirmation to buyer agent", urgency:"soon", date:day(2),
+    to:"S. Lindqvist", role:"buyer agent", why:"Walkthrough is in 2 days; confirming time + access avoids a closing-week scramble.",
+    body:"Hi Sofia,\n\nConfirming the final walkthrough at 8 Oak Knoll Ter for Thursday at 10am — the Okafors will meet you there. Lockbox code unchanged. Anything you need from our side before funding Friday?" },
+];
+
+const ICONS = { draft:"✉", reminder:"⏳", gate:"▣", risk:"⚠" };
+const PILL = { overdue:"overdue", today:"today", soon:"soon", later:"later" };
+let sel = 0, filter = "all";
+
+const visible = () => items.filter(i => filter === "all" || i.kind === filter);
+const $ = (id) => document.getElementById(id);
+function toast(msg){ const t=$("toast"); t.textContent=msg; t.classList.add("on"); clearTimeout(t._h); t._h=setTimeout(()=>t.classList.remove("on"),1800); }
+
+function renderChips(){
+  const counts = { draft:0, reminder:0, gate:0, risk:0 };
+  items.forEach(i => counts[i.kind]++);
+  const defs = [["all",`All`,items.length,""],["draft","Drafts",counts.draft,"acc"],["reminder","No reply",counts.reminder,"warn"],["gate","Blocked",counts.gate,"warn"],["risk","Risks",counts.risk,"danger"]];
+  $("chips").innerHTML = defs.map(([k,l,n,cls]) =>
+    `<button class="chip ${cls} ${filter===k?"on":""}" data-f="${k}"><b>${n}</b>${l}</button>`).join("");
+  $("chips").querySelectorAll(".chip").forEach(c => c.onclick = () => { filter = c.dataset.f; sel = 0; render(); });
+  $("qsub").textContent = `${new Date().toLocaleDateString("en-US",{weekday:"long", month:"long", day:"numeric"})} · 4 active deals · ${items.length} decisions waiting`;
+}
+
+function renderRows(){
+  const v = visible();
+  if (sel >= v.length) sel = Math.max(0, v.length - 1);
+  $("rows").innerHTML = v.length ? v.map((i, idx) =>
+    `<div class="row ${idx===sel?"sel":""}" role="option" aria-selected="${idx===sel}" data-i="${idx}">
+       <span class="ic ${i.kind}">${ICONS[i.kind]}</span>
+       <span class="addr">${DEALS[i.deal].addr.split(",")[0]}</span>
+       <span class="what">${i.title}</span>
+       <span class="pill ${PILL[i.urgency]} tnum">${i.urgency==="overdue"?"overdue":i.urgency==="today"?"today":fmt(i.date)}</span>
+     </div>`).join("")
+    : `<div class="empty">Queue clear — nothing is waiting on you.</div>`;
+  $("rows").querySelectorAll(".row").forEach(r => r.onclick = () => { sel = +r.dataset.i; render(); });
+}
+
+function runway(deal){
+  // next 10 CA business days as columns; weekends compressed to slivers
+  const cols = []; const d = new Date(); let biz = 0;
+  while (biz < 10) {
+    const iso = d.toISOString().slice(0,10);
+    const dow = d.getDay();
+    if (dow === 0 || dow === 6) { if (cols.at(-1)?.gap !== true) cols.push({ gap:true }); }
+    else {
+      const dls = deal.deadlines.filter(([,dt]) => dt === iso).map(([n]) => n);
+      const over = biz === 0 ? deal.deadlines.filter(([,dt]) => dt < iso).map(([n]) => n + " (overdue)") : [];
+      cols.push({ iso, label: biz===0 ? "Today" : d.toLocaleDateString("en-US",{weekday:"short"}).slice(0,2)+" "+d.getDate(), dls:[...over, ...dls], today: biz===0 });
+      biz++;
+    }
+    d.setDate(d.getDate()+1);
+  }
+  const urg = (i) => i.includes("overdue") ? "overdue" : "soon";
+  return `<div class="runway">${cols.map(c => c.gap ? `<div class="day gap"></div>` :
+    `<div class="day ${c.today?"today":""}"><div class="d">${c.label}</div>${
+      c.dls.map((n,i2) => `<div class="dl ${c.today?urg(n):"later"}" title="${n}">${n}</div>`).join("")}</div>`).join("")}</div>`;
+}
+
+function renderPanel(){
+  const v = visible();
+  if (!v.length) { $("panel").innerHTML = `<div class="empty">Select a decision to see its deal here.</div>`; return; }
+  const it = v[sel]; const deal = DEALS[it.deal];
+  const appr = it.kind === "draft" ? `
+    <div class="card appr">
+      <div class="sect">Approve &amp; send — full review</div>
+      <div class="to">To <b>${it.to}</b> · ${it.role} · email</div>
+      <div class="why">✦ <span><b>Why:</b> ${it.why}</span></div>
+      <textarea id="body" aria-label="Draft body">${it.body}</textarea>
+      <div class="actions">
+        <button class="btn pri" onclick="approve()">Approve &amp; send<kbd>↵</kbd></button>
+        <button class="btn" onclick="dismiss()">Dismiss<kbd>d</kbd></button>
+        <button class="btn" onclick="openDeal()">Open deal<kbd>o</kbd></button>
+      </div>
+    </div>` : `
+    <div class="card">
+      <div class="sect">${it.kind === "reminder" ? "No reply — chase?" : it.kind === "gate" ? "Timeline blocked" : "Risk flag"}</div>
+      <div style="font-size:var(--t-m); color:var(--ink)">${it.title}</div>
+      <div class="actions">
+        ${it.kind==="reminder" ? `<button class="btn pri" onclick="act('Chase drafted — review it in the queue')">Draft chase<kbd>↵</kbd></button>` : ""}
+        ${it.kind==="gate" ? `<button class="btn pri" onclick="openDeal()">Review fields<kbd>↵</kbd></button>` : ""}
+        ${it.kind==="risk" ? `<button class="btn pri" onclick="dismiss('Resolved')">Resolve<kbd>↵</kbd></button>` : ""}
+        <button class="btn" onclick="openDeal()">Open deal<kbd>o</kbd></button>
+      </div>
+    </div>`;
+  $("panel").innerHTML = `
+    <div class="card p-head">
+      <div class="addr">${deal.addr}, ${deal.city}</div>
+      <div class="meta"><span class="stage">${deal.stage}</span><span><b>${deal.price}</b></span><span>COE <b class="tnum">${fmt(deal.coe)}</b></span></div>
+    </div>
+    <div class="card"><div class="sect">Deadline runway — next 10 business days</div>${runway(deal)}</div>
+    ${appr}
+    <div class="card digest"><div class="sect">Since you last looked</div>
+      ${deal.digest.map(([t,when,you]) => `<div class="ev"><span class="dot ${you?"you":""}"></span><span>${t}</span><span class="t">${when}</span></div>`).join("")}
+    </div>
+    <div class="card"><div class="sect">People on this deal</div>
+      <div class="people">${deal.parties.map(([n,r]) => `<span class="person"><i>${n.split(" ").map(w=>w[0]).slice(0,2).join("")}</i>${n}<span>· ${r}</span></span>`).join("")}</div>
+    </div>`;
+}
+
+function render(){ renderChips(); renderRows(); renderPanel(); }
+function advance(){ const v = visible(); if (sel >= v.length) sel = Math.max(0, v.length-1); render(); }
+function approve(){ const v = visible(); const it = v[sel]; if (!it || it.kind!=="draft") return;
+  items = items.filter(x => x.id !== it.id); toast(`Approved & sent to ${it.to} — logged to the deal`); advance(); }
+function dismiss(msg){ const v = visible(); const it = v[sel]; if (!it) return;
+  items = items.filter(x => x.id !== it.id); toast(msg || "Dismissed"); advance(); }
+function act(msg){ toast(msg); }
+function openDeal(){ const v = visible(); toast(`(stub) open full deal page — ${DEALS[v[sel]?.deal]?.addr ?? ""}`); }
+
+document.addEventListener("keydown", (e) => {
+  if (e.metaKey && e.key.toLowerCase() === "k") { e.preventDefault(); $("ovK").classList.toggle("on"); return; }
+  if (e.key === "Escape") { $("ovK").classList.remove("on"); $("ovH").classList.remove("on"); document.activeElement?.blur(); return; }
+  if (e.target.tagName === "TEXTAREA" || e.target.tagName === "INPUT") return;
+  const v = visible();
+  if (e.key === "j" || e.key === "ArrowDown") { sel = Math.min(sel+1, v.length-1); render(); }
+  else if (e.key === "k" || e.key === "ArrowUp") { sel = Math.max(sel-1, 0); render(); }
+  else if (e.key === "Enter" || e.key === "e") { const it = v[sel]; if (!it) return;
+    if (it.kind === "draft") approve(); else if (it.kind === "reminder") act("Chase drafted — review it in the queue");
+    else if (it.kind === "gate") openDeal(); else dismiss("Resolved"); }
+  else if (e.key === "d") dismiss();
+  else if (e.key === "o") openDeal();
+  else if (e.key === "i") { e.preventDefault(); document.getElementById("body")?.focus(); }
+  else if (e.key === "?") $("ovH").classList.toggle("on");
+});
+["ovK","ovH"].forEach(id => $(id).onclick = (e) => { if (e.target.id === id) $(id).classList.remove("on"); });
+render();
+</script>
+</body>
+</html>

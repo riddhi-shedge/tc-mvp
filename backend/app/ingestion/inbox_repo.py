@@ -51,6 +51,7 @@ class InboxRepo(Protocol):
     def add_item(
         self,
         *,
+        org_id: str,
         from_email: str,
         to_email: str,
         subject: str | None,
@@ -66,17 +67,18 @@ class InboxRepo(Protocol):
     ) -> dict[str, Any]: ...
 
     def find_duplicate_by_storage_path(
-        self, *, storage_path: str, attachment_count: int
+        self, *, org_id: str, storage_path: str, attachment_count: int
     ) -> dict[str, Any] | None:
-        """An existing inbox item for the EXACT same stored bytes (content-addressed
-        storage_path) — used to absorb Postmark at-least-once redelivery without
-        creating a duplicate queue item. Matches by exact content, so a genuinely
-        different document is never mistaken for a duplicate (no silent data loss).
-        None if none."""
+        """An existing inbox item IN THIS ORG for the EXACT same stored bytes
+        (content-addressed storage_path) — used to absorb Postmark at-least-once
+        redelivery without creating a duplicate queue item. Matches by exact
+        content, so a genuinely different document is never mistaken for a
+        duplicate (no silent data loss). Org-scoped: two orgs receiving the same
+        bytes each get their own queue item. None if none."""
         ...
 
-    def find_items_by_digest(self, digest: str) -> list[dict[str, Any]]:
-        """All inbox items whose stored bytes hash to this sha256 digest —
+    def find_items_by_digest(self, digest: str, *, org_id: str) -> list[dict[str, Any]]:
+        """This org's inbox items whose stored bytes hash to this sha256 digest —
         regardless of source, filename, or status. Storage paths are
         content-addressed ({source}/{digest}/{filename}), so this is an EXACT
         same-bytes match: a renamed copy is found, a revised document never is.
@@ -89,14 +91,15 @@ class InboxRepo(Protocol):
         StorageUnavailable on failure."""
         ...
 
-    def list_open(self) -> list[dict[str, Any]]:
-        """Pending + needs_manual items — the queue the TC works through."""
+    def list_open(self, *, org_id: str) -> list[dict[str, Any]]:
+        """The org's pending + needs_manual items — the queue the TC works through."""
         ...
 
     def get(self, item_id: str) -> dict[str, Any] | None: ...
 
-    def sender_history(self) -> dict[str, str]:
-        """from_email (lowercased) -> most recently confirmed transaction id."""
+    def sender_history(self, *, org_id: str) -> dict[str, str]:
+        """from_email (lowercased) -> most recently confirmed transaction id,
+        within one org (suggestions must never leak another org's deals)."""
         ...
 
     def claim(self, item_id: str) -> dict[str, Any] | None:
@@ -161,6 +164,7 @@ class SupabaseInboxRepo:
     def add_item(
         self,
         *,
+        org_id: str,
         from_email: str,
         to_email: str,
         subject: str | None,
@@ -178,6 +182,7 @@ class SupabaseInboxRepo:
             self._db.table("ingestion_inbox")
             .insert(
                 {
+                    "org_id": org_id,
                     "from_email": from_email,
                     "to_email": to_email,
                     "subject": subject,
@@ -197,11 +202,12 @@ class SupabaseInboxRepo:
         )
 
     def find_duplicate_by_storage_path(
-        self, *, storage_path: str, attachment_count: int
+        self, *, org_id: str, storage_path: str, attachment_count: int
     ) -> dict[str, Any] | None:
         rows = (
             self._db.table("ingestion_inbox")
             .select("id, status")
+            .eq("org_id", org_id)
             .eq("storage_path", storage_path)
             .eq("attachment_count", attachment_count)
             .order("created_at", desc=True)
@@ -211,10 +217,11 @@ class SupabaseInboxRepo:
         )
         return rows[0] if rows else None
 
-    def find_items_by_digest(self, digest: str) -> list[dict[str, Any]]:
+    def find_items_by_digest(self, digest: str, *, org_id: str) -> list[dict[str, Any]]:
         return (
             self._db.table("ingestion_inbox")
             .select("*")
+            .eq("org_id", org_id)
             .like("storage_path", f"%/{digest}/%")
             .order("created_at", desc=True)
             .execute()
@@ -227,11 +234,12 @@ class SupabaseInboxRepo:
         except Exception as exc:
             raise StorageUnavailable(f"attachment store failed ({type(exc).__name__})") from exc
 
-    def list_open(self) -> list[dict[str, Any]]:
+    def list_open(self, *, org_id: str) -> list[dict[str, Any]]:
         self._reclaim_stale_processing()
         return (
             self._db.table("ingestion_inbox")
             .select("*")
+            .eq("org_id", org_id)
             .in_("status", ["pending", "needs_manual"])
             .order("created_at")
             .execute()
@@ -253,10 +261,11 @@ class SupabaseInboxRepo:
         rows = self._db.table("ingestion_inbox").select("*").eq("id", item_id).execute().data
         return rows[0] if rows else None
 
-    def sender_history(self) -> dict[str, str]:
+    def sender_history(self, *, org_id: str) -> dict[str, str]:
         rows = (
             self._db.table("ingestion_inbox")
             .select("from_email, confirmed_transaction_id, confirmed_at")
+            .eq("org_id", org_id)
             .eq("status", "confirmed")
             .not_.is_("confirmed_transaction_id", "null")
             .order("confirmed_at")

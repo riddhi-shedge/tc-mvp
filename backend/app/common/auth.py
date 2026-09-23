@@ -28,6 +28,8 @@ import jwt
 from fastapi import Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
+from app.common import orgs
+
 bearer_scheme = HTTPBearer(auto_error=False)
 
 _JWKS_TTL_SECONDS = 600
@@ -42,6 +44,10 @@ _jwks_cache: tuple[float, jwt.PyJWKSet] | None = None
 class TCUser:
     id: str
     email: str
+    # The org this TC session acts within. Every read and write is scoped to it;
+    # require_tc refuses sessions with no membership (fail closed).
+    org_id: str = ""
+    org_role: str = "owner"
 
     @property
     def actor(self) -> str:
@@ -251,4 +257,15 @@ def require_tc(
     if require_mfa and claims.get("aal") != "aal2":
         raise HTTPException(status_code=403, detail="MFA required: session is not aal2")
 
-    return TCUser(id=claims.get("sub", ""), email=claims.get("email", ""))
+    # Tenancy: a TC session acts within exactly one org. No membership (or a
+    # directory outage) fails closed — an authenticated stranger sees nothing.
+    member = orgs.membership_for_user(claims.get("sub", ""))
+    if member is None:
+        raise HTTPException(status_code=403, detail="No organization membership for this account")
+
+    return TCUser(
+        id=claims.get("sub", ""),
+        email=claims.get("email", ""),
+        org_id=str(member["org_id"]),
+        org_role=str(member.get("role") or "member"),
+    )

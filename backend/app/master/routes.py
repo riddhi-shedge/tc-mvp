@@ -25,9 +25,17 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response
+from fastapi.security import HTTPAuthorizationCredentials
 from pydantic import BaseModel, Field
 
-from app.common.auth import PartyUser, TCUser, require_agent_portfolio, require_party, require_tc
+from app.common.auth import (
+    PartyUser,
+    TCUser,
+    bearer_scheme,
+    require_agent_portfolio,
+    require_party,
+    require_tc,
+)
 from app.master.agent_portfolio import (
     agent_earnings,
     agent_schedule,
@@ -182,6 +190,23 @@ def get_repo() -> MasterRepo:
     return _default_repo()
 
 
+def require_scoped_tc(
+    request: Request,
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
+    repo: MasterRepo = Depends(get_repo),
+) -> TCUser:
+    """require_tc + tenancy: when the route path names a transaction, it must
+    belong to the caller's org — otherwise 404 (a deal's existence is never
+    confirmed across orgs). Every TC route in this module uses this dependency,
+    so a new `/transactions/{transaction_id}/...` route is scoped by default;
+    tests/test_tenancy.py walks the route table to keep that true."""
+    tc = require_tc(credentials)
+    transaction_id = request.path_params.get("transaction_id")
+    if transaction_id is not None and repo.transaction_org(str(transaction_id)) != tc.org_id:
+        raise HTTPException(status_code=404, detail="Transaction not found")
+    return tc
+
+
 class CreateTransactionRequest(BaseModel):
     property_address: str = Field(min_length=1)
 
@@ -189,24 +214,26 @@ class CreateTransactionRequest(BaseModel):
 @router.post("/transactions", status_code=201)
 def create_transaction(
     body: CreateTransactionRequest,
-    tc: TCUser = Depends(require_tc),
+    tc: TCUser = Depends(require_scoped_tc),
     repo: MasterRepo = Depends(get_repo),
 ) -> dict[str, Any]:
-    return repo.create_transaction(property_address=body.property_address, actor=tc.actor)
+    return repo.create_transaction(
+        property_address=body.property_address, actor=tc.actor, org_id=tc.org_id
+    )
 
 
 @router.get("/transactions")
 def list_transactions(
-    tc: TCUser = Depends(require_tc),
+    tc: TCUser = Depends(require_scoped_tc),
     repo: MasterRepo = Depends(get_repo),
 ) -> list[dict[str, Any]]:
-    return repo.list_transactions()
+    return repo.list_transactions(org_id=tc.org_id)
 
 
 @router.post("/transactions/{transaction_id}/archive")
 def archive_transaction(
     transaction_id: str,
-    tc: TCUser = Depends(require_tc),
+    tc: TCUser = Depends(require_scoped_tc),
     repo: MasterRepo = Depends(get_repo),
 ) -> dict[str, Any]:
     """Soft-remove: hide from the active list, keep the full audit trail."""
@@ -219,7 +246,7 @@ def archive_transaction(
 @router.post("/transactions/{transaction_id}/unarchive")
 def unarchive_transaction(
     transaction_id: str,
-    tc: TCUser = Depends(require_tc),
+    tc: TCUser = Depends(require_scoped_tc),
     repo: MasterRepo = Depends(get_repo),
 ) -> dict[str, Any]:
     txn = repo.unarchive_transaction(transaction_id=transaction_id, actor=tc.actor)
@@ -236,7 +263,7 @@ class CancelRequest(BaseModel):
 def cancel_transaction(
     transaction_id: str,
     body: CancelRequest,
-    tc: TCUser = Depends(require_tc),
+    tc: TCUser = Depends(require_scoped_tc),
     repo: MasterRepo = Depends(get_repo),
 ) -> dict[str, Any]:
     """The deal fell through / was canceled — a terminal state distinct from
@@ -252,7 +279,7 @@ def cancel_transaction(
 @router.post("/transactions/{transaction_id}/reactivate")
 def reactivate_transaction(
     transaction_id: str,
-    tc: TCUser = Depends(require_tc),
+    tc: TCUser = Depends(require_scoped_tc),
     repo: MasterRepo = Depends(get_repo),
 ) -> dict[str, Any]:
     txn = repo.reactivate_transaction(transaction_id=transaction_id, actor=tc.actor)
@@ -264,7 +291,7 @@ def reactivate_transaction(
 @router.delete("/transactions/{transaction_id}", status_code=204)
 def delete_transaction(
     transaction_id: str,
-    tc: TCUser = Depends(require_tc),
+    tc: TCUser = Depends(require_scoped_tc),
     repo: MasterRepo = Depends(get_repo),
 ) -> None:
     """Hard delete — cascades every child row incl. the audit log. Irreversible;
@@ -277,44 +304,44 @@ def delete_transaction(
 # "board"/"calendar" are not captured as a transaction id.
 @router.get("/transactions/board")
 def deals_board(
-    tc: TCUser = Depends(require_tc),
+    tc: TCUser = Depends(require_scoped_tc),
     repo: MasterRepo = Depends(get_repo),
 ) -> list[dict[str, Any]]:
     """Enriched per-deal rollups for the pipeline board (COE, price, tasks, risks, stage)."""
-    return repo.list_deal_summaries()
+    return repo.list_deal_summaries(org_id=tc.org_id)
 
 
 @router.get("/transactions/calendar")
 def deals_calendar(
-    tc: TCUser = Depends(require_tc),
+    tc: TCUser = Depends(require_scoped_tc),
     repo: MasterRepo = Depends(get_repo),
 ) -> list[dict[str, Any]]:
     """Every deadline across non-archived deals, for the cross-deal calendar."""
-    return repo.list_active_deadlines()
+    return repo.list_active_deadlines(org_id=tc.org_id)
 
 
 @router.get("/transactions/tasks")
 def open_tasks(
-    tc: TCUser = Depends(require_tc),
+    tc: TCUser = Depends(require_scoped_tc),
     repo: MasterRepo = Depends(get_repo),
 ) -> list[dict[str, Any]]:
     """Open tasks across non-archived deals — the Home work queue."""
-    return repo.list_open_tasks()
+    return repo.list_open_tasks(org_id=tc.org_id)
 
 
 # ---- P4: deadline .ics feed — deadlines land in the calendar the TC lives in --
 
-def _calendar_feed_token() -> str | None:
-    """The feed's bearer secret. CALENDAR_FEED_TOKEN wins if set; otherwise it is
-    derived (HMAC) from the service-role key so production needs zero setup. The
-    feed is read-only deadline data; the token gates it like a private ICS URL."""
-    explicit = os.environ.get("CALENDAR_FEED_TOKEN")
-    if explicit:
-        return explicit
-    secret = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
-    if not secret:
+def _calendar_feed_token(org_id: str) -> str | None:
+    """The feed's bearer secret, derived PER ORG (HMAC over the org id) so one
+    org's private ICS URL can never read another org's deadlines. The secret
+    material is CALENDAR_FEED_TOKEN if set, else the service-role key — so
+    production needs zero setup. Read-only deadline data either way."""
+    secret = os.environ.get("CALENDAR_FEED_TOKEN") or os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
+    if not secret or not org_id:
         return None
-    return hmac.new(secret.encode(), b"terra-calendar-feed", hashlib.sha256).hexdigest()[:32]
+    return hmac.new(
+        secret.encode(), f"terra-calendar-feed|{org_id}".encode(), hashlib.sha256
+    ).hexdigest()[:32]
 
 
 def _ics_escape(s: str) -> str:
@@ -324,15 +351,18 @@ def _ics_escape(s: str) -> str:
 @router.get("/calendar.ics")
 def calendar_ics(
     key: str | None = None,
+    org: str | None = None,
     repo: MasterRepo = Depends(get_repo),
 ) -> Response:
-    """Token-authenticated ICS feed of every active deal's deadlines — subscribe
-    once from Google/Apple Calendar. Read-only; no PII beyond address + deadline
-    names; stable UIDs so a recomputed date UPDATES the event instead of duplicating."""
-    token = _calendar_feed_token()
-    if token is None:
+    """Token-authenticated ICS feed of one org's active-deal deadlines —
+    subscribe once from Google/Apple Calendar. The key is the org-derived HMAC
+    (feed-url hands it out), so the URL itself is the credential and only ever
+    unlocks its own org. Read-only; no PII beyond address + deadline names;
+    stable UIDs so a recomputed date UPDATES the event instead of duplicating."""
+    if not (os.environ.get("CALENDAR_FEED_TOKEN") or os.environ.get("SUPABASE_SERVICE_ROLE_KEY")):
         raise HTTPException(status_code=503, detail="Calendar feed is not configured")
-    if not key or not secrets.compare_digest(key, token):
+    token = _calendar_feed_token(org or "")
+    if token is None or not key or not secrets.compare_digest(key, token):
         raise HTTPException(status_code=401, detail="Invalid feed key")
 
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
@@ -342,7 +372,7 @@ def calendar_ics(
         "X-WR-CALNAME:Terra — deal deadlines",
         "CALSCALE:GREGORIAN",
     ]
-    for d in repo.list_active_deadlines():
+    for d in repo.list_active_deadlines(org_id=str(org)):
         due = (d.get("due_date") or "").replace("-", "")[:8]
         if not due:
             continue
@@ -369,26 +399,29 @@ def calendar_ics(
 @router.get("/transactions/calendar/feed-url")
 def calendar_feed_url(
     request: Request,
-    tc: TCUser = Depends(require_tc),
+    tc: TCUser = Depends(require_scoped_tc),
 ) -> dict[str, Any]:
     """The subscribe URL (with its token) for the TC to paste into their calendar
-    app. TC-auth here; the feed itself is gated by the token alone."""
-    token = _calendar_feed_token()
+    app. TC-auth here; the feed itself is gated by the org-derived token alone."""
+    token = _calendar_feed_token(tc.org_id)
     if token is None:
         return {"available": False, "url": None}
-    return {"available": True, "url": f"{str(request.base_url).rstrip('/')}/calendar.ics?key={token}"}
+    return {
+        "available": True,
+        "url": f"{str(request.base_url).rstrip('/')}/calendar.ics?org={tc.org_id}&key={token}",
+    }
 
 
 @router.get("/transactions/attention")
 def attention_queue(
-    tc: TCUser = Depends(require_tc),
+    tc: TCUser = Depends(require_scoped_tc),
     repo: MasterRepo = Depends(get_repo),
 ) -> dict[str, Any]:
     """The TC's decision queue (P1): every pending decision across the book —
     drafts awaiting approval, due follow-up reminders, timeline-gate blockers,
     unresolved risk flags — plus the CA-business-day deadline horizon. Pending
     inbox items stay on the ingestion side; the frontend adds that count."""
-    return build_attention(repo.list_full_states())
+    return build_attention(repo.list_full_states(org_id=tc.org_id))
 
 
 # ---- Deal notes (P3): TC-only, SOR-backed — never served to parties ----------
@@ -401,7 +434,7 @@ class NoteRequest(BaseModel):
 @router.get("/transactions/{transaction_id}/notes")
 def list_notes(
     transaction_id: str,
-    tc: TCUser = Depends(require_tc),
+    tc: TCUser = Depends(require_scoped_tc),
     repo: MasterRepo = Depends(get_repo),
 ) -> dict[str, Any]:
     notes = repo.list_deal_notes(transaction_id)
@@ -421,7 +454,7 @@ class CancellationRequest(BaseModel):
 def record_cancellation(
     transaction_id: str,
     body: CancellationRequest,
-    tc: TCUser = Depends(require_tc),
+    tc: TCUser = Depends(require_scoped_tc),
     repo: MasterRepo = Depends(get_repo),
 ) -> dict[str, Any]:
     """Wave 4B: record what the signed CC form says — effective date + deposit
@@ -480,7 +513,7 @@ def _status_digest(state: dict[str, Any]) -> str:
 @router.post("/transactions/{transaction_id}/status-updates", status_code=201)
 def draft_weekly_status(
     transaction_id: str,
-    tc: TCUser = Depends(require_tc),
+    tc: TCUser = Depends(require_scoped_tc),
     repo: MasterRepo = Depends(get_repo),
     drafter: Drafter = Depends(get_drafter),
 ) -> dict[str, Any]:
@@ -531,7 +564,7 @@ def advance_ops_lane(
     transaction_id: str,
     lane: str,
     body: OpsAdvanceRequest,
-    tc: TCUser = Depends(require_tc),
+    tc: TCUser = Depends(require_scoped_tc),
     repo: MasterRepo = Depends(get_repo),
 ) -> dict[str, Any]:
     """Wave 3A ops lanes (HOA docs / home warranty / NHD / utilities): one
@@ -592,7 +625,7 @@ def record_closing_step(
     transaction_id: str,
     step: str,
     body: ClosingStepRequest,
-    tc: TCUser = Depends(require_tc),
+    tc: TCUser = Depends(require_scoped_tc),
     repo: MasterRepo = Depends(get_repo),
 ) -> dict[str, Any]:
     """Advance the closing chain — TC-confirmed only (escrow emails may suggest,
@@ -641,7 +674,7 @@ class ServeNoticeRequest(BaseModel):
 def serve_notice(
     transaction_id: str,
     body: ServeNoticeRequest,
-    tc: TCUser = Depends(require_tc),
+    tc: TCUser = Depends(require_scoped_tc),
     repo: MasterRepo = Depends(get_repo),
 ) -> dict[str, Any]:
     """Record that a Notice to (Buyer/Seller) Perform was SERVED — by the agent,
@@ -676,7 +709,7 @@ def serve_notice(
 def cure_notice(
     transaction_id: str,
     notice_id: str,
-    tc: TCUser = Depends(require_tc),
+    tc: TCUser = Depends(require_scoped_tc),
     repo: MasterRepo = Depends(get_repo),
 ) -> dict[str, Any]:
     row = repo.cure_notice(transaction_id=transaction_id, notice_id=notice_id, actor=tc.actor)
@@ -694,7 +727,7 @@ class CreateRepairRequest(BaseModel):
 def create_repair(
     transaction_id: str,
     body: CreateRepairRequest,
-    tc: TCUser = Depends(require_tc),
+    tc: TCUser = Depends(require_scoped_tc),
     repo: MasterRepo = Depends(get_repo),
 ) -> dict[str, Any]:
     """Track a repair item (Wave 1 repair loop). Created only by the TC — the
@@ -713,7 +746,7 @@ def create_repair(
 def resolve_repair(
     transaction_id: str,
     repair_id: str,
-    tc: TCUser = Depends(require_tc),
+    tc: TCUser = Depends(require_scoped_tc),
     repo: MasterRepo = Depends(get_repo),
 ) -> dict[str, Any]:
     """Human-only by design: repair.resolve is NEVER_BY_MACHINE (§5 authority)."""
@@ -727,7 +760,7 @@ def resolve_repair(
 def add_note(
     transaction_id: str,
     body: NoteRequest,
-    tc: TCUser = Depends(require_tc),
+    tc: TCUser = Depends(require_scoped_tc),
     repo: MasterRepo = Depends(get_repo),
 ) -> dict[str, Any]:
     try:
@@ -744,7 +777,7 @@ def add_note(
 def draft_chase(
     transaction_id: str,
     message_id: str,
-    tc: TCUser = Depends(require_tc),
+    tc: TCUser = Depends(require_scoped_tc),
     repo: MasterRepo = Depends(get_repo),
     drafter: Drafter = Depends(get_drafter),
 ) -> dict[str, Any]:
@@ -791,7 +824,7 @@ def draft_chase(
 def delete_note(
     transaction_id: str,
     note_id: str,
-    tc: TCUser = Depends(require_tc),
+    tc: TCUser = Depends(require_scoped_tc),
     repo: MasterRepo = Depends(get_repo),
 ) -> dict[str, Any]:
     if not repo.delete_deal_note(transaction_id=transaction_id, note_id=note_id, actor=tc.actor):
@@ -807,7 +840,7 @@ class StageRequest(BaseModel):
 def set_stage(
     transaction_id: str,
     body: StageRequest,
-    tc: TCUser = Depends(require_tc),
+    tc: TCUser = Depends(require_scoped_tc),
     repo: MasterRepo = Depends(get_repo),
 ) -> dict[str, Any]:
     """Move a deal to a pipeline stage (drag on the board)."""
@@ -830,7 +863,7 @@ def resolve_risk_flag(
     transaction_id: str,
     flag_id: str,
     body: ResolveRiskRequest,
-    tc: TCUser = Depends(require_tc),
+    tc: TCUser = Depends(require_scoped_tc),
     repo: MasterRepo = Depends(get_repo),
 ) -> dict[str, Any]:
     """Mark an attention item handled (or reopen it) — the TC's checkbox."""
@@ -850,7 +883,7 @@ class ConfirmFieldsRequest(BaseModel):
 def confirm_fields(
     transaction_id: str,
     body: ConfirmFieldsRequest,
-    tc: TCUser = Depends(require_tc),
+    tc: TCUser = Depends(require_scoped_tc),
     repo: MasterRepo = Depends(get_repo),
 ) -> dict[str, Any]:
     if not repo.transaction_exists(transaction_id):
@@ -874,7 +907,7 @@ class AddFieldRequest(BaseModel):
 def add_field(
     transaction_id: str,
     body: AddFieldRequest,
-    tc: TCUser = Depends(require_tc),
+    tc: TCUser = Depends(require_scoped_tc),
     repo: MasterRepo = Depends(get_repo),
 ) -> dict[str, Any]:
     """Hand-enter a §5 field the extraction missed (e.g. an acceptance date the
@@ -914,7 +947,7 @@ def add_field(
 @router.post("/transactions/{transaction_id}/build-timeline")
 def build_timeline(
     transaction_id: str,
-    tc: TCUser = Depends(require_tc),
+    tc: TCUser = Depends(require_scoped_tc),
     repo: MasterRepo = Depends(get_repo),
 ) -> dict[str, Any]:
     """Run compliance on demand for one deal (the TC's "Build timeline" tap), once
@@ -959,7 +992,7 @@ def build_timeline(
 @router.post("/transactions/{transaction_id}/story")
 def tell_deal_story(
     transaction_id: str,
-    tc: TCUser = Depends(require_tc),
+    tc: TCUser = Depends(require_scoped_tc),
     repo: MasterRepo = Depends(get_repo),
     storyteller: Storyteller = Depends(get_storyteller),
 ) -> dict[str, Any]:
@@ -994,7 +1027,7 @@ def tell_deal_story(
 @router.post("/transactions/{transaction_id}/timeline/stub", status_code=201)
 def create_stub_timeline(
     transaction_id: str,
-    tc: TCUser = Depends(require_tc),
+    tc: TCUser = Depends(require_scoped_tc),
     repo: MasterRepo = Depends(get_repo),
 ) -> dict[str, Any]:
     if not repo.transaction_exists(transaction_id):
@@ -1020,7 +1053,7 @@ def create_stub_timeline(
 @router.post("/transactions/{transaction_id}/messages/draft-stub", status_code=201)
 def create_stub_draft(
     transaction_id: str,
-    tc: TCUser = Depends(require_tc),
+    tc: TCUser = Depends(require_scoped_tc),
     repo: MasterRepo = Depends(get_repo),
 ) -> dict[str, Any]:
     if not repo.transaction_exists(transaction_id):
@@ -1057,7 +1090,7 @@ class UpdatePartyRequest(BaseModel):
 def create_party(
     transaction_id: str,
     body: CreatePartyRequest,
-    tc: TCUser = Depends(require_tc),
+    tc: TCUser = Depends(require_scoped_tc),
     repo: MasterRepo = Depends(get_repo),
 ) -> dict[str, Any]:
     if not repo.transaction_exists(transaction_id):
@@ -1080,7 +1113,7 @@ def update_party(
     transaction_id: str,
     party_id: str,
     body: UpdatePartyRequest,
-    tc: TCUser = Depends(require_tc),
+    tc: TCUser = Depends(require_scoped_tc),
     repo: MasterRepo = Depends(get_repo),
 ) -> dict[str, Any]:
     """Fill in or correct a party's details (a derived contact or an empty
@@ -1118,7 +1151,7 @@ def _invite_tier(party: dict[str, Any]) -> str | None:
 def create_party_access_token(
     transaction_id: str,
     party_id: str,
-    tc: TCUser = Depends(require_tc),
+    tc: TCUser = Depends(require_scoped_tc),
     repo: MasterRepo = Depends(get_repo),
     issuer: PartyAccessIssuer = Depends(get_party_access_issuer),
 ) -> dict[str, Any]:
@@ -1156,7 +1189,7 @@ def email_party_invite(
     transaction_id: str,
     party_id: str,
     body: InviteEmailRequest,
-    tc: TCUser = Depends(require_tc),
+    tc: TCUser = Depends(require_scoped_tc),
     repo: MasterRepo = Depends(get_repo),
     issuer: PartyAccessIssuer = Depends(get_party_access_issuer),
     mailer: Mailer = Depends(get_mailer),
@@ -1247,7 +1280,7 @@ class UpdateTaskRequest(BaseModel):
 def create_task(
     transaction_id: str,
     body: CreateTaskRequest,
-    tc: TCUser = Depends(require_tc),
+    tc: TCUser = Depends(require_scoped_tc),
     repo: MasterRepo = Depends(get_repo),
 ) -> dict[str, Any]:
     """A TC's own ad-hoc task, alongside the compliance-generated ones."""
@@ -1275,7 +1308,7 @@ def update_task(
     transaction_id: str,
     task_id: str,
     body: UpdateTaskRequest,
-    tc: TCUser = Depends(require_tc),
+    tc: TCUser = Depends(require_scoped_tc),
     repo: MasterRepo = Depends(get_repo),
 ) -> dict[str, Any]:
     if body.status not in _TASK_STATUSES:
@@ -1295,7 +1328,7 @@ def assign_task(
     transaction_id: str,
     task_id: str,
     body: AssignTaskRequest,
-    tc: TCUser = Depends(require_tc),
+    tc: TCUser = Depends(require_scoped_tc),
     repo: MasterRepo = Depends(get_repo),
 ) -> dict[str, Any]:
     if not repo.party_belongs_to_transaction(party_id=body.party_id, transaction_id=transaction_id):
@@ -1311,7 +1344,7 @@ def assign_task(
 @router.get("/transactions/{transaction_id}/dashboard")
 def read_dashboard(
     transaction_id: str,
-    tc: TCUser = Depends(require_tc),
+    tc: TCUser = Depends(require_scoped_tc),
     repo: MasterRepo = Depends(get_repo),
 ) -> dict[str, Any]:
     state = repo.get_full_state(transaction_id)
@@ -1323,7 +1356,7 @@ def read_dashboard(
 @router.post("/transactions/{transaction_id}/messages/draft-lender", status_code=201)
 def draft_lender(
     transaction_id: str,
-    tc: TCUser = Depends(require_tc),
+    tc: TCUser = Depends(require_scoped_tc),
     repo: MasterRepo = Depends(get_repo),
     drafter: Drafter = Depends(get_drafter),
 ) -> dict[str, Any]:
@@ -1406,7 +1439,7 @@ class DraftMessageRequest(BaseModel):
 def draft_message(
     transaction_id: str,
     body: DraftMessageRequest,
-    tc: TCUser = Depends(require_tc),
+    tc: TCUser = Depends(require_scoped_tc),
     repo: MasterRepo = Depends(get_repo),
     drafter: Drafter = Depends(get_drafter),
 ) -> dict[str, Any]:
@@ -1449,7 +1482,7 @@ def draft_message(
 def discard_message(
     transaction_id: str,
     message_id: str,
-    tc: TCUser = Depends(require_tc),
+    tc: TCUser = Depends(require_scoped_tc),
     repo: MasterRepo = Depends(get_repo),
 ) -> dict[str, Any]:
     """Discard a draft/approved message. A sent message can't be removed (audit)."""
@@ -1465,7 +1498,7 @@ def discard_message(
 def dismiss_reminder(
     transaction_id: str,
     reminder_id: str,
-    tc: TCUser = Depends(require_tc),
+    tc: TCUser = Depends(require_scoped_tc),
     repo: MasterRepo = Depends(get_repo),
 ) -> dict[str, Any]:
     """Dismiss a follow-up reminder (got a reply / handled it)."""
@@ -1478,7 +1511,7 @@ def dismiss_reminder(
 def document_signed_url(
     transaction_id: str,
     document_id: str,
-    tc: TCUser = Depends(require_tc),
+    tc: TCUser = Depends(require_scoped_tc),
     repo: MasterRepo = Depends(get_repo),
 ) -> dict[str, Any]:
     """A short-lived signed URL to open a stored document in a new tab."""
@@ -1499,7 +1532,7 @@ def approve_and_send(
     transaction_id: str,
     message_id: str,
     body: ApproveSendRequest | None = None,
-    tc: TCUser = Depends(require_tc),
+    tc: TCUser = Depends(require_scoped_tc),
     repo: MasterRepo = Depends(get_repo),
     mailer: Any = Depends(get_mailer),
 ) -> dict[str, Any]:
@@ -1616,8 +1649,10 @@ def list_compliance_active(
 ) -> dict[str, Any]:
     """Open transaction IDs for the scheduled compliance runner to sweep.
     Service-token auth (a machine can't do MFA); IDs only, no deal content.
-    Declared before GET /transactions/{id} so the static path isn't shadowed."""
-    return {"transaction_ids": repo.list_active_transaction_ids()}
+    Declared before GET /transactions/{id} so the static path isn't shadowed.
+    org_id=None: the sweep is deliberately cross-org — it runs date math per
+    deal and returns ids only."""
+    return {"transaction_ids": repo.list_active_transaction_ids(org_id=None)}
 
 
 def _merge_task_meta(state: dict[str, Any]) -> None:
@@ -1643,7 +1678,7 @@ def _merge_task_meta(state: dict[str, Any]) -> None:
 @router.get("/transactions/{transaction_id}")
 def read_full_state(
     transaction_id: str,
-    tc: TCUser = Depends(require_tc),
+    tc: TCUser = Depends(require_scoped_tc),
     repo: MasterRepo = Depends(get_repo),
 ) -> dict[str, Any]:
     state = repo.get_full_state(transaction_id)
@@ -1664,7 +1699,7 @@ class AskRequest(BaseModel):
 def ask_deal(
     transaction_id: str,
     body: AskRequest,
-    tc: TCUser = Depends(require_tc),
+    tc: TCUser = Depends(require_scoped_tc),
     repo: MasterRepo = Depends(get_repo),
     assistant: DealAssistant = Depends(get_assistant),
 ) -> dict[str, Any]:
@@ -1865,9 +1900,15 @@ def _require_party_write(repo: MasterRepo, party: PartyUser, write: str) -> None
 # ---- Buyer's-agent command center: cross-deal portfolio (the whole book) ------
 # The agent's token authenticates; aggregation runs service-role across every deal.
 
-def _all_deal_states(repo: MasterRepo) -> list[dict[str, Any]]:
+def _all_deal_states(repo: MasterRepo, agent: PartyUser) -> list[dict[str, Any]]:
     # Batch-loaded: one IN-query per table for the whole book, not 13 per deal.
-    return repo.list_full_states()
+    # "The whole book" is the ORG's book: the agent's credential binds them to
+    # one deal, and the portfolio aggregates only deals in that deal's org —
+    # an agent invite can never read across tenant boundaries.
+    org_id = repo.transaction_org(agent.transaction_id)
+    if org_id is None:
+        return []
+    return repo.list_full_states(org_id=org_id)
 
 
 def _agent_me(states: list[dict[str, Any]], party_id: str) -> dict[str, Any]:
@@ -1957,7 +1998,7 @@ def agent_portfolio(
     agent: PartyUser = Depends(require_agent_portfolio),
     repo: MasterRepo = Depends(get_repo),
 ) -> dict[str, Any]:
-    states = _all_deal_states(repo)
+    states = _all_deal_states(repo, agent)
     pending = _pending_drafts(states)
     payload = build_agent_portfolio(
         deals=states, me=_agent_me(states, agent.party_id), pending_drafts=len(pending)
@@ -1973,7 +2014,7 @@ def agent_approvals(
     agent: PartyUser = Depends(require_agent_portfolio),
     repo: MasterRepo = Depends(get_repo),
 ) -> dict[str, Any]:
-    return {"items": _pending_drafts(_all_deal_states(repo))}
+    return {"items": _pending_drafts(_all_deal_states(repo, agent))}
 
 
 @router.get("/agent/clients")
@@ -1984,7 +2025,7 @@ def agent_clients(
     """Client cards with the pre-call context: contingency snapshot, docs on
     file, next deadline, and plain-English talking points from the event log."""
     out = []
-    for st in _all_deal_states(repo):
+    for st in _all_deal_states(repo, agent):
         txn = st.get("transaction") or {}
         fields = {k: v.get("value") for k, v in (st.get("effective_fields") or {}).items()}
         out.append({
@@ -2006,7 +2047,7 @@ def agent_schedule_view(
     repo: MasterRepo = Depends(get_repo),
 ) -> dict[str, Any]:
     """Where the agent needs to be: dated deadlines + open tasks across the book."""
-    return {"items": agent_schedule(_all_deal_states(repo))}
+    return {"items": agent_schedule(_all_deal_states(repo, agent))}
 
 
 @router.get("/agent/earnings")
@@ -2016,7 +2057,7 @@ def agent_earnings_view(
 ) -> dict[str, Any]:
     """The commission pipeline — ESTIMATES only (default buyer-side rate, clearly
     labeled); display-only, no money logic touched."""
-    return agent_earnings(_all_deal_states(repo))
+    return agent_earnings(_all_deal_states(repo, agent))
 
 
 @router.post("/agent/clients/{transaction_id}/draft-update", status_code=201)
@@ -2088,7 +2129,7 @@ def agent_copilot_refresh(
 ) -> dict[str, Any]:
     """Generate outbound DRAFTS for outreach the book needs (live co-pilot drafting).
     Each becomes a pending approval item — nothing is sent (rule #3)."""
-    states = _all_deal_states(repo)
+    states = _all_deal_states(repo, agent)
     generated = 0
     errors = 0
     for st in states:
@@ -2183,7 +2224,7 @@ def listing_portfolio(
     agent: PartyUser = Depends(require_agent_portfolio),
     repo: MasterRepo = Depends(get_repo),
 ) -> dict[str, Any]:
-    states = _all_deal_states(repo)
+    states = _all_deal_states(repo, agent)
     pending = _pending_drafts(states)
     payload = build_listing_portfolio(
         deals=states, me=_agent_me(states, agent.party_id), pending_drafts=len(pending)
@@ -2200,7 +2241,7 @@ def listing_sellers(
     """Seller cards with the pre-call cram: status + DOM, offers, disclosure
     delivery state, marketing pulse (sample), talking points."""
     out = []
-    for st in _all_deal_states(repo):
+    for st in _all_deal_states(repo, agent):
         txn = st.get("transaction") or {}
         fields = {k: v.get("value") for k, v in (st.get("effective_fields") or {}).items()}
         out.append({
@@ -2222,7 +2263,7 @@ def listing_schedule_view(
     repo: MasterRepo = Depends(get_repo),
 ) -> dict[str, Any]:
     """The listing agent's day across the book — seller-framed names."""
-    return {"items": agent_schedule(_all_deal_states(repo), name_field="seller_names")}
+    return {"items": agent_schedule(_all_deal_states(repo, agent), name_field="seller_names")}
 
 
 @router.get("/listing/earnings")
@@ -2231,7 +2272,7 @@ def listing_earnings_view(
     repo: MasterRepo = Depends(get_repo),
 ) -> dict[str, Any]:
     """Listing-side commission pipeline — ESTIMATES only, display only."""
-    return listing_earnings(_all_deal_states(repo))
+    return listing_earnings(_all_deal_states(repo, agent))
 
 
 @router.post("/listing/sellers/{transaction_id}/draft-update", status_code=201)
@@ -2351,7 +2392,7 @@ def listing_draft_comparison(
 def write_payload(
     transaction_id: str,
     payload: Payload,
-    tc: TCUser = Depends(require_tc),
+    tc: TCUser = Depends(require_scoped_tc),
     repo: MasterRepo = Depends(get_repo),
 ) -> dict[str, Any]:
     if payload.is_new_transaction:

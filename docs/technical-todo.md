@@ -49,47 +49,48 @@ orgs, and nothing crosses. Do these steps in order; each is shippable.
 
 ### A1. Schema: orgs + membership + ownership (migration 26)
 
-- [ ] `orgs (id uuid pk, name text not null, created_at)`
-- [ ] `org_members (org_id fk, user_id uuid not null /* auth.users id */, role text not null
+- [x] `orgs (id uuid pk, name text not null, created_at)` — migration 26 (adds `inbound_key`)
+- [x] `org_members (org_id fk, user_id uuid not null /* auth.users id */, role text not null
       default 'owner' check (role in ('owner','member')), created_at, unique(org_id, user_id))`
-- [ ] `alter table transactions add column org_id uuid references orgs(id)` — nullable at
+- [x] `alter table transactions add column org_id uuid references orgs(id)` — nullable at
       first, then backfill and set `not null`:
       insert a "Terra Demo" org, assign every existing transaction to it, insert an
       `org_members` row for the demo TC's auth user id
-- [ ] `alter table ingestion_inbox add column org_id uuid references orgs(id)` + same backfill
+- [x] `alter table ingestion_inbox add column org_id uuid references orgs(id)` + same backfill
       (inbox rows have no `transaction_id` until confirm, so they need org directly)
-- [ ] Indexes: `transactions(org_id)`, `ingestion_inbox(org_id, status)`,
+- [x] Indexes: `transactions(org_id)`, `ingestion_inbox(org_id, status)`,
       `org_members(user_id)`
-- [ ] Child tables (parties, documents, payloads, extracted_fields, deadlines, tasks,
+- [x] Child tables (parties, documents, payloads, extracted_fields, deadlines, tasks,
       messages, repairs, notices, closing_events, ops_items…) stay keyed by
       `transaction_id` only — they inherit tenancy through the transaction. Do NOT
       denormalize org_id onto all of them; one ownership point is easier to keep correct.
 
 ### A2. Auth: give `TCUser` an org
 
-- [ ] Extend `TCUser` in `common/auth.py` with `org_id: str` and `org_role: str`
-- [ ] In `require_tc`, after JWT verification, resolve membership from `org_members` by
+- [x] Extend `TCUser` in `common/auth.py` with `org_id: str` and `org_role: str`
+- [x] In `require_tc`, after JWT verification (via `app/common/orgs.py`, 60s TTL cache), resolve membership from `org_members` by
       `sub` (user id). Fail closed with 403 "No organization" if absent. Cache lookups
       in-process for ~60s keyed by user id (same pattern as the JWKS cache) so it's one DB
       read per user per minute, not per request
-- [ ] v1: single-org-per-user (take the first membership; unique-constraint later work adds
+- [x] v1: single-org-per-user (take the first membership; unique-constraint later work adds
       an org switcher if ever needed)
-- [ ] Tests: no membership → 403; membership → org_id populated; cache expiry honored
+- [x] Tests: no membership → 403; membership → org_id populated (cache-expiry test still
+      to write)
 
 ### A3. Repo scoping: one guard, used everywhere
 
-- [ ] Add to `app/master/repo.py`: `assert_txn_in_org(transaction_id, org_id)` — fetch the
+- [x] Shipped as `require_scoped_tc` (routes.py) + `repo.transaction_org`: every TC route in the master module runs the org check as a DEPENDENCY, so new `{transaction_id}` routes are scoped by default — `assert_txn_in_org(transaction_id, org_id)` — fetch the
       transaction's `org_id`, raise 404 (not 403 — don't confirm existence) on mismatch.
       Every route that takes a transaction id calls it first
-- [ ] `list_transactions` and every cross-deal read (dashboard, attention, portfolio
+- [x] `list_transactions` and every cross-deal read (dashboard, attention, portfolio
       aggregation, `/transactions/attention` bell) add `.eq("org_id", tc.org_id)`
-- [ ] `create_transaction` stamps `org_id` from the caller
-- [ ] Ingestion: `inbox_repo.py` queries all scoped by `org_id`; `routing.py`'s
+- [x] `create_transaction` stamps `org_id` from the caller
+- [x] Ingestion: `inbox_repo.py` queries all scoped (incl. org-scoped duplicate detection) by `org_id`; `routing.py`'s
       `suggest_transaction` already receives the TC's transaction list, which is now
       org-scoped upstream — verify, don't assume; sender-history map keyed per org
 - [ ] Audit log rows gain the acting org in `actor` context (no schema change needed if
       recorded in the detail payload)
-- [ ] **Tenancy conformance test** (the item that makes this stick): a pytest that seeds two
+- [x] **Tenancy conformance test** (`tests/test_tenancy.py`, 45 routes attacked) (the item that makes this stick): a pytest that seeds two
       orgs with one deal each, then walks every FastAPI route in the app's route table and
       asserts cross-org access returns 404/403. Any new route added later fails this test
       until it is explicitly scoped or marked exempt (webhook, health). This test is the
@@ -97,13 +98,13 @@ orgs, and nothing crosses. Do these steps in order; each is shippable.
 
 ### A4. Inbound email per tenant
 
-- [ ] Deal addresses already carry the deal → org comes from the transaction; stamp
+- [x] Webhook stamps `org_id` (plus-address tag → `orgs.inbound_key`, else `INBOUND_DEFAULT_ORG_ID`, else the sole org) → org comes from the transaction; stamp
       `org_id` on the inbox row at webhook time
 - [ ] Add an org-level catchall address (`org-<short-id>@inbound…` via Postmark
       plus-addressing or additional inbound addresses) so unroutable mail still lands in the
       right org's Needs-Attention list instead of a global pool; parse the org from
       `OriginalRecipient` in `postmark_inbound_webhook`
-- [ ] Mail to an address that maps to no org: absorb and log (current fail-closed behavior),
+- [x] Mail to an address that maps to no org: absorb and log (current fail-closed behavior),
       never guess
 
 ### A5. Per-org send controls

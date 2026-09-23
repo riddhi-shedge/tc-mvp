@@ -491,9 +491,11 @@ _STUB_DRAFT_WHY = (
 class MasterRepo(Protocol):
     """Interface the API depends on; tests substitute an in-memory fake."""
 
-    def create_transaction(self, *, property_address: str, actor: str) -> dict[str, Any]: ...
+    def create_transaction(
+        self, *, property_address: str, actor: str, org_id: str
+    ) -> dict[str, Any]: ...
 
-    def list_transactions(self) -> list[dict[str, Any]]: ...
+    def list_transactions(self, *, org_id: str) -> list[dict[str, Any]]: ...
 
     def archive_transaction(
         self, *, transaction_id: str, actor: str
@@ -521,15 +523,22 @@ class MasterRepo(Protocol):
         self, *, transaction_id: str, flag_id: str, resolved: bool, actor: str
     ) -> dict[str, Any] | None: ...
 
-    def list_deal_summaries(self) -> list[dict[str, Any]]: ...
+    def list_deal_summaries(self, *, org_id: str) -> list[dict[str, Any]]: ...
 
-    def list_active_deadlines(self) -> list[dict[str, Any]]: ...
+    def list_active_deadlines(self, *, org_id: str) -> list[dict[str, Any]]: ...
 
-    def list_open_tasks(self) -> list[dict[str, Any]]: ...
+    def list_open_tasks(self, *, org_id: str) -> list[dict[str, Any]]: ...
 
-    def list_active_transaction_ids(self) -> list[str]: ...
+    def list_active_transaction_ids(self, *, org_id: str | None) -> list[str]:
+        """org_id=None is the deliberate cross-org sweep (compliance runner only)."""
+        ...
 
     def transaction_exists(self, transaction_id: str) -> bool: ...
+
+    def transaction_org(self, transaction_id: str) -> str | None:
+        """The org owning this transaction, or None if it doesn't exist. The
+        tenancy guard every TC route runs before touching a deal."""
+        ...
 
     def party_belongs_to_transaction(self, *, party_id: str, transaction_id: str) -> bool: ...
 
@@ -545,10 +554,11 @@ class MasterRepo(Protocol):
 
     def get_full_state(self, transaction_id: str) -> dict[str, Any] | None: ...
 
-    def list_full_states(self) -> list[dict[str, Any]]:
-        """Full state for every transaction, batch-loaded (one query per table via
-        IN-filters rather than one per table per deal). Powers the cross-deal
-        agent/listing portfolio views. Same per-deal shape as get_full_state."""
+    def list_full_states(self, *, org_id: str) -> list[dict[str, Any]]:
+        """Full state for every transaction in the org, batch-loaded (one query
+        per table via IN-filters rather than one per table per deal). Powers the
+        attention queue and the cross-deal agent/listing portfolio views. Same
+        per-deal shape as get_full_state."""
         ...
 
     def get_or_enrich_property(self, transaction_id: str) -> dict[str, Any] | None:
@@ -824,11 +834,18 @@ class SupabaseRepo:
         ).execute()
 
     # -- MasterRepo --------------------------------------------------------------
-    def create_transaction(self, *, property_address: str, actor: str) -> dict[str, Any]:
+    def create_transaction(
+        self, *, property_address: str, actor: str, org_id: str
+    ) -> dict[str, Any]:
         # PostgREST gives no cross-table transaction, so a failure after the
         # first insert is compensated by deleting the transaction (cascades) —
         # no state change may exist without its audit row.
-        txn = self._db.table("transactions").insert({"status": "open"}).execute().data[0]
+        txn = (
+            self._db.table("transactions")
+            .insert({"status": "open", "org_id": org_id})
+            .execute()
+            .data[0]
+        )
         try:
             prop = (
                 self._db.table("properties")
@@ -849,9 +866,14 @@ class SupabaseRepo:
             raise
         return {**txn, "property": prop}
 
-    def list_transactions(self) -> list[dict[str, Any]]:
+    def list_transactions(self, *, org_id: str) -> list[dict[str, Any]]:
         txns = (
-            self._db.table("transactions").select("*").order("created_at", desc=True).execute().data
+            self._db.table("transactions")
+            .select("*")
+            .eq("org_id", org_id)
+            .order("created_at", desc=True)
+            .execute()
+            .data
         )
         if not txns:
             return []
@@ -974,12 +996,13 @@ class SupabaseRepo:
         )
         return rows[0]
 
-    def list_deal_summaries(self) -> list[dict[str, Any]]:
+    def list_deal_summaries(self, *, org_id: str) -> list[dict[str, Any]]:
         """Enriched per-deal rollup for the pipeline board — COE, price, task
         progress, risk count, stage — aggregated in a few bulk reads."""
         txns = (
             self._db.table("transactions")
             .select("id, status, stage, created_at")
+            .eq("org_id", org_id)
             .neq("status", "archived")
             .order("created_at", desc=True)
             .execute()
@@ -1044,10 +1067,15 @@ class SupabaseRepo:
         }
         return [_deal_summary(t, props, coe, tasks, risks, fields) for t in txns]
 
-    def list_active_deadlines(self) -> list[dict[str, Any]]:
-        """Every deadline across non-archived deals, for the cross-deal calendar."""
+    def list_active_deadlines(self, *, org_id: str) -> list[dict[str, Any]]:
+        """Every deadline across the org's non-archived deals, for the calendar."""
         txns = (
-            self._db.table("transactions").select("id").neq("status", "archived").execute().data
+            self._db.table("transactions")
+            .select("id")
+            .eq("org_id", org_id)
+            .neq("status", "archived")
+            .execute()
+            .data
         )
         ids = [t["id"] for t in txns]
         if not ids:
@@ -1070,11 +1098,16 @@ class SupabaseRepo:
             .in_("transaction_id", ids).execute().data
         ]
 
-    def list_open_tasks(self) -> list[dict[str, Any]]:
-        """Open (not-done) tasks across non-archived deals — the TC's work queue,
-        each with its deal address and linked deadline date."""
+    def list_open_tasks(self, *, org_id: str) -> list[dict[str, Any]]:
+        """Open (not-done) tasks across the org's non-archived deals — the TC's
+        work queue, each with its deal address and linked deadline date."""
         txns = (
-            self._db.table("transactions").select("id").neq("status", "archived").execute().data
+            self._db.table("transactions")
+            .select("id")
+            .eq("org_id", org_id)
+            .neq("status", "archived")
+            .execute()
+            .data
         )
         ids = [t["id"] for t in txns]
         if not ids:
@@ -1105,11 +1138,22 @@ class SupabaseRepo:
             if t["status"] not in ("done", "complete")
         ]
 
-    def list_active_transaction_ids(self) -> list[str]:
+    def list_active_transaction_ids(self, *, org_id: str | None) -> list[str]:
+        query = self._db.table("transactions").select("id").eq("status", "open")
+        if org_id is not None:
+            query = query.eq("org_id", org_id)
+        return [r["id"] for r in query.execute().data]
+
+    def transaction_org(self, transaction_id: str) -> str | None:
         rows = (
-            self._db.table("transactions").select("id").eq("status", "open").execute().data
+            self._db.table("transactions")
+            .select("org_id")
+            .eq("id", transaction_id)
+            .limit(1)
+            .execute()
+            .data
         )
-        return [r["id"] for r in rows]
+        return str(rows[0]["org_id"]) if rows else None
 
     def transaction_exists(self, transaction_id: str) -> bool:
         rows = (
@@ -2808,9 +2852,14 @@ class SupabaseRepo:
         )
         return state
 
-    def list_full_states(self) -> list[dict[str, Any]]:
+    def list_full_states(self, *, org_id: str) -> list[dict[str, Any]]:
         txns = (
-            self._db.table("transactions").select("*").order("created_at", desc=True).execute().data
+            self._db.table("transactions")
+            .select("*")
+            .eq("org_id", org_id)
+            .order("created_at", desc=True)
+            .execute()
+            .data
         )
         if not txns:
             return []

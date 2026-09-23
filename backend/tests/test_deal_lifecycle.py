@@ -22,9 +22,9 @@ def test_archive_then_unarchive(client, tc_headers, repo):
 
 def test_archived_deal_is_not_compliance_active(client, tc_headers, repo):
     txn = _deal(client, tc_headers)
-    assert txn in repo.list_active_transaction_ids()
+    assert txn in repo.list_active_transaction_ids(org_id=None)
     client.post(f"/transactions/{txn}/archive", headers=tc_headers)
-    assert txn not in repo.list_active_transaction_ids()
+    assert txn not in repo.list_active_transaction_ids(org_id=None)
 
 
 def test_hard_delete_removes_deal_and_children(client, tc_headers, repo):

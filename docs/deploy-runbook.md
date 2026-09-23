@@ -28,8 +28,16 @@ code; this file is the ordered checklist for the rest.
 
 ## 3. Database
 - A fresh Supabase project reproduces the schema from
-  `supabase/migrations/` (25 files, complete). Apply in order (supabase CLI
+  `supabase/migrations/` (26 files, complete). Apply in order (supabase CLI
   `db push`, or the SQL editor). Enable MFA for the TC user.
+- **Migration 26 (orgs) deploy ordering**: apply the migration FIRST, then
+  deploy the matching backend right away. The migration backfills the demo org
+  and enrolls existing non-party auth users, so new-code logins work the moment
+  it lands — but the OLD backend cannot insert transactions/inbox rows once
+  `org_id` is NOT NULL (creates fail, the webhook 5xxes and Postmark retries,
+  nothing is lost). Keep the window between "apply" and "deploy" short.
+- After migration 26, the calendar feed URL changes shape (per-org key):
+  re-copy it from Deals → Calendar → feed URL and re-subscribe.
 
 ## 4. Post-deploy (B4)
 - Postmark dashboard → inbound webhook URL:

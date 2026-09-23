@@ -21,11 +21,16 @@ from app.ingestion.inbox_repo import (
     content_addressed_path,
 )
 from app.master.routes import _MONEY_FIELD_NAME
-from tests.fake_repo import InMemoryRepo
+from tests.fake_repo import TEST_ORG_ID, InMemoryRepo
 
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _item_org(item: dict[str, Any]) -> str:
+    # Rows seeded without an org count as the default test org (see fake_repo).
+    return item.get("org_id") or TEST_ORG_ID
 
 
 class InMemoryInboxRepo:
@@ -46,20 +51,22 @@ class InMemoryInboxRepo:
         return path
 
     def find_duplicate_by_storage_path(
-        self, *, storage_path: str, attachment_count: int
+        self, *, org_id: str, storage_path: str, attachment_count: int
     ) -> dict[str, Any] | None:
         matches = [
             i
             for i in self.items.values()
-            if i["storage_path"] == storage_path and i["attachment_count"] == attachment_count
+            if i["storage_path"] == storage_path
+            and i["attachment_count"] == attachment_count
+            and _item_org(i) == org_id
         ]
         return max(matches, key=lambda i: i["created_at"] or "") if matches else None
 
-    def find_items_by_digest(self, digest: str) -> list[dict[str, Any]]:
+    def find_items_by_digest(self, digest: str, *, org_id: str) -> list[dict[str, Any]]:
         matches = [
             i
             for i in self.items.values()
-            if f"/{digest}/" in (i.get("storage_path") or "")
+            if f"/{digest}/" in (i.get("storage_path") or "") and _item_org(i) == org_id
         ]
         return sorted(matches, key=lambda i: i["created_at"] or "", reverse=True)
 
@@ -71,6 +78,7 @@ class InMemoryInboxRepo:
     def add_item(
         self,
         *,
+        org_id: str = TEST_ORG_ID,
         from_email: str,
         to_email: str,
         subject: str | None,
@@ -86,6 +94,7 @@ class InMemoryInboxRepo:
     ) -> dict[str, Any]:
         item = {
             "id": str(uuid.uuid4()),
+            "org_id": org_id,
             "from_email": from_email,
             "to_email": to_email,
             "subject": subject,
@@ -106,9 +115,13 @@ class InMemoryInboxRepo:
         self.items[item["id"]] = item
         return item
 
-    def list_open(self) -> list[dict[str, Any]]:
+    def list_open(self, *, org_id: str) -> list[dict[str, Any]]:
         self._reclaim_stale_processing()
-        return [i for i in self.items.values() if i["status"] in ("pending", "needs_manual")]
+        return [
+            i
+            for i in self.items.values()
+            if i["status"] in ("pending", "needs_manual") and _item_org(i) == org_id
+        ]
 
     def _reclaim_stale_processing(self) -> None:
         cutoff = datetime.now(timezone.utc) - timedelta(seconds=_INBOX_CLAIM_STALE_SECONDS)
@@ -121,12 +134,14 @@ class InMemoryInboxRepo:
     def get(self, item_id: str) -> dict[str, Any] | None:
         return self.items.get(item_id)
 
-    def sender_history(self) -> dict[str, str]:
+    def sender_history(self, *, org_id: str) -> dict[str, str]:
         history: dict[str, str] = {}
         confirmed = [
             i
             for i in self.items.values()
-            if i["status"] == "confirmed" and i["confirmed_transaction_id"]
+            if i["status"] == "confirmed"
+            and i["confirmed_transaction_id"]
+            and _item_org(i) == org_id
         ]
         for item in sorted(confirmed, key=lambda i: i["confirmed_at"] or ""):
             history[item["from_email"].lower()] = item["confirmed_transaction_id"]
@@ -186,13 +201,13 @@ class FakeMasterClient:
         self.repo = repo
 
     def list_transactions(self, *, token: str) -> tuple[int, Any]:
-        return 200, self.repo.list_transactions()
+        return 200, self.repo.list_transactions(org_id=TEST_ORG_ID)
 
     def create_transaction(
         self, *, token: str, property_address: str
     ) -> tuple[int, dict[str, Any]]:
         created = self.repo.create_transaction(
-            property_address=property_address, actor="tc@example.test"
+            property_address=property_address, actor="tc@example.test", org_id=TEST_ORG_ID
         )
         return 201, created
 

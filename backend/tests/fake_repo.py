@@ -36,6 +36,18 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+# Test tenancy: the default org every fixture-created row belongs to, and a
+# second org for cross-tenant isolation tests (tests/test_tenancy.py). Rows
+# seeded without an explicit org_id count as TEST_ORG_ID so the whole legacy
+# suite behaves as "one TC business" without changes.
+TEST_ORG_ID = "org-a-4b71c1f0-0000-4000-8000-tenancy-a"
+TEST_ORG_B_ID = "org-b-9d02e2a1-0000-4000-8000-tenancy-b"
+
+
+def _row_org(row: dict[str, Any]) -> str:
+    return row.get("org_id") or TEST_ORG_ID
+
+
 class InMemoryRepo:
     def __init__(self) -> None:
         self.transactions: dict[str, dict[str, Any]] = {}
@@ -95,9 +107,17 @@ class InMemoryRepo:
         )
 
     # -- MasterRepo interface --------------------------------------------------
-    def create_transaction(self, *, property_address: str, actor: str) -> dict[str, Any]:
+    def create_transaction(
+        self, *, property_address: str, actor: str, org_id: str = TEST_ORG_ID
+    ) -> dict[str, Any]:
         txn_id = str(uuid.uuid4())
-        txn = {"id": txn_id, "status": "open", "stage": "new", "created_at": _now()}
+        txn = {
+            "id": txn_id,
+            "status": "open",
+            "stage": "new",
+            "org_id": org_id,
+            "created_at": _now(),
+        }
         prop = {
             "id": str(uuid.uuid4()),
             "transaction_id": txn_id,
@@ -116,19 +136,27 @@ class InMemoryRepo:
         )
         return {**txn, "property": prop}
 
-    def list_transactions(self) -> list[dict[str, Any]]:
+    def list_transactions(self, *, org_id: str) -> list[dict[str, Any]]:
         return [
             {**t, "property_address": (self.properties.get(t["id"]) or {}).get("address")}
             for t in self.transactions.values()
+            if _row_org(t) == org_id
         ]
 
-    def list_active_transaction_ids(self) -> list[str]:
+    def list_active_transaction_ids(self, *, org_id: str | None) -> list[str]:
         return [
-            t["id"] for t in self.transactions.values() if t.get("status", "open") == "open"
+            t["id"]
+            for t in self.transactions.values()
+            if t.get("status", "open") == "open"
+            and (org_id is None or _row_org(t) == org_id)
         ]
 
     def transaction_exists(self, transaction_id: str) -> bool:
         return transaction_id in self.transactions
+
+    def transaction_org(self, transaction_id: str) -> str | None:
+        txn = self.transactions.get(transaction_id)
+        return _row_org(txn) if txn is not None else None
 
     def _set_transaction_status(self, transaction_id, status, actor, action, details=None):
         txn = self.transactions.get(transaction_id)
@@ -185,10 +213,14 @@ class InMemoryRepo:
         )
         return f
 
-    def list_deal_summaries(self) -> list[dict[str, Any]]:
+    def list_deal_summaries(self, *, org_id: str) -> list[dict[str, Any]]:
         from app.master.repo import _deal_summary, _effective_fields, _source_rank_map
 
-        txns = [t for t in self.transactions.values() if t.get("status") != "archived"]
+        txns = [
+            t
+            for t in self.transactions.values()
+            if t.get("status") != "archived" and _row_org(t) == org_id
+        ]
         ids = {t["id"] for t in txns}
         props = {tid: (self.properties.get(tid) or {}).get("address") for tid in ids}
         coe = {
@@ -222,8 +254,12 @@ class InMemoryRepo:
         }
         return [_deal_summary(t, props, coe, tasks, risks, fields) for t in txns]
 
-    def list_active_deadlines(self) -> list[dict[str, Any]]:
-        ids = {t["id"] for t in self.transactions.values() if t.get("status") != "archived"}
+    def list_active_deadlines(self, *, org_id: str) -> list[dict[str, Any]]:
+        ids = {
+            t["id"]
+            for t in self.transactions.values()
+            if t.get("status") != "archived" and _row_org(t) == org_id
+        }
         return [
             {
                 "transaction_id": d["transaction_id"],
@@ -236,8 +272,12 @@ class InMemoryRepo:
             if d["transaction_id"] in ids
         ]
 
-    def list_open_tasks(self) -> list[dict[str, Any]]:
-        ids = {t["id"] for t in self.transactions.values() if t.get("status") != "archived"}
+    def list_open_tasks(self, *, org_id: str) -> list[dict[str, Any]]:
+        ids = {
+            t["id"]
+            for t in self.transactions.values()
+            if t.get("status") != "archived" and _row_org(t) == org_id
+        }
         due = {d["id"]: d["due_date"] for d in self.deadlines if d["transaction_id"] in ids}
         return [
             {
@@ -1358,8 +1398,12 @@ class InMemoryRepo:
         # cached enrichment; None by default (graceful address-only card).
         return getattr(self, "property_enrichment", {}).get(transaction_id)
 
-    def list_full_states(self) -> list[dict[str, Any]]:
-        states = (self.get_full_state(tid) for tid in self.transactions)
+    def list_full_states(self, *, org_id: str) -> list[dict[str, Any]]:
+        states = (
+            self.get_full_state(tid)
+            for tid, t in self.transactions.items()
+            if _row_org(t) == org_id
+        )
         return [s for s in states if s is not None]
 
     def record_cancellation(self, *, transaction_id, canceled_on, deposit_disposition, actor):

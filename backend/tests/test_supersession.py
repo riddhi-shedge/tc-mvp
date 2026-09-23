@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from app.contracts.payload import CounterMeta, ExtractedField, Payload
 from app.master.repo import evaluate_counter_flags
-from tests.fake_repo import InMemoryRepo
+from tests.fake_repo import TEST_ORG_ID, InMemoryRepo
 
 
 def _price_field(value: str) -> ExtractedField:
@@ -47,7 +47,7 @@ def test_counter_offer_supersedes_pa_price():
     assert prices == ["$1,800,000", "$1,900,000"]
 
     # … but the board shows the effective (counter) price.
-    board = {d["id"]: d for d in repo.list_deal_summaries()}
+    board = {d["id"]: d for d in repo.list_deal_summaries(org_id=TEST_ORG_ID)}
     assert board[tid]["purchase_price"] == "$1,900,000"
 
 
@@ -64,7 +64,7 @@ def test_reuploading_the_pa_does_not_revert_a_counter():
 
     state = repo.get_full_state(tid)
     assert state["effective_fields"]["purchase_price"]["value"] == "$1,900,000"
-    board = {d["id"]: d for d in repo.list_deal_summaries()}
+    board = {d["id"]: d for d in repo.list_deal_summaries(org_id=TEST_ORG_ID)}
     assert board[tid]["purchase_price"] == "$1,900,000"
 
 
