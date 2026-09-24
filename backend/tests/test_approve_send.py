@@ -5,6 +5,7 @@ import pytest
 
 from app.master.mailer import RecipientNotAllowed, SendDisabled
 from tests.fake_mailer import FakeMailer
+from tests.fake_repo import TEST_ORG_ID
 
 
 def _deal_with_draft(client, tc_headers, *, email="lender@example.test") -> tuple[str, str]:
@@ -36,7 +37,12 @@ def test_approval_recorded_before_send_and_edits_applied(client, tc_headers, rep
 
     # The mailer received the edited content addressed to the lender.
     assert mailer.sent == [
-        {"to": "lender@example.test", "subject": "Edited subject", "body": "Edited body by the TC"}
+        {
+            "to": "lender@example.test",
+            "subject": "Edited subject",
+            "body": "Edited body by the TC",
+            "org_id": TEST_ORG_ID,
+        }
     ]
     state = client.get(f"/transactions/{txn_id}", headers=tc_headers).json()
     actions = [a["action"] for a in state["audit_log"]]

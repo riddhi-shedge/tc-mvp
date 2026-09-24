@@ -16,6 +16,7 @@ from fastapi.responses import JSONResponse
 from postgrest.exceptions import APIError
 
 from app.ingestion.routes import router as ingestion_router
+from app.master.org_routes import router as org_router
 from app.master.routes import router as master_router
 
 # Load the project .env for local runs (so the key/creds live in one gitignored
@@ -30,6 +31,7 @@ logger = logging.getLogger("tc_mvp")
 app = FastAPI(title="tc-mvp")
 app.include_router(master_router)
 app.include_router(ingestion_router)
+app.include_router(org_router)
 
 app.add_middleware(
     CORSMiddleware,

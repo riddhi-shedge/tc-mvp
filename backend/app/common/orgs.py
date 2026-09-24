@@ -102,6 +102,14 @@ def _get_directory() -> OrgDirectory | None:
         return _directory
 
 
+def invalidate_membership(user_id: str) -> None:
+    """Drop one user's cached membership — called right after a membership
+    write (org created, invite accepted, member removed) so the change takes
+    effect on their next request instead of after the TTL."""
+    with _lock:
+        _membership_cache.pop(user_id, None)
+
+
 def membership_for_user(user_id: str) -> dict[str, Any] | None:
     """The user's org membership, TTL-cached. None ⇒ no org ⇒ caller rejects."""
     if not user_id:

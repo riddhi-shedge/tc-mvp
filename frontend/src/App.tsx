@@ -13,8 +13,9 @@ import { CommandPalette } from "./screens/CommandPalette";
 import { Support } from "./screens/Support";
 import { Admin } from "./screens/Admin";
 import { GuideModal, GuidePage, guideSeen } from "./screens/Guide";
+import { OrgSettings } from "./screens/OrgSettings";
 import { ErrorBoundary } from "./lib/ErrorBoundary";
-import { Toaster } from "./lib/ui";
+import { Toaster, toast } from "./lib/ui";
 import { Icon } from "./lib/icons";
 import { motion } from "framer-motion";
 
@@ -23,6 +24,21 @@ import { motion } from "framer-motion";
 const inviteToken = (() => {
   const m = /[#&]invite=([^&]+)/.exec(window.location.hash);
   return m ? decodeURIComponent(m[1]) : null;
+})();
+
+// A teammate joining a workspace arrives with #join=oi_… — stash it so it
+// survives the sign-in (and MFA) round-trip, then accept once signed in.
+const JOIN_KEY = "terra_join_token";
+(() => {
+  const m = /[#&]join=([^&]+)/.exec(window.location.hash);
+  if (m) {
+    try {
+      localStorage.setItem(JOIN_KEY, decodeURIComponent(m[1]));
+    } catch {
+      /* private mode — the user can reopen the link after signing in */
+    }
+    history.replaceState(null, "", window.location.pathname + window.location.search);
+  }
 })();
 
 // A workspace is a daytime tool — default to the bright theme and only honor a
@@ -37,10 +53,11 @@ type View =
   | { name: "inbox" }
   | { name: "quarter" }
   | { name: "guide" }
+  | { name: "org" }
   | { name: "deal"; id: string };
 
 const VIEW_KEY = "tc_view";
-const VIEW_NAMES = ["home", "calendar", "inbox", "quarter", "guide", "deal"];
+const VIEW_NAMES = ["home", "calendar", "inbox", "quarter", "guide", "org", "deal"];
 
 // Persist the current view so a page refresh keeps the TC where they were —
 // most importantly, on the deal they were reading rather than bouncing home.
@@ -143,6 +160,40 @@ function TcApp() {
     if (signedIn && !guideSeen()) setShowGuide(true);
   }, [signedIn]);
 
+  // Teammate join: a stashed #join token is accepted on the first signed-in
+  // render — success drops the TC into their new workspace.
+  useEffect(() => {
+    if (!signedIn) return;
+    let token: string | null = null;
+    try {
+      token = localStorage.getItem(JOIN_KEY);
+    } catch {
+      return;
+    }
+    if (!token) return;
+    void import("./lib/api").then(({ orgApi, ApiError }) =>
+      orgApi
+        .accept(token!)
+        .then(() => {
+          toast("Welcome — you've joined the workspace.");
+          setView({ name: "home" });
+        })
+        .catch((err: unknown) => {
+          // 409 = already a member (a re-click) — quietly fine.
+          if (!(err instanceof ApiError && err.status === 409)) {
+            toast(err instanceof Error ? err.message : "That invite link didn't work.");
+          }
+        })
+        .finally(() => {
+          try {
+            localStorage.removeItem(JOIN_KEY);
+          } catch {
+            /* ignore */
+          }
+        }),
+    );
+  }, [signedIn]);
+
   useEffect(() => {
     try {
       localStorage.setItem(VIEW_KEY, JSON.stringify(view));
@@ -235,6 +286,15 @@ function TcApp() {
 
         <div className="spacer" />
         <button
+          className={`nav-item ${view.name === "org" ? "active" : ""}`}
+          onClick={() => setView({ name: "org" })}
+        >
+          {view.name === "org" && (
+            <motion.span layoutId="side-ind" className="side-ind" transition={{ type: "spring", stiffness: 400, damping: 34 }} />
+          )}
+          <span className="ni-label"><span className="ic"><Icon name="users" /></span> Workspace</span>
+        </button>
+        <button
           className={`nav-item ${view.name === "guide" ? "active" : ""}`}
           onClick={() => setView({ name: "guide" })}
         >
@@ -288,7 +348,9 @@ function TcApp() {
                       ? "My quarter"
                       : view.name === "guide"
                         ? "Guide"
-                        : "Deals"}
+                        : view.name === "org"
+                          ? "Workspace"
+                          : "Deals"}
               </b>
             )}
           </div>
@@ -340,6 +402,7 @@ function TcApp() {
           )}
           {view.name === "quarter" && <Quarter />}
           {view.name === "guide" && <GuidePage />}
+          {view.name === "org" && <OrgSettings />}
           {view.name === "inbox" && (
             <Inbox
               onOpenDeal={(id) => {

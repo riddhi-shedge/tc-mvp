@@ -23,7 +23,12 @@ import uuid
 
 from fastapi.routing import APIRoute
 
-from app.common.auth import require_agent_portfolio, require_party, require_tc
+from app.common.auth import (
+    require_agent_portfolio,
+    require_party,
+    require_tc,
+    require_tc_candidate,
+)
 from app.main import app
 from app.master.routes import require_compliance_service, require_scoped_tc
 from tests.conftest import ORG_B_SUB, SYNTHETIC_PA_B64, make_token
@@ -40,11 +45,24 @@ EXPECTED_GLOBAL_TC = {
     ("GET", "/transactions/calendar/feed-url"),  # org-derived HMAC key
     ("POST", "/ingestion/manual-upload"),    # stamps tc.org_id on the item
     ("GET", "/ingestion/inbox"),             # list_open(org_id=...)
+    ("GET", "/orgs/me"),                     # everything keyed by tc.org_id
+    ("POST", "/orgs/members/invites"),       # owner-only; invite in tc.org_id
+    ("POST", "/orgs/members/invites/{invite_id}/revoke"),  # repo eq(org_id)
+    ("DELETE", "/orgs/members/{user_id}"),   # remove within tc.org_id only
+    ("PATCH", "/orgs/settings"),             # upsert keyed by tc.org_id
+}
+
+# Onboarding routes: a verified MFA'd session with NO org yet. Both write only
+# memberships for the caller themself (org creation / invite acceptance).
+EXPECTED_CANDIDATE = {
+    ("POST", "/orgs"),
+    ("POST", "/orgs/members/accept"),
 }
 
 # No TC auth by design: public, token-gated, or service-token endpoints.
 EXPECTED_UNSCOPED = {
     ("GET", "/health"),
+    ("GET", "/orgs/config"),                  # public: signup mode only
     ("GET", "/calendar.ics"),                 # org-derived HMAC key in the URL
     ("POST", "/ingestion/webhooks/postmark"),  # webhook token; org from address
     ("GET", "/openapi.json"),
@@ -122,6 +140,7 @@ def test_every_route_is_tenancy_classified_and_cross_org_reads_404(client):
         methods = sorted(route.methods - {"HEAD", "OPTIONS"})
         calls = _dependency_calls(route)
         is_tc = require_scoped_tc in calls or require_tc in calls
+        is_candidate = require_tc_candidate in calls
         is_party = require_party in calls or require_agent_portfolio in calls
         is_service = require_compliance_service in calls
 
@@ -129,6 +148,13 @@ def test_every_route_is_tenancy_classified_and_cross_org_reads_404(client):
             key = (method, route.path)
             if is_party:
                 continue  # credential-bound to one deal (and its org) by construction
+            if is_candidate:
+                if key not in EXPECTED_CANDIDATE:
+                    unclassified.append(
+                        f"{method} {route.path}: candidate-auth route — verify it only "
+                        "writes the caller's own membership, then add to EXPECTED_CANDIDATE"
+                    )
+                continue
             if is_service or key in EXPECTED_UNSCOPED:
                 if is_tc:
                     unclassified.append(f"{method} {route.path}: both TC-authed and unscoped?")

@@ -807,7 +807,10 @@ class InMemoryRepo:
     def send_invite(
         self, *, transaction_id, party_id, to, subject, body, mailer, actor
     ) -> None:
-        mailer.send(to=to, subject=subject, body=body)
+        mailer.send(
+            to=to, subject=subject, body=body,
+            org_id=self.transaction_org(transaction_id) or "",
+        )
         self._audit(
             transaction_id=transaction_id, actor=actor, action="party.invite_sent",
             entity_type="party", entity_id=party_id, details={},
@@ -884,7 +887,10 @@ class InMemoryRepo:
         else:  # retry: no new approval
             message.update({"subject": final_subject, "body": final_body})
         # The send — a guarded/failed send leaves the message 'approved'.
-        sent_result = mailer.send(to=recipient, subject=final_subject, body=final_body)
+        sent_result = mailer.send(
+            to=recipient, subject=final_subject, body=final_body,
+            org_id=self.transaction_org(transaction_id) or "",
+        )
         message["status"] = "sent"
         message["sent_at"] = _now()
         message["provider_message_id"] = sent_result.provider_message_id

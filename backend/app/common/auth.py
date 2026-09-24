@@ -233,9 +233,23 @@ def require_agent_portfolio(
     return party
 
 
-def require_tc(
-    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
-) -> TCUser:
+@dataclass(frozen=True)
+class TCCandidate:
+    """A verified, MFA'd human session that is NOT (yet) a member of any org.
+    Only the org-creation and invite-acceptance routes accept this — everything
+    else requires a full TCUser (membership resolved)."""
+
+    id: str
+    email: str
+
+    @property
+    def actor(self) -> str:
+        return self.email or self.id
+
+
+def _decode_tc_claims(credentials: HTTPAuthorizationCredentials | None) -> dict:
+    """Shared verification for TC-shaped sessions: signature + standard claims,
+    authenticated role, not a party token, MFA (aal2) unless disabled."""
     if credentials is None:
         raise _unauthorized("Missing bearer token")
 
@@ -256,6 +270,22 @@ def require_tc(
     require_mfa = os.environ.get("REQUIRE_MFA", "true").lower() != "false"
     if require_mfa and claims.get("aal") != "aal2":
         raise HTTPException(status_code=403, detail="MFA required: session is not aal2")
+    return claims
+
+
+def require_tc_candidate(
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
+) -> TCCandidate:
+    """Same verification as require_tc EXCEPT the org-membership gate — for the
+    two onboarding routes where the caller legitimately has no org yet."""
+    claims = _decode_tc_claims(credentials)
+    return TCCandidate(id=claims.get("sub", ""), email=claims.get("email", ""))
+
+
+def require_tc(
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
+) -> TCUser:
+    claims = _decode_tc_claims(credentials)
 
     # Tenancy: a TC session acts within exactly one org. No membership (or a
     # directory outage) fails closed — an authenticated stranger sees nothing.

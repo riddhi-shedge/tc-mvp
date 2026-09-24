@@ -19,6 +19,10 @@ function friendlyError(err: unknown): string {
     return "Incorrect code. Codes refresh every 30 seconds.";
   if (m.includes("rate limit") || m.includes("too many"))
     return "Too many attempts. Please wait a minute and try again.";
+  if (m.includes("already registered") || m.includes("already exists"))
+    return "An account with this email already exists. Sign in instead.";
+  if (m.includes("password") && (m.includes("short") || m.includes("least")))
+    return "Password is too short. Use at least 8 characters.";
   if (m.includes("fetch") || m.includes("network"))
     return "Unable to reach the server. Please try again in a moment.";
   return raw || "Something went wrong. Please try again.";
@@ -106,6 +110,28 @@ export function Login({ onSignedIn }: { onSignedIn: () => void }) {
   const [secretCopied, setSecretCopied] = useState(false);
   const submittingCode = useRef(false);
 
+  // Account creation: available when self-serve signup is open, or when this
+  // browser holds a workspace join link (the teammate needs an account first).
+  const [mode, setMode] = useState<"signin" | "signup">("signin");
+  const [notice, setNotice] = useState<string | null>(null);
+  const [signupOpen, setSignupOpen] = useState(false);
+  const joinPending = (() => {
+    try {
+      return Boolean(localStorage.getItem("terra_join_token"));
+    } catch {
+      return false;
+    }
+  })();
+  useEffect(() => {
+    void import("../lib/api").then(({ orgApi }) =>
+      orgApi
+        .config()
+        .then((c) => setSignupOpen(c.signup_mode === "open"))
+        .catch(() => {}),
+    );
+  }, []);
+  const canSignup = signupOpen || joinPending;
+
   async function afterPassword() {
     try {
       localStorage.setItem("terra_last_email", email);
@@ -136,7 +162,19 @@ export function Login({ onSignedIn }: { onSignedIn: () => void }) {
     e.preventDefault();
     setBusy(true);
     setError(null);
+    setNotice(null);
     try {
+      if (mode === "signup") {
+        const { data, error: err } = await supabase.auth.signUp({ email, password });
+        if (err) throw err;
+        if (data.session) {
+          await afterPassword(); // confirmations off: straight to MFA setup
+        } else {
+          setMode("signin");
+          setNotice("Almost there — confirm your email from the message we sent, then sign in.");
+        }
+        return;
+      }
       const { error: err } = await supabase.auth.signInWithPassword({ email, password });
       if (err) throw err;
       await afterPassword();
@@ -239,8 +277,20 @@ export function Login({ onSignedIn }: { onSignedIn: () => void }) {
             <div className="lg-eyebrow">{stageEyebrow}</div>
             {stage === "password" && (
               <>
-                <h2>Welcome back</h2>
-                <p className="auth-sub">Sign in to your workspace.</p>
+                <h2>{mode === "signup" ? "Create your account" : "Welcome back"}</h2>
+                <p className="auth-sub">
+                  {mode === "signup"
+                    ? "Set an email and password, then add an authenticator."
+                    : "Sign in to your workspace."}
+                </p>
+                {joinPending && (
+                  <p className="lg-joinnote">
+                    You've been invited to a workspace. Use the invited email address to
+                    {" "}
+                    {mode === "signup" ? "create your account" : "sign in"}.
+                  </p>
+                )}
+                {notice && <p className="lg-joinnote">{notice}</p>}
                 <form onSubmit={submitPassword}>
                   <label htmlFor="lg-email">Email</label>
                   <input
@@ -257,10 +307,11 @@ export function Login({ onSignedIn }: { onSignedIn: () => void }) {
                     <input
                       id="lg-pw"
                       type={showPw ? "text" : "password"}
-                      autoComplete="current-password"
+                      autoComplete={mode === "signup" ? "new-password" : "current-password"}
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
                       autoFocus={!!email}
+                      minLength={mode === "signup" ? 8 : undefined}
                       required
                     />
                     <button
@@ -274,10 +325,35 @@ export function Login({ onSignedIn }: { onSignedIn: () => void }) {
                   </div>
                   <div style={{ marginTop: "1rem" }}>
                     <button disabled={busy} style={{ width: "100%" }}>
-                      {busy ? (<><span className="spinner" /> Signing in…</>) : "Sign in"}
+                      {busy ? (
+                        <><span className="spinner" /> {mode === "signup" ? "Creating account…" : "Signing in…"}</>
+                      ) : mode === "signup" ? (
+                        "Create account"
+                      ) : (
+                        "Sign in"
+                      )}
                     </button>
                   </div>
                 </form>
+                {canSignup && (
+                  <p className="lg-modeswitch">
+                    {mode === "signup" ? (
+                      <>
+                        Already have an account?{" "}
+                        <button type="button" onClick={() => { setMode("signin"); setError(null); }}>
+                          Sign in
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        New to Terra?{" "}
+                        <button type="button" onClick={() => { setMode("signup"); setError(null); }}>
+                          Create your account
+                        </button>
+                      </>
+                    )}
+                  </p>
+                )}
               </>
             )}
             {stage === "enroll" && (
@@ -344,7 +420,9 @@ export function Login({ onSignedIn }: { onSignedIn: () => void }) {
             )}
             {error && <p className="error" role="alert">{error}</p>}
             <p className="lg-invite">
-              Access is invite-only. Contact your administrator for an account or password reset.
+              {signupOpen
+                ? "Need help? Contact support for a password reset."
+                : "Access is invite-only. Contact your administrator for an account or password reset."}
             </p>
           </div>
         </div>

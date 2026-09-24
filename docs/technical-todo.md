@@ -109,21 +109,21 @@ orgs, and nothing crosses. Do these steps in order; each is shippable.
 
 ### A5. Per-org send controls
 
-- [ ] New table `org_settings (org_id pk/fk, send_mode text check in ('allowlist','open')
+- [x] New table `org_settings (org_id pk/fk, send_mode text check in ('allowlist','open')
       default 'allowlist', send_allowlist jsonb default '[]', created_at, updated_at)`
-- [ ] `mailer.py`: allowlist check reads org settings (env `SEND_ALLOWLIST` becomes a
+- [x] `mailer.py`: allowlist check reads org settings (env `SEND_ALLOWLIST` becomes a
       global-AND override for dev/demo deployments — an env-listed address restriction can
       only tighten, never loosen)
-- [ ] Settings UI: a small org-settings screen (name, allowlist entries, members list)
+- [x] Settings UI: a small org-settings screen (`OrgSettings.tsx`, "Workspace" in the nav) (name, allowlist entries, members list)
 
 ### A6. Signup and teammate invites
 
-- [ ] "Create organization" flow: new-user signup (Supabase signUp) → email verification →
+- [x] "Create organization" flow: new-user signup (Supabase signUp) → email verification →
       create org + owner membership → forced MFA enrollment (reuse the existing TOTP
       enrollment UI from `Login.tsx`) → land in empty workspace with a first-deal checklist
-- [ ] "Invite teammate": owner enters email → Supabase admin invite (backend route, service
+- [x] "Invite teammate": owner mints a hashed oi_ join link (no Supabase admin email needed); accept binds the invited address, is single-use, and enrolls MFA via the existing Login flow — owner enters email → Supabase admin invite (backend route, service
       role) → membership row created on accept → same MFA enrollment gate
-- [ ] Keep a `SIGNUP_MODE=closed|invite|open` env so the public deployment can stay
+- [x] Keep a `SIGNUP_MODE=closed|open` env (invites are accepted in either mode — the owner's minted link is the authorization) so the public deployment can stay
       invite-only until pilots start
 
 ### A7. Storage scoping

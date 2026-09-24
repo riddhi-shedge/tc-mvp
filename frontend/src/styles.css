@@ -2567,3 +2567,57 @@ button.secondary.sm { padding: 0.28rem 0.55rem; font-size: var(--t-s); }
 .mbx-filters { display: flex; gap: 5px; padding: 8px 10px; border-bottom: 1px solid var(--line);
   flex-wrap: wrap; background: var(--surface); }
 .mbx-time.awaiting { color: var(--amber-700); font-weight: 700; }
+
+/* ---- Workspace settings (Track A5/A6) ------------------------------------ */
+.org { max-width: 720px; display: flex; flex-direction: column; gap: 1rem; }
+.org-head { display: flex; align-items: center; gap: 0.6rem; }
+.org-head h2 { margin: 0; }
+.org-card h3 { display: flex; align-items: center; gap: 0.45rem; margin: 0 0 0.35rem; font-size: 0.95rem; }
+.org-card h4 { margin: 1.1rem 0 0.4rem; font-size: 0.85rem; }
+.org-card .muted { margin: 0 0 0.7rem; font-size: 0.83rem; }
+.org-mono { display: flex; align-items: center; gap: 0.5rem; }
+.org-mono code {
+  flex: 1; min-width: 0; overflow-x: auto; white-space: nowrap;
+  background: var(--bg, #f6f5f2); border: 1px solid var(--line, #e3e0d8);
+  border-radius: 8px; padding: 0.45rem 0.6rem; font-size: 0.8rem;
+}
+.org-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+.org-table td { padding: 0.4rem 0.5rem 0.4rem 0; border-bottom: 1px solid var(--line, #e3e0d8); }
+.org-table tr:last-child td { border-bottom: none; }
+.org-row-act { text-align: right; }
+.org-invite-form { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+.org-invite-form input[type="email"] { flex: 1; min-width: 200px; }
+.org-freshlink {
+  margin-top: 0.7rem; padding: 0.7rem; border-radius: 10px;
+  background: var(--gold-50, #faf6ec); border: 1px solid var(--gold-200, #e6d9b8);
+}
+.org-freshlink p { margin: 0 0 0.5rem; font-size: 0.82rem; }
+.org-radio { display: flex; gap: 0.5rem; align-items: baseline; margin: 0.55rem 0; font-size: 0.87rem; cursor: pointer; }
+.org-allowlist { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 0.3rem 0 0.6rem 1.6rem; align-items: center; }
+.org-chip {
+  display: inline-flex; align-items: center; gap: 0.3rem;
+  background: var(--bg, #f6f5f2); border: 1px solid var(--line, #e3e0d8);
+  border-radius: 999px; padding: 0.18rem 0.3rem 0.18rem 0.6rem; font-size: 0.78rem;
+}
+.org-chip button {
+  border: none; background: none; cursor: pointer; font-size: 0.9rem;
+  line-height: 1; padding: 0.1rem 0.3rem; border-radius: 999px; color: inherit;
+}
+.org-chip button:hover { background: rgba(0, 0, 0, 0.07); }
+.org-chip-add { display: inline-flex; gap: 0.35rem; }
+.org-chip-add input { font-size: 0.8rem; padding: 0.25rem 0.5rem; width: 180px; }
+.org-note { font-size: 0.78rem; }
+.org-save { margin-top: 0.8rem; }
+
+/* Login additions: workspace-join banner + sign-in/sign-up switch */
+.lg-joinnote {
+  margin: 0 0 0.9rem; padding: 0.55rem 0.7rem; border-radius: 8px;
+  font-size: 0.83rem; background: var(--gold-50, #faf6ec);
+  border: 1px solid var(--gold-200, #e6d9b8);
+}
+.lg-modeswitch { margin: 0.9rem 0 0; font-size: 0.83rem; text-align: center; }
+.lg-modeswitch button {
+  border: none; background: none; padding: 0; cursor: pointer;
+  color: var(--lg-accent, #2e5941); font-weight: 600; text-decoration: underline;
+  font-size: inherit;
+}

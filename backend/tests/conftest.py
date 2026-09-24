@@ -34,9 +34,11 @@ from app.master.routes import (
     get_party_access_issuer,
     get_repo,
 )
+from app.master.org_routes import get_orgs_repo
 from tests.fake_extractor import FakeExtractor
 from tests.fake_inbox import FakeMasterClient, InMemoryInboxRepo
 from tests.fake_mailer import FakeAssistant, FakeDrafter, FakeMailer, FakePartyAccessIssuer
+from tests.fake_orgs import InMemoryOrgsRepo
 from tests.fake_repo import TEST_ORG_B_ID, TEST_ORG_ID, InMemoryRepo
 
 TEST_JWT_SECRET = os.environ["SUPABASE_JWT_SECRET"]
@@ -50,7 +52,21 @@ ORG_B_SUB = "tc-user-b"
 
 
 class FakeOrgDirectory:
+    """Membership defaults: any sub belongs to org A (org B for ORG_B_SUB) so
+    the legacy suite runs as one TC business — EXCEPT subs starting with
+    'cand-', which have no membership (onboarding tests). Explicit memberships
+    written through the fake OrgsRepo always win over the defaults."""
+
+    def __init__(self, orgs_repo: InMemoryOrgsRepo | None = None) -> None:
+        self.orgs_repo = orgs_repo
+
     def membership(self, user_id: str) -> dict | None:
+        if self.orgs_repo is not None:
+            explicit = self.orgs_repo.membership_of(user_id)
+            if explicit is not None:
+                return explicit
+        if user_id.startswith("cand-"):
+            return None
         if user_id == ORG_B_SUB:
             return {"org_id": TEST_ORG_B_ID, "role": "owner"}
         return {"org_id": TEST_ORG_ID, "role": "owner"}
@@ -62,14 +78,19 @@ class FakeOrgDirectory:
         return TEST_ORG_ID
 
 
+@pytest.fixture()
+def orgs_repo() -> InMemoryOrgsRepo:
+    return InMemoryOrgsRepo()
+
+
 @pytest.fixture(autouse=True)
-def org_directory():
+def org_directory(orgs_repo: InMemoryOrgsRepo):
     """Every test runs with the fake org directory installed (and the membership
     cache cleared on both sides), so require_tc resolves synthetic orgs and the
     webhook can route untagged mail to org A."""
     from app.common import orgs as orgs_module
 
-    directory = FakeOrgDirectory()
+    directory = FakeOrgDirectory(orgs_repo)
     orgs_module.set_directory(directory)
     yield directory
     orgs_module.set_directory(None)
@@ -174,8 +195,10 @@ def client(
     drafter: FakeDrafter,
     party_access_issuer: FakePartyAccessIssuer,
     assistant: FakeAssistant,
+    orgs_repo: InMemoryOrgsRepo,
 ):
     app.dependency_overrides[get_repo] = lambda: repo
+    app.dependency_overrides[get_orgs_repo] = lambda: orgs_repo
     # permanent invite tokens (pi_…) resolve against the fake's invite store
     from app.common.auth import set_invite_resolver
 

@@ -448,3 +448,54 @@ export interface FullState {
   approvals: { id: string; message_id: string; approved_by: string }[];
   audit_log: AuditRow[];
 }
+
+// ---- Org workspace (Track A5/A6): members, invites, send settings ----------
+
+export interface OrgMember {
+  user_id: string;
+  email: string | null;
+  role: "owner" | "member";
+  created_at: string;
+}
+
+export interface OrgInvite {
+  id: string;
+  email: string;
+  role: string;
+  created_at: string;
+}
+
+export interface OrgSendSettings {
+  send_mode: "allowlist" | "open";
+  send_allowlist: string[];
+}
+
+export interface OrgMe {
+  org_id: string;
+  name: string;
+  role: "owner" | "member";
+  inbound_address: string | null;
+  members: OrgMember[];
+  // owner-only fields:
+  invites?: OrgInvite[];
+  settings?: OrgSendSettings;
+  settings_configured?: boolean;
+  global_allowlist_active?: boolean;
+}
+
+export const orgApi = {
+  config: () => api.get<{ signup_mode: "closed" | "open" }>("/orgs/config"),
+  me: () => api.get<OrgMe>("/orgs/me"),
+  create: (name: string) =>
+    api.post<{ org_id: string; name: string; role: string }>("/orgs", { name }),
+  accept: (token: string) =>
+    api.post<{ org_id: string; role: string }>("/orgs/members/accept", { token }),
+  invite: (email: string, role: string) =>
+    api.post<{ id: string; email: string; role: string; token: string }>(
+      "/orgs/members/invites",
+      { email, role },
+    ),
+  revokeInvite: (id: string) => api.post<{ revoked: boolean }>(`/orgs/members/invites/${id}/revoke`),
+  removeMember: (userId: string) => api.del<{ removed: boolean }>(`/orgs/members/${userId}`),
+  updateSettings: (settings: OrgSendSettings) => api.patch<OrgSendSettings>("/orgs/settings", settings),
+};

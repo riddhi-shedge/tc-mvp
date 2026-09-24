@@ -2430,7 +2430,12 @@ class SupabaseRepo:
             approval = existing[0] if existing else None
 
         # The send — the only outbound path. Failure leaves it approved (retryable).
-        sent_result = mailer.send(to=recipient, subject=final_subject, body=final_body)
+        sent_result = mailer.send(
+            to=recipient,
+            subject=final_subject,
+            body=final_body,
+            org_id=self.transaction_org(transaction_id) or "",
+        )
 
         sent = (
             self._db.table("messages")
@@ -2519,7 +2524,10 @@ class SupabaseRepo:
     ) -> None:
         """TC-initiated invite email (a human tap, not auto-send). Sends through
         the guarded mailer and audits; the caller handles the send-disabled case."""
-        mailer.send(to=to, subject=subject, body=body)
+        mailer.send(
+            to=to, subject=subject, body=body,
+            org_id=self.transaction_org(transaction_id) or "",
+        )
         self._audit(
             transaction_id=transaction_id,
             actor=actor,

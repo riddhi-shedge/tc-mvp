@@ -13,10 +13,10 @@ class FakeMailer:
         self.sent: list[dict[str, str]] = []
         self._raises = raises
 
-    def send(self, *, to: str, subject: str, body: str) -> SentMessage:
+    def send(self, *, to: str, subject: str, body: str, org_id: str = "") -> SentMessage:
         if self._raises is not None:
             raise self._raises
-        self.sent.append({"to": to, "subject": subject, "body": body})
+        self.sent.append({"to": to, "subject": subject, "body": body, "org_id": org_id})
         return SentMessage(provider_message_id=f"fake-{len(self.sent)}")
 
 
