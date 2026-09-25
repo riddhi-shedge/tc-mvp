@@ -69,6 +69,10 @@ class OrgsRepo(Protocol):
         """Remove a member. Refuses to remove the last owner (returns False)."""
         ...
 
+    def sync_member_email(self, *, org_id: str, user_id: str, email: str) -> None:
+        """Refresh the denormalized member email (after an email change)."""
+        ...
+
 
 class SupabaseOrgsRepo:
     def __init__(self) -> None:
@@ -219,3 +223,8 @@ class SupabaseOrgsRepo:
             "user_id", user_id
         ).execute()
         return True
+
+    def sync_member_email(self, *, org_id: str, user_id: str, email: str) -> None:
+        self._db.table("org_members").update({"email": email}).eq("org_id", org_id).eq(
+            "user_id", user_id
+        ).execute()

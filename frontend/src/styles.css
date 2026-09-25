@@ -2621,3 +2621,20 @@ button.secondary.sm { padding: 0.28rem 0.55rem; font-size: var(--t-s); }
   color: var(--lg-accent, #2e5941); font-weight: 600; text-decoration: underline;
   font-size: inherit;
 }
+
+/* Track B: account section, forgot-password link, reset screen */
+.org-acct { margin-top: 0.7rem; }
+.org-acct label { font-size: 0.83rem; font-weight: 600; }
+.org-acct .muted { margin: 0.15rem 0 0.4rem; }
+.org-acct-row { display: flex; gap: 0.5rem; }
+.org-acct-row input { flex: 1; min-width: 0; }
+.lg-pwrow { display: flex; align-items: baseline; justify-content: space-between; }
+.lg-forgot {
+  border: none; background: none; padding: 0; cursor: pointer;
+  font-size: 0.78rem; color: var(--lg-accent, #2e5941); text-decoration: underline;
+}
+.rp-wrap {
+  min-height: 100vh; display: grid; place-items: center;
+  background: var(--bg, #f6f5f2); padding: 1rem;
+}
+.rp-wrap .auth-card { width: min(420px, 100%); }

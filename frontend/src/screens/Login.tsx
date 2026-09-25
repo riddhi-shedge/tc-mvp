@@ -219,6 +219,25 @@ export function Login({ onSignedIn }: { onSignedIn: () => void }) {
     if (digits.length === 6 && !busy) void submitCode();
   }
 
+  async function forgotPassword() {
+    if (!email.trim()) {
+      setError("Enter your email above first, then tap 'Forgot password?' again.");
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      await supabase.auth.resetPasswordForEmail(email.trim(), {
+        redirectTo: window.location.origin,
+      });
+      setNotice("If an account exists for that address, a reset link is on its way.");
+    } catch {
+      setNotice("If an account exists for that address, a reset link is on its way.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   function copySecret() {
     if (!totpSecret) return;
     void navigator.clipboard?.writeText(totpSecret).then(() => {
@@ -302,7 +321,18 @@ export function Login({ onSignedIn }: { onSignedIn: () => void }) {
                     autoFocus={!email}
                     required
                   />
-                  <label htmlFor="lg-pw">Password</label>
+                  <div className="lg-pwrow">
+                    <label htmlFor="lg-pw">Password</label>
+                    {mode === "signin" && (
+                      <button
+                        type="button"
+                        className="lg-forgot"
+                        onClick={() => void forgotPassword()}
+                      >
+                        Forgot password?
+                      </button>
+                    )}
+                  </div>
                   <div className="lg-pwwrap">
                     <input
                       id="lg-pw"
@@ -421,8 +451,8 @@ export function Login({ onSignedIn }: { onSignedIn: () => void }) {
             {error && <p className="error" role="alert">{error}</p>}
             <p className="lg-invite">
               {signupOpen
-                ? "Need help? Contact support for a password reset."
-                : "Access is invite-only. Contact your administrator for an account or password reset."}
+                ? "Locked out of your authenticator? A workspace owner can reset it."
+                : "Access is invite-only. Ask a workspace owner for an invite, or to reset your authenticator."}
             </p>
           </div>
         </div>

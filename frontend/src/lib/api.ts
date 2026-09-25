@@ -15,7 +15,7 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+async function request<T>(path: string, init?: RequestInit, retried = false): Promise<T> {
   const { data } = await supabase.auth.getSession();
   const token = data.session?.access_token;
   const res = await fetch(`${API_BASE}${path}`, {
@@ -26,6 +26,13 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       ...init?.headers,
     },
   });
+  // A stale tab's expired token reads as 401 — refresh the session once and
+  // retry before surfacing the error (kills the "left it open overnight" class
+  // of failures without looping).
+  if (res.status === 401 && token && !retried) {
+    const { data: refreshed } = await supabase.auth.refreshSession();
+    if (refreshed.session) return request<T>(path, init, true);
+  }
   const body = await res.json().catch(() => ({}));
   if (!res.ok) throw new ApiError(res.status, body.detail ?? res.statusText);
   return body as T;
@@ -497,5 +504,7 @@ export const orgApi = {
     ),
   revokeInvite: (id: string) => api.post<{ revoked: boolean }>(`/orgs/members/invites/${id}/revoke`),
   removeMember: (userId: string) => api.del<{ removed: boolean }>(`/orgs/members/${userId}`),
+  resetMemberMfa: (userId: string) =>
+    api.post<{ reset: boolean }>(`/orgs/members/${userId}/reset-mfa`),
   updateSettings: (settings: OrgSendSettings) => api.patch<OrgSendSettings>("/orgs/settings", settings),
 };

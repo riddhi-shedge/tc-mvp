@@ -181,3 +181,70 @@ def test_settings_validation_and_roundtrip(client):
     me = client.get("/orgs/me", headers=OWNER).json()
     assert me["settings"] == {"send_mode": "allowlist", "send_allowlist": ["escrow@title.test"]}
     assert me["settings_configured"] is True
+
+
+# ---- Track B: MFA reset, email self-heal, display name --------------------------
+
+
+def _join_as_carol(client) -> dict[str, str]:
+    invite = _invite(client)
+    carol = _headers(sub="cand-carol", email="carol@teammate.test")
+    assert (
+        client.post("/orgs/members/accept", json={"token": invite["token"]}, headers=carol)
+        .status_code
+        == 200
+    )
+    return carol
+
+
+def test_owner_resets_a_members_mfa(client, mfa_admin):
+    carol = _join_as_carol(client)
+    r = client.post("/orgs/members/cand-carol/reset-mfa", headers=OWNER)
+    assert r.status_code == 200 and r.json()["reset"] is True
+    assert mfa_admin.reset_calls == ["cand-carol"]
+    # Carol's account still works (membership untouched) — she just re-enrolls.
+    assert client.get("/orgs/me", headers=carol).status_code == 200
+
+
+def test_mfa_reset_guards(client, mfa_admin):
+    carol = _join_as_carol(client)
+    # a member can't reset anyone
+    assert client.post("/orgs/members/tc-user-1/reset-mfa", headers=carol).status_code == 403
+    # the owner can't reset themself through the API
+    assert client.post("/orgs/members/tc-user-1/reset-mfa", headers=OWNER).status_code == 422
+    # cross-org / unknown user reads as not found
+    assert client.post("/orgs/members/tc-user-b/reset-mfa", headers=OWNER).status_code == 404
+    assert mfa_admin.reset_calls == []
+
+
+def test_mfa_reset_admin_outage_is_a_502(client, mfa_admin):
+    from app.master.mfa_admin import MfaResetFailed
+
+    _join_as_carol(client)
+    mfa_admin._raises = MfaResetFailed("boom")
+    r = client.post("/orgs/members/cand-carol/reset-mfa", headers=OWNER)
+    assert r.status_code == 502
+
+
+def test_member_email_self_heals_after_change(client, orgs_repo):
+    _join_as_carol(client)
+    # Carol changed her address in Supabase: her JWT now carries the new email.
+    renamed = _headers(sub="cand-carol", email="carol@newdomain.test")
+    me = client.get("/orgs/me", headers=renamed).json()
+    mine = next(m for m in me["members"] if m["user_id"] == "cand-carol")
+    assert mine["email"] == "carol@newdomain.test"
+    assert orgs_repo.membership_of("cand-carol") is not None  # membership untouched
+
+
+def test_display_name_rides_the_jwt_into_drafts(client):
+    from app.common.auth import require_tc
+    from fastapi.security import HTTPAuthorizationCredentials
+
+    token = make_token(user_metadata={"display_name": "Jordan Rivera"})
+    tc = require_tc(HTTPAuthorizationCredentials(scheme="Bearer", credentials=token))
+    assert tc.display_name == "Jordan Rivera"
+    # Absent or non-string metadata degrades to empty (env TC_NAME fallback).
+    plain = require_tc(
+        HTTPAuthorizationCredentials(scheme="Bearer", credentials=make_token())
+    )
+    assert plain.display_name == ""

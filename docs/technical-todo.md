@@ -151,16 +151,16 @@ still works untouched.
 
 ## Track B · Account lifecycle
 
-- [ ] Password reset: `supabase.auth.resetPasswordForEmail` from a "Forgot password?" link on
+- [x] Password reset: `supabase.auth.resetPasswordForEmail` from a "Forgot password?" link on
       `Login.tsx`, plus a `/reset` screen that calls `updateUser`. Remove the "contact your
       administrator" line
-- [ ] MFA recovery: decide and implement one of (a) recovery codes shown at enrollment, or
+- [x] MFA recovery: shipped (b) — owner-initiated reset (`POST /orgs/members/{user_id}/reset-mfa`, owner-only, member of own org, never self; Supabase admin MFA seam, log-audited). Original options: decide and implement one of (a) recovery codes shown at enrollment, or
       (b) documented owner-initiated admin reset (backend route, owner role only, audited).
       (b) is a day of work and fine for pilots
-- [ ] Email change flow (Supabase `updateUser` + re-verification)
-- [ ] Per-user display name (replace the global `TC_NAME` env in drafts/status updates with a
+- [x] Email change flow (Supabase `updateUser` + re-verification; `/orgs/me` self-heals the denormalized member email from the JWT)
+- [x] Per-user display name (JWT `user_metadata.display_name` → `TCUser.display_name`, set from the Workspace screen; replaces the global `TC_NAME` env in drafts/status updates with a
       profile field; env stays as fallback)
-- [ ] Session refresh handling in the frontend `api` layer: on 401, attempt
+- [x] Session refresh handling in the frontend `api` layer: on 401, attempt
       `refreshSession()` once before bouncing to login (kills the stale-tab class of bugs
       seen in dev)
 

@@ -150,3 +150,8 @@ class InMemoryOrgsRepo:
             return False
         self.member_rows.remove(target)
         return True
+
+    def sync_member_email(self, *, org_id: str, user_id: str, email: str) -> None:
+        for m in self.member_rows:
+            if m["org_id"] == org_id and m["user_id"] == user_id:
+                m["email"] = email

@@ -24,6 +24,7 @@ from pydantic import BaseModel, Field
 
 from app.common import orgs as org_directory
 from app.common.auth import TCCandidate, TCUser, require_tc, require_tc_candidate
+from app.master.mfa_admin import MfaAdmin, MfaResetFailed, SupabaseMfaAdmin
 from app.master.org_repo import (
     INVITE_TOKEN_PREFIX,
     VALID_MEMBER_ROLES,
@@ -45,6 +46,15 @@ def _default_orgs_repo() -> SupabaseOrgsRepo:
 
 def get_orgs_repo() -> OrgsRepo:
     return _default_orgs_repo()
+
+
+@lru_cache(maxsize=1)
+def _default_mfa_admin() -> SupabaseMfaAdmin:
+    return SupabaseMfaAdmin()
+
+
+def get_mfa_admin() -> MfaAdmin:
+    return _default_mfa_admin()
 
 
 def _require_owner(tc: TCUser) -> None:
@@ -146,12 +156,19 @@ def my_org(
     repo: OrgsRepo = Depends(get_orgs_repo),
 ) -> dict[str, Any]:
     info = repo.org_info(tc.org_id)
+    members = repo.members(tc.org_id)
+    # Self-heal the denormalized email after an address change: the JWT is the
+    # truth; the row is display-only.
+    mine = next((m for m in members if str(m.get("user_id")) == tc.id), None)
+    if mine is not None and tc.email and (mine.get("email") or "").lower() != tc.email.lower():
+        repo.sync_member_email(org_id=tc.org_id, user_id=tc.id, email=tc.email)
+        mine["email"] = tc.email
     out: dict[str, Any] = {
         "org_id": tc.org_id,
         "name": (info or {}).get("name") or "Workspace",
         "role": tc.org_role,
         "inbound_address": _inbound_address(info),
-        "members": repo.members(tc.org_id),
+        "members": members,
     }
     if tc.org_role == "owner":
         settings = repo.get_settings(tc.org_id)
@@ -219,6 +236,33 @@ def remove_member(
         )
     org_directory.invalidate_membership(user_id)
     return {"removed": True}
+
+
+@router.post("/members/{user_id}/reset-mfa")
+def reset_member_mfa(
+    user_id: str,
+    tc: TCUser = Depends(require_tc),
+    repo: OrgsRepo = Depends(get_orgs_repo),
+    mfa: MfaAdmin = Depends(get_mfa_admin),
+) -> dict[str, Any]:
+    """Owner unlocks a teammate who lost their authenticator: their TOTP
+    factors are deleted, so the next sign-in walks the normal enrollment again.
+    Never self-service (you'd need working MFA to call it anyway), and only
+    for members of the caller's own org. The owner's own lockout is the
+    hosting runbook's job, not an API's."""
+    _require_owner(tc)
+    if user_id == tc.id:
+        raise HTTPException(status_code=422, detail="You can't reset your own authenticator")
+    if not any(str(m.get("user_id")) == user_id for m in repo.members(tc.org_id)):
+        raise HTTPException(status_code=404, detail="Member not found")
+    try:
+        removed = mfa.reset_factors(user_id)
+    except MfaResetFailed:
+        raise HTTPException(
+            status_code=502, detail="Could not reset the authenticator; try again shortly"
+        ) from None
+    _log.info("org.member_mfa_reset org=%s removed=%d", tc.org_id, removed)
+    return {"reset": True, "factors_removed": removed}
 
 
 class SettingsRequest(BaseModel):

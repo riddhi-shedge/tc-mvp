@@ -48,11 +48,23 @@ class TCUser:
     # require_tc refuses sessions with no membership (fail closed).
     org_id: str = ""
     org_role: str = "owner"
+    # Self-set profile name (JWT user_metadata.display_name) — used in drafted
+    # message signatures; TC_NAME env is the deployment-wide fallback.
+    display_name: str = ""
 
     @property
     def actor(self) -> str:
         """Identity recorded in the audit log."""
         return self.email or self.id
+
+
+def _display_name(claims: dict) -> str:
+    meta = claims.get("user_metadata")
+    if isinstance(meta, dict):
+        name = meta.get("display_name")
+        if isinstance(name, str):
+            return name.strip()[:80]
+    return ""
 
 
 def _unauthorized(detail: str) -> HTTPException:
@@ -298,4 +310,5 @@ def require_tc(
         email=claims.get("email", ""),
         org_id=str(member["org_id"]),
         org_role=str(member.get("role") or "member"),
+        display_name=_display_name(claims),
     )

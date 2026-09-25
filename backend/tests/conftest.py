@@ -34,10 +34,16 @@ from app.master.routes import (
     get_party_access_issuer,
     get_repo,
 )
-from app.master.org_routes import get_orgs_repo
+from app.master.org_routes import get_mfa_admin, get_orgs_repo
 from tests.fake_extractor import FakeExtractor
 from tests.fake_inbox import FakeMasterClient, InMemoryInboxRepo
-from tests.fake_mailer import FakeAssistant, FakeDrafter, FakeMailer, FakePartyAccessIssuer
+from tests.fake_mailer import (
+    FakeAssistant,
+    FakeDrafter,
+    FakeMailer,
+    FakeMfaAdmin,
+    FakePartyAccessIssuer,
+)
 from tests.fake_orgs import InMemoryOrgsRepo
 from tests.fake_repo import TEST_ORG_B_ID, TEST_ORG_ID, InMemoryRepo
 
@@ -83,6 +89,11 @@ def orgs_repo() -> InMemoryOrgsRepo:
     return InMemoryOrgsRepo()
 
 
+@pytest.fixture()
+def mfa_admin() -> FakeMfaAdmin:
+    return FakeMfaAdmin()
+
+
 @pytest.fixture(autouse=True)
 def org_directory(orgs_repo: InMemoryOrgsRepo):
     """Every test runs with the fake org directory installed (and the membership
@@ -108,6 +119,7 @@ def make_token(
     aal: str = "aal2",
     secret: str = TEST_JWT_SECRET,
     expires_in: int = 3600,
+    user_metadata: dict | None = None,
 ) -> str:
     """Mint a synthetic Supabase-shaped JWT for tests."""
     now = int(time.time())
@@ -120,6 +132,8 @@ def make_token(
         "iat": now,
         "exp": now + expires_in,
     }
+    if user_metadata is not None:
+        claims["user_metadata"] = user_metadata
     return jwt.encode(claims, secret, algorithm="HS256")
 
 
@@ -196,9 +210,11 @@ def client(
     party_access_issuer: FakePartyAccessIssuer,
     assistant: FakeAssistant,
     orgs_repo: InMemoryOrgsRepo,
+    mfa_admin: FakeMfaAdmin,
 ):
     app.dependency_overrides[get_repo] = lambda: repo
     app.dependency_overrides[get_orgs_repo] = lambda: orgs_repo
+    app.dependency_overrides[get_mfa_admin] = lambda: mfa_admin
     # permanent invite tokens (pi_…) resolve against the fake's invite store
     from app.common.auth import set_invite_resolver
 

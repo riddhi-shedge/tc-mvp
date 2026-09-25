@@ -20,6 +20,20 @@ class FakeMailer:
         return SentMessage(provider_message_id=f"fake-{len(self.sent)}")
 
 
+class FakeMfaAdmin:
+    """Records admin MFA resets instead of calling Supabase."""
+
+    def __init__(self, *, raises: Exception | None = None) -> None:
+        self.reset_calls: list[str] = []
+        self._raises = raises
+
+    def reset_factors(self, user_id: str) -> int:
+        if self._raises is not None:
+            raise self._raises
+        self.reset_calls.append(user_id)
+        return 1
+
+
 class FakePartyAccessIssuer:
     """Returns a deterministic token instead of provisioning a Supabase user."""
 

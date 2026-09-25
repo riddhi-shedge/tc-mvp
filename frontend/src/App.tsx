@@ -14,6 +14,7 @@ import { Support } from "./screens/Support";
 import { Admin } from "./screens/Admin";
 import { GuideModal, GuidePage, guideSeen } from "./screens/Guide";
 import { OrgSettings } from "./screens/OrgSettings";
+import { ResetPassword } from "./screens/ResetPassword";
 import { ErrorBoundary } from "./lib/ErrorBoundary";
 import { Toaster, toast } from "./lib/ui";
 import { Icon } from "./lib/icons";
@@ -156,6 +157,16 @@ function TcApp() {
     });
   }, []);
 
+  // A reset-email link lands with a recovery session — intercept it before
+  // Login and let the user set a new password.
+  const [recovery, setRecovery] = useState(false);
+  useEffect(() => {
+    const { data: sub } = supabase.auth.onAuthStateChange((event) => {
+      if (event === "PASSWORD_RECOVERY") setRecovery(true);
+    });
+    return () => sub.subscription.unsubscribe();
+  }, []);
+
   useEffect(() => {
     if (signedIn && !guideSeen()) setShowGuide(true);
   }, [signedIn]);
@@ -203,6 +214,16 @@ function TcApp() {
   }, [view]);
 
   if (!ready) return null;
+  if (recovery)
+    return (
+      <ResetPassword
+        onDone={() => {
+          setRecovery(false);
+          setSignedIn(false);
+          toast("Password updated. Sign in with your new password.");
+        }}
+      />
+    );
   if (!signedIn) return <Login onSignedIn={() => setSignedIn(true)} />;
 
   return (

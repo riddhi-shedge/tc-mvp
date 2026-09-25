@@ -1217,7 +1217,7 @@ def email_party_invite(
     link = f"{body.base_url.split('#')[0]}#invite={token}"
     state = repo.get_full_state(transaction_id) or {}
     address = (state.get("property") or {}).get("address") or "the transaction"
-    tc_name = os.environ.get("TC_NAME") or "your transaction coordinator"
+    tc_name = tc.display_name or os.environ.get("TC_NAME") or "your transaction coordinator"
     what = (
         "a read-only view of the deal"
         if token_tier == "collaborator"
@@ -1424,8 +1424,9 @@ def _message_context(
         property_address=prop.get("address"),
         buyer_names=_names("buyer"),
         seller_names=_names("seller"),
-        # Optional TC identity for the signature/intro (set TC_NAME to personalize).
-        tc_name=os.environ.get("TC_NAME") or None,
+        # TC identity for the signature/intro: the user's own profile name,
+        # else the deployment-wide TC_NAME fallback.
+        tc_name=tc.display_name or os.environ.get("TC_NAME") or None,
         key_dates=key_dates,
     )
 

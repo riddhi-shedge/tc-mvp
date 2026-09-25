@@ -49,6 +49,7 @@ EXPECTED_GLOBAL_TC = {
     ("POST", "/orgs/members/invites"),       # owner-only; invite in tc.org_id
     ("POST", "/orgs/members/invites/{invite_id}/revoke"),  # repo eq(org_id)
     ("DELETE", "/orgs/members/{user_id}"),   # remove within tc.org_id only
+    ("POST", "/orgs/members/{user_id}/reset-mfa"),  # owner-only, own org roster
     ("PATCH", "/orgs/settings"),             # upsert keyed by tc.org_id
 }
 

@@ -42,11 +42,72 @@ export function OrgSettings() {
     }
   }
 
+  // Account (self): display name lives in Supabase user_metadata and rides the
+  // JWT into drafted-message signatures; email changes confirm via Supabase.
+  const [displayName, setDisplayName] = useState("");
+  const [myEmail, setMyEmail] = useState("");
+  const [newEmail, setNewEmail] = useState("");
+  const [acctBusy, setAcctBusy] = useState(false);
+
   useEffect(() => {
     void reload();
-    void supabase.auth.getUser().then(({ data }) => setMyId(data.user?.id ?? null));
+    void supabase.auth.getUser().then(({ data }) => {
+      setMyId(data.user?.id ?? null);
+      setMyEmail(data.user?.email ?? "");
+      const name = (data.user?.user_metadata as { display_name?: string } | null)?.display_name;
+      if (typeof name === "string") setDisplayName(name);
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  async function saveDisplayName(e: FormEvent) {
+    e.preventDefault();
+    setAcctBusy(true);
+    try {
+      const { error } = await supabase.auth.updateUser({
+        data: { display_name: displayName.trim() },
+      });
+      if (error) throw error;
+      toast("Name saved. It appears in drafted messages after your next sign-in.");
+    } catch {
+      toast("Could not save your name");
+    } finally {
+      setAcctBusy(false);
+    }
+  }
+
+  async function changeEmail(e: FormEvent) {
+    e.preventDefault();
+    const addr = newEmail.trim();
+    if (!addr) return;
+    setAcctBusy(true);
+    try {
+      const { error } = await supabase.auth.updateUser({ email: addr });
+      if (error) throw error;
+      setNewEmail("");
+      toast(`Confirmation sent to ${addr} — the change applies once you confirm.`);
+    } catch (err) {
+      toast(err instanceof Error ? err.message : "Could not start the email change");
+    } finally {
+      setAcctBusy(false);
+    }
+  }
+
+  async function resetMfa(userId: string, memberEmail: string | null) {
+    if (
+      !window.confirm(
+        `Reset the authenticator for ${memberEmail ?? "this member"}? ` +
+          "They'll set up a new one at their next sign-in.",
+      )
+    )
+      return;
+    try {
+      await orgApi.resetMemberMfa(userId);
+      toast("Authenticator reset. Their next sign-in sets up a new one.");
+    } catch (err) {
+      toast(err instanceof ApiError ? err.message : "Could not reset the authenticator");
+    }
+  }
 
   function copy(text: string, label: string) {
     void navigator.clipboard?.writeText(text).then(() => toast(`${label} copied`));
@@ -154,9 +215,14 @@ export function OrgSettings() {
                 <td><span className="badge">{m.role}</span></td>
                 <td className="org-row-act">
                   {isOwner && m.user_id !== myId && (
-                    <button className="kbtn" onClick={() => void removeMember(m.user_id, m.email)}>
-                      Remove
-                    </button>
+                    <>
+                      <button className="kbtn" onClick={() => void resetMfa(m.user_id, m.email)}>
+                        Reset MFA
+                      </button>{" "}
+                      <button className="kbtn" onClick={() => void removeMember(m.user_id, m.email)}>
+                        Remove
+                      </button>
+                    </>
                   )}
                 </td>
               </tr>
@@ -290,6 +356,48 @@ export function OrgSettings() {
           </div>
         </div>
       )}
+
+      <div className="card org-card">
+        <h3><Icon name="user" size={15} /> Your account</h3>
+        <form className="org-acct" onSubmit={saveDisplayName}>
+          <label htmlFor="org-name">Display name</label>
+          <p className="muted">Used to sign the messages Terra drafts for you.</p>
+          <div className="org-acct-row">
+            <input
+              id="org-name"
+              type="text"
+              maxLength={80}
+              placeholder="e.g. Jordan Rivera"
+              value={displayName}
+              onChange={(e) => setDisplayName(e.target.value)}
+            />
+            <button className="kbtn" disabled={acctBusy}>Save</button>
+          </div>
+        </form>
+        <form className="org-acct" onSubmit={changeEmail}>
+          <label htmlFor="org-email">Email</label>
+          <p className="muted">
+            Currently {myEmail || "…"}. A confirmation link goes to the new address; the
+            change applies once you confirm it.
+          </p>
+          <div className="org-acct-row">
+            <input
+              id="org-email"
+              type="email"
+              placeholder="new-address@company.com"
+              value={newEmail}
+              onChange={(e) => setNewEmail(e.target.value)}
+            />
+            <button className="kbtn" disabled={acctBusy || !newEmail.trim()}>
+              Change email
+            </button>
+          </div>
+        </form>
+        <p className="muted org-note">
+          Lost your authenticator? A workspace owner can reset it from the members list;
+          your next sign-in sets up a new one.
+        </p>
+      </div>
     </div>
   );
 }
