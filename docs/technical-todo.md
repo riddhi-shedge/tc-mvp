@@ -40,6 +40,19 @@ Checked in the code on 2026-09-23, not from memory:
 `audit_log`, party credential binding, the §5 confirm gate, JWKS + production HS256 refusal,
 the webhook fail-closed posture, evidence-first extraction, the eval harness.
 
+## Standing chores (Riddhi's side, quick)
+
+- [ ] **Stale local anon key** (found 2026-09-25): the key in `tc-mvp/.env` gets a 401 from
+      Supabase; the one in `frontend/.env.local` works. Production is unaffected (Render has
+      its own values), but local backend runs that issue party sessions would fail. Fix:
+      copy the current anon key from Supabase dashboard → Settings → API into `tc-mvp/.env`'s
+      `SUPABASE_ANON_KEY`. Thirty seconds, whenever convenient.
+- [ ] Prove the password-reset redirect end to end: invite `rshedge22@g.ucla.edu` as a
+      member, create the account, then run "Forgot password?" on it — the emailed link
+      should land on Terra's "Choose a new password" screen.
+- [ ] Send the ZDR/DPA inquiry to Anthropic (gates real client documents on the deployed
+      instance; long lead time, start early).
+
 ---
 
 ## Track A · Multi-tenancy (the big one)
