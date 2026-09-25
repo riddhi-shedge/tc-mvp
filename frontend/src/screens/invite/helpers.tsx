@@ -43,7 +43,13 @@ export function TaskRow({ t, busy, cycle, fmt }: { t: Task; busy: boolean; cycle
   const inProg = t.status === "in_progress";
   return (
     <div className={`task-row ${done ? "done" : ""} ${inProg ? "doing" : ""}`}>
-      <button className={`task-check ${done ? "done" : ""} ${inProg ? "doing" : ""}`} disabled={busy} onClick={() => cycle(t)}>
+      <button
+        className={`task-check ${done ? "done" : ""} ${inProg ? "doing" : ""}`}
+        disabled={busy}
+        aria-label={`${t.title}: mark ${done ? "not started" : inProg ? "done" : "in progress"}`}
+        aria-pressed={done}
+        onClick={() => cycle(t)}
+      >
         {done ? "✓" : inProg ? "◐" : ""}
       </button>
       <div style={{ flex: 1, minWidth: 0 }}>

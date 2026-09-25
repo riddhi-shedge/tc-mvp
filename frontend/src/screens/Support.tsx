@@ -3,20 +3,39 @@ import { Icon } from "../lib/icons";
 import { toast } from "../lib/ui";
 import { recentErrors } from "../lib/errorlog";
 
-/* Help & support drawer. Slides in from the right. Shows system status, the
- * errors Terra captured automatically this session (with their references), and
- * a report-a-problem box that would attach the current screen + those refs. */
+/* Help & support drawer. Shows the errors Terra captured in this browser this
+ * session (with their references) and a report-a-problem box. Reports go out
+ * by email: to the deployment's support address when one is configured
+ * (VITE_SUPPORT_EMAIL), otherwise as copyable text for the TC's Terra contact.
+ * Nothing here pretends to file tickets or page anyone. */
 
 const DAY_FMT = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+
+const SUPPORT_EMAIL: string = (import.meta.env.VITE_SUPPORT_EMAIL as string | undefined) ?? "";
 
 export function Support({ onClose }: { onClose: () => void }) {
   const [msg, setMsg] = useState("");
   const errors = recentErrors();
 
+  function reportText(): string {
+    const refs = errors.map((e) => e.ref).join(", ");
+    return [msg.trim(), refs ? `Error references: ${refs}` : "", `Page: ${window.location.href}`]
+      .filter(Boolean)
+      .join("\n\n");
+  }
+
   function send() {
-    toast(`Sent to support as ticket #TERRA-${Math.floor(1000 + Math.random() * 9000)}. We'll email you an update.`);
-    setMsg("");
-    onClose();
+    const text = reportText();
+    if (SUPPORT_EMAIL) {
+      window.location.href =
+        `mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent("Terra problem report")}` +
+        `&body=${encodeURIComponent(text)}`;
+      return;
+    }
+    void navigator.clipboard
+      ?.writeText(text)
+      .then(() => toast("Report copied. Email it to your Terra contact."))
+      .catch(() => toast("Could not copy. Select the text and copy it manually."));
   }
 
   return (
@@ -29,19 +48,14 @@ export function Support({ onClose }: { onClose: () => void }) {
           <button className="sup-x" aria-label="Close" onClick={onClose}><Icon name="x" size={16} /></button>
         </div>
 
-        <div className="sup-status">
-          <span className="dot ok" />
-          <b>All systems operational</b>
-          <span className="muted" style={{ marginLeft: "auto" }}>status.terra.app</span>
-        </div>
-
         <div className="sup-block">
-          <div className="sup-bt"><Icon name="warning" size={14} /> Auto-captured this session</div>
+          <div className="sup-bt"><Icon name="warning" size={14} /> Captured this session</div>
           <p className="muted sup-p">
-            If something breaks, it's logged and routed to engineering automatically. Your work is saved first.
+            Errors Terra catches in this browser are listed here with a reference you can
+            include when reporting a problem.
           </p>
           {errors.length === 0 ? (
-            <div className="sup-empty">No issues captured. Everything's running smoothly.</div>
+            <div className="sup-empty">No issues captured this session.</div>
           ) : (
             errors.map((e) => (
               <div key={e.ref} className="sup-err">
@@ -50,7 +64,6 @@ export function Support({ onClose }: { onClose: () => void }) {
                   <div className="sup-err-msg">{e.message}</div>
                   <div className="muted sup-err-when">{DAY_FMT.format(new Date(e.at))}</div>
                 </div>
-                <span className="sup-err-tag">{e.status === "sent" ? "SENT" : "OK"}</span>
               </div>
             ))
           )}
@@ -60,21 +73,18 @@ export function Support({ onClose }: { onClose: () => void }) {
           <div className="sup-bt">Report a problem</div>
           <textarea
             className="sup-ta"
-            placeholder="What went wrong? Terra attaches your current screen and any error references above automatically."
+            placeholder="What went wrong? Any error references above are attached automatically."
             value={msg}
             onChange={(e) => setMsg(e.target.value)}
           />
-          <button className="kbtn pri sup-send" disabled={!msg.trim()} onClick={send}>Send to support</button>
-        </div>
-
-        <div className="sup-block">
-          <div className="sup-bt">More</div>
-          <button className="sup-link" onClick={() => toast("Opens the help center")}>
-            <Icon name="doc" size={14} /> Help center &amp; guides <Icon name="chevron" size={14} />
+          <button className="kbtn pri sup-send" disabled={!msg.trim()} onClick={send}>
+            {SUPPORT_EMAIL ? "Email support" : "Copy report"}
           </button>
-          <button className="sup-link" onClick={() => toast("Live chat: average reply under 5 minutes")}>
-            <Icon name="mail" size={14} /> Chat with support · avg 4 min <Icon name="chevron" size={14} />
-          </button>
+          {!SUPPORT_EMAIL && (
+            <p className="muted sup-p" style={{ marginTop: "0.5rem" }}>
+              Copies the report so you can email it to your Terra contact.
+            </p>
+          )}
         </div>
       </aside>
     </>

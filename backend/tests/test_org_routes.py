@@ -88,7 +88,9 @@ def test_invite_is_bound_to_the_invited_email(client):
     invite = _invite(client, email="carol@teammate.test")
     wrong = _headers(sub="cand-mallory", email="mallory@elsewhere.test")
     r = client.post("/orgs/members/accept", json={"token": invite["token"]}, headers=wrong)
-    assert r.status_code == 403
+    # Same 404 as a bogus token: a leaked link's validity is never confirmed
+    # to the wrong account.
+    assert r.status_code == 404
 
 
 def test_revoked_invite_cannot_be_accepted_and_reinvite_rotates(client):

@@ -47,7 +47,7 @@ class TCUser:
     # The org this TC session acts within. Every read and write is scoped to it;
     # require_tc refuses sessions with no membership (fail closed).
     org_id: str = ""
-    org_role: str = "owner"
+    org_role: str = "member"
     # Self-set profile name (JWT user_metadata.display_name) — used in drafted
     # message signatures; TC_NAME env is the deployment-wide fallback.
     display_name: str = ""
@@ -163,6 +163,7 @@ def set_invite_resolver(fn: "Callable[[str], dict | None]") -> None:
 
 def _resolve_invite(token: str) -> PartyUser | None:
     token_hash = hashlib.sha256(token.encode()).hexdigest()
+    global _invite_resolver
     resolver = _invite_resolver
     if resolver is None:
         url = os.environ.get("SUPABASE_URL")
@@ -184,6 +185,10 @@ def _resolve_invite(token: str) -> PartyUser | None:
                 .data
             )
             return rows[0] if rows else None
+
+        # Cache the built resolver: without this, EVERY pi_ request constructs
+        # a fresh Supabase client + connection pool inside a sync dependency.
+        _invite_resolver = resolver
 
     try:
         row = resolver(token_hash)

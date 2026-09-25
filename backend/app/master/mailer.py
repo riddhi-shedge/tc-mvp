@@ -62,6 +62,10 @@ class PostmarkMailer:
         self._settings_lookup = settings_lookup
 
     def _org_settings(self, org_id: str) -> dict[str, Any] | None:
+        """The org's settings row, or None when it genuinely has none. A read
+        FAILURE raises SendFailed: 'no row' falls back to the env allowlist,
+        and an outage must never be allowed to widen policy into that path —
+        the send fails closed and the TC retries."""
         if not org_id:
             return None
         lookup = self._settings_lookup
@@ -72,8 +76,10 @@ class PostmarkMailer:
                 lookup = SupabaseOrgsRepo().get_settings
                 self._settings_lookup = lookup
             return lookup(org_id)
-        except Exception:
-            return None  # outage/misconfig reads as "no row" -> the stricter path
+        except Exception as exc:
+            raise SendFailed(
+                f"send policy unavailable ({type(exc).__name__}); try again shortly"
+            ) from exc
 
     def _check_recipient(self, to: str, org_id: str) -> None:
         to_l = to.lower()

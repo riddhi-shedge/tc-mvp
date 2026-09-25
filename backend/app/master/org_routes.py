@@ -16,6 +16,7 @@ import logging
 import os
 import re
 import secrets
+from datetime import datetime, timedelta, timezone
 from functools import lru_cache
 from typing import Any
 
@@ -38,6 +39,22 @@ _log = logging.getLogger(__name__)
 
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
+# A join link that was never accepted expires; email-bound or not, a workspace
+# credential should not stay live in an inbox forever.
+INVITE_TTL_DAYS = 14
+
+
+def _invite_expired(created_at: Any) -> bool:
+    if not created_at:
+        return False  # no timestamp -> fall back to email binding + revocation
+    try:
+        created = datetime.fromisoformat(str(created_at).replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    if created.tzinfo is None:
+        created = created.replace(tzinfo=timezone.utc)
+    return datetime.now(timezone.utc) - created > timedelta(days=INVITE_TTL_DAYS)
+
 
 @lru_cache(maxsize=1)
 def _default_orgs_repo() -> SupabaseOrgsRepo:
@@ -45,7 +62,10 @@ def _default_orgs_repo() -> SupabaseOrgsRepo:
 
 
 def get_orgs_repo() -> OrgsRepo:
-    return _default_orgs_repo()
+    try:
+        return _default_orgs_repo()
+    except RuntimeError:
+        raise HTTPException(status_code=503, detail="Workspace service not configured") from None
 
 
 @lru_cache(maxsize=1)
@@ -54,7 +74,10 @@ def _default_mfa_admin() -> SupabaseMfaAdmin:
 
 
 def get_mfa_admin() -> MfaAdmin:
-    return _default_mfa_admin()
+    try:
+        return _default_mfa_admin()
+    except RuntimeError:
+        raise HTTPException(status_code=503, detail="Workspace service not configured") from None
 
 
 def _require_owner(tc: TCUser) -> None:
@@ -103,7 +126,7 @@ def create_org(
         raise HTTPException(
             status_code=403, detail="Workspace creation is invite-only right now"
         )
-    if org_directory.membership_for_user(candidate.id) is not None:
+    if org_directory.membership_for_user(candidate.id, fresh=True) is not None:
         raise HTTPException(status_code=409, detail="This account already has a workspace")
     org = repo.create_org(name=body.name.strip(), user_id=candidate.id, email=candidate.email)
     org_directory.invalidate_membership(candidate.id)
@@ -125,15 +148,22 @@ def accept_member_invite(
         raise HTTPException(status_code=404, detail="Invite link is invalid or was revoked")
     token_hash = hashlib.sha256(body.token.encode()).hexdigest()
     invite = repo.resolve_member_invite(token_hash)
-    if invite is None:
-        raise HTTPException(status_code=404, detail="Invite link is invalid or was revoked")
     # The invite is bound to an address: the accepting session must be that
-    # address, so a leaked link is useless to anyone else.
-    if (candidate.email or "").strip().lower() != str(invite["email"]).strip().lower():
+    # address. Wrong-account attempts get the SAME 404 as a bogus token — a
+    # leaked link is useless and its validity is never confirmed to a stranger.
+    if invite is None or (candidate.email or "").strip().lower() != str(
+        invite["email"]
+    ).strip().lower():
         raise HTTPException(
-            status_code=403, detail="This invite was issued to a different email address"
+            status_code=404,
+            detail=(
+                "Invite link is invalid, was revoked, or was issued to a different "
+                "email address. Make sure you're signed in with the invited email."
+            ),
         )
-    if org_directory.membership_for_user(candidate.id) is not None:
+    if _invite_expired(invite.get("created_at")):
+        raise HTTPException(status_code=404, detail="This invite link has expired")
+    if org_directory.membership_for_user(candidate.id, fresh=True) is not None:
         raise HTTPException(status_code=409, detail="This account already has a workspace")
     member = repo.accept_member_invite(
         invite_id=str(invite["id"]),
@@ -142,6 +172,8 @@ def accept_member_invite(
         email=candidate.email,
         role=str(invite["role"]),
     )
+    if member is None:  # revoked or claimed by a racing request meanwhile
+        raise HTTPException(status_code=404, detail="Invite link is invalid or was revoked")
     org_directory.invalidate_membership(candidate.id)
     _log.info("org.member_joined org=%s", invite["org_id"])
     return {"org_id": str(invite["org_id"]), "role": member["role"]}

@@ -65,6 +65,14 @@ services:
       - type: rewrite
         source: /*
         destination: /index.html
+    headers:
+      # An authenticated workspace must never render inside someone else's frame.
+      - path: /*
+        name: X-Frame-Options
+        value: DENY
+      - path: /*
+        name: Referrer-Policy
+        value: strict-origin-when-cross-origin
     envVars:
       - key: VITE_API_BASE
         sync: false   # set EXPLICITLY to https://<backend>.onrender.com (same reason)

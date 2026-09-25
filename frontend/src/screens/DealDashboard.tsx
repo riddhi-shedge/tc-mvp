@@ -92,6 +92,7 @@ export function DealDashboard({
   onChanged: () => Promise<void>;
 }) {
   const [dash, setDash] = useState<Dashboard | null>(null);
+  const [dashError, setDashError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [tokens, setTokens] = useState<Record<string, string>>({});
   const [newTask, setNewTask] = useState("");
@@ -114,8 +115,9 @@ export function DealDashboard({
   const refresh = useCallback(async () => {
     try {
       setDash(await api.get<Dashboard>(`/transactions/${id}/dashboard`));
+      setDashError(null);
     } catch (err) {
-      toast(err instanceof Error ? err.message : "Failed to load dashboard", { error: true });
+      setDashError(err instanceof Error ? err.message : "Failed to load the overview");
     }
   }, [id]);
 
@@ -138,6 +140,14 @@ export function DealDashboard({
   }
 
   if (!dash) {
+    if (dashError) {
+      return (
+        <div className="card" style={{ maxWidth: 480 }}>
+          <p className="error">{dashError}</p>
+          <button className="kbtn" onClick={() => void refresh()}>Try again</button>
+        </div>
+      );
+    }
     return (
       <div className="bento">
         <div className="card b-2 skeleton" style={{ height: 140 }} />
@@ -418,6 +428,7 @@ export function DealDashboard({
         <div className="po-orbit">
         <PartyOrbit
           views={dash.parties}
+          address={state.property?.address ?? null}
           onSelect={(pv) => setPeek(pv)}
           onAddRole={(role) => startAdd(role)}
           dragging={dragTaskId !== null}

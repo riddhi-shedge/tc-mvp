@@ -488,34 +488,21 @@ function NetProceeds({ net, escrowPhone, papi, reload }: { net: NetSheet; escrow
 }
 
 function RequestCard({ r, currentProceeds }: { r: import("./types").BuyerRequest; currentProceeds: number }) {
-  const [confirming, setConfirming] = useState(false);
   const resolved = r.state !== "pending";
   return (
     <div className="bw-req">
       <div className="bw-req-h"><Icon name="inbox" size={16} /> {r.kind === "credit" ? "Credit request" : "Repair request"} · {r.summary}</div>
       {r.amountCents != null && <div className="bw-req-amt">{usd(r.amountCents)}</div>}
       <div className="bw-req-impact">
-        Accepting reduces your estimated net proceeds from <b>{usd(currentProceeds)}</b> to <b>{usd(r.proceedsAfterAcceptCents)}</b>.
+        Accepting would reduce your estimated net proceeds from <b>{usd(currentProceeds)}</b> to <b>{usd(r.proceedsAfterAcceptCents)}</b>.
       </div>
       {resolved ? (
         <div className="bw-req-state"><Icon name="check" size={15} /> {r.state === "accepted" ? "Accepted. Amendment sent to your agent for signature." : humanize(r.state)}</div>
-      ) : !confirming ? (
-        <div className="bw-req-actions">
-          <button type="button" className="bw-btn bw-btn-p" onClick={() => setConfirming(true)}>Accept</button>
-          <button type="button" className="bw-btn bw-btn-g">Counter</button>
-          <button type="button" className="bw-btn bw-btn-g">Decline</button>
-        </div>
       ) : (
-        <div className="bw-warn" role="alertdialog" aria-label="Confirm accepting the request">
-          <div className="bw-warn-h"><Icon name="warning" size={16} /> This reduces your proceeds</div>
-          <p style={{ fontSize: 13, margin: ".4rem 0" }}>
-            Accepting brings your estimated net proceeds to <b>{usd(r.proceedsAfterAcceptCents)}</b>. Once your agent countersigns the amendment, this can't be undone.
-          </p>
-          <div className="bw-req-actions">
-            <button type="button" className="bw-btn bw-btn-p">Confirm and prepare the amendment</button>
-            <button type="button" className="bw-btn bw-btn-g" onClick={() => setConfirming(false)}>Go back</button>
-          </div>
-        </div>
+        <p className="bw-req-note">
+          Decide with your agent. Accepting, countering, or declining happens on a signed
+          amendment your agent prepares; once it's recorded, the outcome shows here.
+        </p>
       )}
     </div>
   );

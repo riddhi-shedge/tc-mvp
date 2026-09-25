@@ -47,6 +47,7 @@ export function AgentCommandCenter({ papi }: { papi: Papi }) {
       const p = await papi<Portfolio>("/agent/portfolio");
       setPortfolio(p);
       if (p.approvalItems) setApprovals(p.approvalItems);
+      setErr(null); // a recovered poll clears the sticky banner
     } catch (e) { setErr(e instanceof Error ? e.message : "Couldn't load your book."); }
   }, [papi]);
 
@@ -54,13 +55,22 @@ export function AgentCommandCenter({ papi }: { papi: Papi }) {
   usePoll(() => { void loadAll(); }); // §7 live-sync
   useEffect(() => {
     if (view === "clients" && clients === null) {
-      papi<{ clients: ClientRow[] }>("/agent/clients").then((d) => setClients(d.clients)).catch(() => setClients([]));
+      papi<{ clients: ClientRow[] }>("/agent/clients")
+        .then((d) => setClients(d.clients))
+        .catch((e) => { setClients([]); setErr(e instanceof Error ? e.message : "Couldn't load clients."); });
     }
     if (view === "schedule" && schedule === null) {
-      papi<{ items: ScheduleItem[] }>("/agent/schedule").then((d) => setSchedule(d.items)).catch(() => setSchedule([]));
+      papi<{ items: ScheduleItem[] }>("/agent/schedule")
+        .then((d) => setSchedule(d.items))
+        .catch((e) => { setSchedule([]); setErr(e instanceof Error ? e.message : "Couldn't load the schedule."); });
     }
     if (view === "earnings" && earnings === null) {
-      papi<EarningsData>("/agent/earnings").then(setEarnings).catch(() => setEarnings({ rows: [], totals: { inEscrowCents: 0, closingSoonCents: 0, closedCents: 0 }, rateNote: "" }));
+      papi<EarningsData>("/agent/earnings")
+        .then(setEarnings)
+        .catch((e) => {
+          setEarnings({ rows: [], totals: { inEscrowCents: 0, closingSoonCents: 0, closedCents: 0 }, rateNote: "" });
+          setErr(e instanceof Error ? e.message : "Couldn't load earnings.");
+        });
     }
   }, [view, clients, schedule, earnings, papi]);
 
@@ -591,7 +601,7 @@ export function DealOverlay({ detail, onClose }: { detail: DealDetail; onClose: 
           <div><div className="aw-client" style={{ fontSize: "1.1rem" }}>{s.clientName}</div><div className="aw-addr">{s.propertyAddress}</div></div>
           <div style={{ display: "flex", gap: ".5rem", alignItems: "center" }}>
             <span className="aw-stage">{STAGE_LABEL[s.stage]}</span>
-            <button className="aw-btn aw-btn-g sm" onClick={onClose}><Icon name="x" size={14} /></button>
+            <button className="aw-btn aw-btn-g sm" aria-label="Close" onClick={onClose}><Icon name="x" size={14} /></button>
           </div>
         </div>
         <div className="aw-over-body">

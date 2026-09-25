@@ -11,7 +11,6 @@ import { Quarter } from "./screens/Quarter";
 import { Recommendations } from "./screens/Recommendations";
 import { CommandPalette } from "./screens/CommandPalette";
 import { Support } from "./screens/Support";
-import { Admin } from "./screens/Admin";
 import { GuideModal, GuidePage, guideSeen } from "./screens/Guide";
 import { OrgSettings } from "./screens/OrgSettings";
 import { ResetPassword } from "./screens/ResetPassword";
@@ -45,7 +44,13 @@ const JOIN_KEY = "terra_join_token";
 // A workspace is a daytime tool — default to the bright theme and only honor a
 // deliberate opt-in to dark (never the OS setting, which was forcing dark on TCs
 // who work in dark-mode OSes). Applied before first paint so there's no flash.
-const _initTheme = localStorage.getItem("theme") === "dark" ? "dark" : "light";
+const _initTheme = (() => {
+  try {
+    return localStorage.getItem("theme") === "dark" ? "dark" : "light";
+  } catch {
+    return "light"; // storage blocked (private mode / embedded) — never block boot
+  }
+})();
 document.documentElement.setAttribute("data-theme", _initTheme);
 
 type View =
@@ -104,7 +109,6 @@ function TcApp() {
   }, []);
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem("sidebar_collapsed") === "1");
   const [supportOpen, setSupportOpen] = useState(false);
-  const [adminOpen, setAdminOpen] = useState(false);
   const [showGuide, setShowGuide] = useState(false);
   const [railOpen, setRailOpen] = useState(() => localStorage.getItem("rail_open") !== "0");
   const [cmdOpen, setCmdOpen] = useState(false);
@@ -186,7 +190,7 @@ function TcApp() {
       orgApi
         .accept(token!)
         .then(() => {
-          toast("Welcome — you've joined the workspace.");
+          toast("Welcome. You've joined the workspace.");
           setView({ name: "home" });
         })
         .catch((err: unknown) => {
@@ -250,9 +254,9 @@ function TcApp() {
           </button>
         </div>
 
-        <div className="nav-search" title="Search (coming soon)">
+        <button className="nav-search" title="Search deals" onClick={() => setCmdOpen(true)}>
           <Icon name="search" size={14} /> Search…<kbd>⌘K</kbd>
-        </div>
+        </button>
 
         <button
           className={`nav-item ${view.name === "home" ? "active" : ""}`}
@@ -327,10 +331,6 @@ function TcApp() {
         <button className="nav-item" onClick={() => setSupportOpen(true)}>
           <span className="ni-label"><span className="ic"><Icon name="shield" /></span> Help &amp; support</span>
         </button>
-        <button className="nav-item nav-admin" onClick={() => setAdminOpen(true)}>
-          <span className="ni-label"><span className="ic"><Icon name="lock" /></span> Admin console</span>
-          <span className="admin-tag">ADMIN</span>
-        </button>
         <div className="side-synth">
           <span className="badge gold" style={{ fontSize: "0.66rem" }}>◆ Synthetic data</span>
         </div>
@@ -376,12 +376,12 @@ function TcApp() {
             )}
           </div>
           <div className="top-sp" />
-          <button className="kbtn" title="Ask Terra" onClick={() => setCmdOpen(true)}>
-            <Icon name="search" size={14} /> Ask Terra <kbd>⌘K</kbd>
+          <button className="kbtn" title="Search deals and jump anywhere" onClick={() => setCmdOpen(true)}>
+            <Icon name="search" size={14} /> Search <kbd>⌘K</kbd>
           </button>
           <button
             className="kbtn pri"
-            title="Create — deals start from inbound documents"
+            title="Create. Deals start from inbound documents."
             onClick={() => { setView({ name: "inbox" }); setCollapsed(false); }}
           >
             <Icon name="plus" size={14} /> Create
@@ -467,7 +467,6 @@ function TcApp() {
         />
       )}
       {supportOpen && <Support onClose={() => setSupportOpen(false)} />}
-      {adminOpen && <Admin onClose={() => setAdminOpen(false)} />}
       {showGuide && (
         <GuideModal
           onClose={() => setShowGuide(false)}

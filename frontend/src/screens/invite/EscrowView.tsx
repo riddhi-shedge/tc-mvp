@@ -20,12 +20,14 @@ export function EscrowView({ ws, busy, docType, setDocType, cycle, onFile }: Rol
   const coe = find(/escrow|clos/i);
   const past = (iso?: string | null) => (daysTo(iso ?? null) ?? 1) < 0;
 
+  // These rows track the CONTRACT CLOCK, not confirmed facts: "done" means the
+  // deadline date has passed, nothing more. The labels must say exactly that.
   const conditions = [
-    { label: "Earnest money received", date: find(/earnest|deposit|emd/i)?.due_date ?? null, done: past(find(/earnest|deposit|emd/i)?.due_date) },
-    { label: "Inspection contingency removed", date: find(/inspection/i)?.due_date ?? null, done: past(find(/inspection/i)?.due_date) },
-    { label: "Appraisal contingency removed", date: find(/appraisal/i)?.due_date ?? null, done: past(find(/appraisal/i)?.due_date) },
-    { label: "Loan contingency removed", date: find(/loan/i)?.due_date ?? null, done: past(find(/loan/i)?.due_date) },
-    { label: "Cleared to close", date: coe?.due_date ?? null, done: past(coe?.due_date) },
+    { label: "Deposit deadline", date: find(/earnest|deposit|emd/i)?.due_date ?? null, done: past(find(/earnest|deposit|emd/i)?.due_date) },
+    { label: "Inspection contingency deadline", date: find(/inspection/i)?.due_date ?? null, done: past(find(/inspection/i)?.due_date) },
+    { label: "Appraisal contingency deadline", date: find(/appraisal/i)?.due_date ?? null, done: past(find(/appraisal/i)?.due_date) },
+    { label: "Loan contingency deadline", date: find(/loan/i)?.due_date ?? null, done: past(find(/loan/i)?.due_date) },
+    { label: "Close of escrow", date: coe?.due_date ?? null, done: past(coe?.due_date) },
   ];
   const doneCount = conditions.filter((c) => c.done).length;
   const pct = Math.round((doneCount / conditions.length) * 100);
@@ -50,10 +52,14 @@ export function EscrowView({ ws, busy, docType, setDocType, cycle, onFile }: Rol
         {/* signature: closing readiness gauge + conditions */}
         <div className="card ev-ready">
           <div className="ev-gauge" style={{ background: `conic-gradient(#2c6b50 ${shownPct * 3.6}deg, var(--line) 0)` }}>
-            <div className="ev-gauge-in"><b>{shownPct}%</b><span>ready</span></div>
+            <div className="ev-gauge-in"><b>{shownPct}%</b><span>of dates passed</span></div>
           </div>
           <div className="ev-cond">
-            <h2 style={{ margin: "0 0 .6rem" }}><Icon name="clipboard" size={17} /> Conditions to close</h2>
+            <h2 style={{ margin: "0 0 .6rem" }}><Icon name="clipboard" size={17} /> Contract clock</h2>
+            <p className="muted" style={{ margin: "0 0 .5rem", fontSize: ".78rem" }}>
+              Deadline dates from the contract. A check means the date has passed, not
+              that the item is confirmed complete.
+            </p>
             {conditions.map((c, i) => (
               <div key={i} className={`ev-cond-row ${c.done ? "done" : ""}`}>
                 <span className="ev-cond-box">{c.done ? "✓" : ""}</span>

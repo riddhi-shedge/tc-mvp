@@ -2638,3 +2638,11 @@ button.secondary.sm { padding: 0.28rem 0.55rem; font-size: var(--t-s); }
   background: var(--bg, #f6f5f2); padding: 1rem;
 }
 .rp-wrap .auth-card { width: min(420px, 100%); }
+
+/* Party workspace: transient action failures (never the fatal screen) */
+.inv2-actionerr {
+  margin: 0.6rem auto 0; max-width: 720px; display: flex; align-items: center;
+  justify-content: space-between; gap: 0.6rem; padding: 0.5rem 0.7rem;
+  border-radius: 10px; font-size: 0.84rem;
+  background: #fdf2ee; border: 1px solid #ecc9bd; color: #7c3623;
+}

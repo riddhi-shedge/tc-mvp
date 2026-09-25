@@ -183,7 +183,19 @@ export function Deal({ id, onBack }: { id: string; onBack: () => void }) {
     })();
   }
 
-  if (!state) return <p className="muted">Loading deal…</p>;
+  if (!state) {
+    if (error) {
+      return (
+        <div className="card" style={{ maxWidth: 480 }}>
+          <p className="error">{error}</p>
+          <button className="kbtn" onClick={() => { setError(null); void refresh(); }}>
+            Try again
+          </button>
+        </div>
+      );
+    }
+    return <p className="muted">Loading deal…</p>;
+  }
 
   const fields = state.extracted_fields;
   const unconfirmed = fields.filter((f) => !f.confirmed);
@@ -793,7 +805,7 @@ export function Deal({ id, onBack }: { id: string; onBack: () => void }) {
                                   onClick={() => {
                                     if (aw.party) {
                                       setRecipientId(aw.party.id);
-                                      setPurpose("chase");
+                                      setPurpose("general");
                                       setSelMsg("new");
                                     }
                                   }}>

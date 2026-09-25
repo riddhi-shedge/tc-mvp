@@ -1,0 +1,3 @@
+# Terra is an invite-only workspace; nothing here needs indexing.
+User-agent: *
+Disallow: /

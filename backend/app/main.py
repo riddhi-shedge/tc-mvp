@@ -28,10 +28,31 @@ if "pytest" not in sys.modules:
 
 logger = logging.getLogger("tc_mvp")
 
-app = FastAPI(title="tc-mvp")
+# Production keeps the API surface quiet: no interactive docs, no public
+# schema (recon surface for a closed-signup product). Dev keeps them.
+_IS_PROD = os.environ.get("APP_ENV", "").lower() == "production"
+app = FastAPI(
+    title="Terra",
+    docs_url=None if _IS_PROD else "/docs",
+    redoc_url=None if _IS_PROD else "/redoc",
+    openapi_url=None if _IS_PROD else "/openapi.json",
+)
 app.include_router(master_router)
 app.include_router(ingestion_router)
 app.include_router(org_router)
+
+@app.middleware("http")
+async def security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Referrer-Policy", "no-referrer")
+    if _IS_PROD:
+        response.headers.setdefault(
+            "Strict-Transport-Security", "max-age=63072000; includeSubDomains"
+        )
+    return response
+
 
 app.add_middleware(
     CORSMiddleware,
@@ -56,6 +77,7 @@ async def postgrest_error_handler(request: Request, exc: APIError) -> JSONRespon
     return JSONResponse(status_code=502, content={"detail": "Database operation failed"})
 
 
-@app.get("/health")
+# HEAD accepted too: several uptime monitors default to HEAD probes.
+@app.api_route("/health", methods=["GET", "HEAD"])
 def health() -> dict[str, str]:
     return {"status": "ok"}

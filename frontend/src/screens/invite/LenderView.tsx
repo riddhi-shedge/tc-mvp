@@ -26,10 +26,11 @@ export function LenderView({ ws, busy, docType, setDocType, cycle, onFile }: Rol
   const shownLtv = useCountUp(ltv, 900);
   const past = (iso?: string | null) => (daysTo(iso ?? null) ?? 1) < 0;
 
+  // Contract-clock rows: "done" means the date passed, not a confirmed fact.
   const conditions = [
-    { label: "Appraisal contingency", date: find(/appraisal/i)?.due_date ?? null, done: past(find(/appraisal/i)?.due_date) },
-    { label: "Loan contingency", date: find(/loan/i)?.due_date ?? null, done: past(find(/loan/i)?.due_date) },
-    { label: "Clear to close", date: find(/escrow|clos/i)?.due_date ?? null, done: past(find(/escrow|clos/i)?.due_date) },
+    { label: "Appraisal contingency deadline", date: find(/appraisal/i)?.due_date ?? null, done: past(find(/appraisal/i)?.due_date) },
+    { label: "Loan contingency deadline", date: find(/loan/i)?.due_date ?? null, done: past(find(/loan/i)?.due_date) },
+    { label: "Close of escrow", date: find(/escrow|clos/i)?.due_date ?? null, done: past(find(/escrow|clos/i)?.due_date) },
   ];
   const figs: [string, string][] = [["Loan amount", "loan_amount"], ["Purchase price", "purchase_price"], ["Down payment", "down_payment"]];
   const shownFigs = figs.filter(([, k]) => fv(k) != null);
@@ -58,7 +59,10 @@ export function LenderView({ ws, busy, docType, setDocType, cycle, onFile }: Rol
         </div>
 
         <div className="card">
-          <h2><Icon name="clipboard" size={17} /> Conditions to clear</h2>
+          <h2><Icon name="clipboard" size={17} /> Contract clock</h2>
+          <p className="muted" style={{ margin: "0 0 .5rem", fontSize: ".78rem" }}>
+            A check means the contract date has passed, not that the condition cleared.
+          </p>
           {conditions.map((c, i) => (
             <div key={i} className={`lv-cond ${c.done ? "done" : ""}`}>
               <span className="lv-cond-box">{c.done ? "✓" : ""}</span>

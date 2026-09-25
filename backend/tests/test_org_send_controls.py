@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.master.mailer import PostmarkMailer, RecipientNotAllowed, SendDisabled
+from app.master.mailer import PostmarkMailer, RecipientNotAllowed, SendDisabled, SendFailed
 
 ORG = "org-x"
 
@@ -96,13 +96,15 @@ def test_open_org_with_no_env_list_sends(monkeypatch):
     )
 
 
-def test_settings_lookup_outage_reads_as_no_row(monkeypatch):
+def test_settings_lookup_outage_fails_closed(monkeypatch):
+    """A settings-read failure must not fall back to the env path (which could
+    WIDEN an org's allowlist policy) — the send fails and the TC retries."""
     monkeypatch.setenv("SEND_ENABLED", "true")
-    monkeypatch.delenv("SEND_ALLOWLIST", raising=False)
+    monkeypatch.setenv("SEND_ALLOWLIST", "someone@x.test")
 
     def boom(org_id: str):
         raise RuntimeError("db down")
 
     mailer = PostmarkMailer(settings_lookup=boom)
-    with pytest.raises(RecipientNotAllowed):  # stricter path, never a crash
-        mailer.send(to="a@b.test", subject="s", body="b", org_id=ORG)
+    with pytest.raises(SendFailed):
+        mailer.send(to="someone@x.test", subject="s", body="b", org_id=ORG)

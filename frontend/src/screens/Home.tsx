@@ -44,6 +44,7 @@ export function Home({
   onOpenInbox?: () => void;
 }) {
   const [att, setAtt] = useState<AttentionData | null>(null);
+  const [loadFailed, setLoadFailed] = useState(false);
   const [deals, setDeals] = useState<DealSummary[]>([]);
   const [inboxCount, setInboxCount] = useState(0);
   const [tasks, setTasks] = useState<OpenTask[]>([]);
@@ -63,6 +64,7 @@ export function Home({
       setDeals(b);
       setTasks(t);
     } catch (err) {
+      setLoadFailed(true);
       toast(err instanceof Error ? err.message : "Failed to load", { error: true });
     }
     try {
@@ -173,7 +175,11 @@ export function Home({
           </div>
           <div className="hm-list" ref={rowsRef} role="listbox" aria-label="Decisions">
             {items.length === 0 ? (
-              <Empty>{att ? (filter === "all" ? "Queue clear." : "Nothing in this bucket.") : "Loading your queue…"}</Empty>
+              <Empty>
+                {att
+                  ? filter === "all" ? "Queue clear." : "Nothing in this bucket."
+                  : loadFailed ? "Couldn't load your queue. Refresh to retry." : "Loading your queue…"}
+              </Empty>
             ) : (
               items.map((it, i) => (
                 <div

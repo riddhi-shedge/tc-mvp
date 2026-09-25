@@ -235,8 +235,12 @@ export function DealsBoard({ onOpenDeal }: { onOpenDeal: (id: string) => void })
                       className="secondary sm"
                       onClick={async (e) => {
                         e.stopPropagation();
-                        await api.post(`/transactions/${t.id}/unarchive`);
-                        await refresh();
+                        try {
+                          await api.post(`/transactions/${t.id}/unarchive`);
+                          await refresh();
+                        } catch (err) {
+                          toast(err instanceof Error ? err.message : "Couldn't restore the deal", { error: true });
+                        }
                       }}
                     >
                       Unarchive

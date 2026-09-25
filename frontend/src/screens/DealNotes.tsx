@@ -121,7 +121,7 @@ export function DealNotes({ id, onChanged }: { id: string; onChanged?: () => voi
 
       {!available && (
         <div className="hm-empty" style={{ textAlign: "left" }}>
-          Notes need the <code>deal_notes</code> migration applied to the database. Until then, nothing typed here can be saved.
+          Notes aren't available right now, so nothing typed here can be saved. Try again shortly.
         </div>
       )}
 
@@ -162,7 +162,7 @@ export function DealNotes({ id, onChanged }: { id: string; onChanged?: () => voi
       {suggestions.length > 0 && (
         <div className="nt-ai">
           <div className="nt-ai-h">
-            <Icon name="sparkle" size={14} /> Terra read your notes
+            <Icon name="sparkle" size={14} /> Suggested from your notes
             <span className="muted" style={{ marginLeft: "auto", fontSize: ".76rem" }}>{suggestions.length} suggestion{suggestions.length > 1 ? "s" : ""}</span>
           </div>
           {suggestions.map((s) => (

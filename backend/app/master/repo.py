@@ -684,7 +684,9 @@ class MasterRepo(Protocol):
         of band. Audit event only — no account/routing data is stored (Rule 1)."""
         ...
 
-    def record_reply_detected(self, *, provider_message_ids: list[str]) -> list[dict[str, Any]]:
+    def record_reply_detected(
+        self, *, provider_message_ids: list[str], org_id: str
+    ) -> list[dict[str, Any]]:
         """P2: inbound mail referenced message(s) the SOR sent (In-Reply-To /
         References ↔ provider_message_id). Marks each matched sent message
         replied, clears its pending follow-up reminders (the chase is over), and
@@ -2244,7 +2246,9 @@ class SupabaseRepo:
             entity_type="party", entity_id=party_id, details={"party_id": party_id},
         )
 
-    def record_reply_detected(self, *, provider_message_ids: list[str]) -> list[dict[str, Any]]:
+    def record_reply_detected(
+        self, *, provider_message_ids: list[str], org_id: str
+    ) -> list[dict[str, Any]]:
         ids = [i for i in provider_message_ids if i]
         if not ids:
             return []
@@ -2256,6 +2260,20 @@ class SupabaseRepo:
             .execute()
             .data
         )
+        # Tenancy: In-Reply-To headers are sender-controlled — a reply delivered
+        # to org X may only ever mark org X's messages replied.
+        if rows:
+            txn_ids = list({m["transaction_id"] for m in rows})
+            allowed = {
+                t["id"]
+                for t in self._db.table("transactions")
+                .select("id")
+                .in_("id", txn_ids)
+                .eq("org_id", org_id)
+                .execute()
+                .data
+            }
+            rows = [m for m in rows if m["transaction_id"] in allowed]
         matched: list[dict[str, Any]] = []
         now = datetime.now(timezone.utc).isoformat()
         for msg in rows:

@@ -30,7 +30,7 @@ export const TERMS: Term[] = [
   { key: "proof of funds", aliases: ["proof of funds", "pof"], definition:
     "Documentation showing you have the cash available for your down payment and closing costs." },
   { key: "home warranty", aliases: ["home warranty", "warranty"], definition:
-    "A one-year service plan that covers repairs to major systems and appliances after you move in. On this deal the seller is paying for yours." },
+    "A one-year service plan that covers repairs to major systems and appliances after you move in. Who pays for it is set in your purchase agreement." },
   { key: "walkthrough", aliases: ["final walkthrough", "walkthrough", "walk-through"], definition:
     "Your last look at the home right before closing, to confirm it's in the agreed condition and any promised repairs are done." },
   { key: "proration", aliases: ["proration", "prorated", "prorate"], definition:

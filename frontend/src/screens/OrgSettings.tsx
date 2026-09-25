@@ -85,7 +85,7 @@ export function OrgSettings() {
       const { error } = await supabase.auth.updateUser({ email: addr });
       if (error) throw error;
       setNewEmail("");
-      toast(`Confirmation sent to ${addr} — the change applies once you confirm.`);
+      toast(`Confirmation sent to ${addr}. The change applies once you confirm.`);
     } catch (err) {
       toast(err instanceof Error ? err.message : "Could not start the email change");
     } finally {
@@ -297,11 +297,12 @@ export function OrgSettings() {
           <label className="org-radio">
             <input
               type="radio"
+              name="send-mode"
               checked={mode === "allowlist"}
               onChange={() => { setMode("allowlist"); setDirty(true); }}
             />
             <span>
-              <b>Allowlist</b> — only the addresses below
+              <b>Allowlist</b>: only the addresses below
             </span>
           </label>
           {mode === "allowlist" && (
@@ -331,11 +332,12 @@ export function OrgSettings() {
           <label className="org-radio">
             <input
               type="radio"
+              name="send-mode"
               checked={mode === "open"}
               onChange={() => { setMode("open"); setDirty(true); }}
             />
             <span>
-              <b>Open</b> — any address (each send still needs your approval)
+              <b>Open</b>: any address (each send still needs your approval)
             </span>
           </label>
           {me.global_allowlist_active && (

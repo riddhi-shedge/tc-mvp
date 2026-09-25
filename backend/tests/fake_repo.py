@@ -788,12 +788,17 @@ class InMemoryRepo:
             None,
         )
 
-    def record_reply_detected(self, *, provider_message_ids: list[str]) -> list[dict[str, Any]]:
+    def record_reply_detected(
+        self, *, provider_message_ids: list[str], org_id: str = TEST_ORG_ID
+    ) -> list[dict[str, Any]]:
         ids = {i for i in provider_message_ids if i}
         matched: list[dict[str, Any]] = []
         for msg in self.messages.values():
             if msg.get("status") != "sent" or msg.get("provider_message_id") not in ids:
                 continue
+            txn = self.transactions.get(msg["transaction_id"])
+            if txn is None or _row_org(txn) != org_id:
+                continue  # a reply delivered to org X only marks org X's messages
             if not msg.get("replied_at"):
                 msg["replied_at"] = _now()
             self.reminders = [r for r in self.reminders if r.get("message_id") != msg["id"]]

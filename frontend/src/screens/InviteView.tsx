@@ -1,4 +1,4 @@
-import { ChangeEvent, useCallback, useEffect, useState } from "react";
+import { ChangeEvent, useCallback, useEffect, useRef, useState } from "react";
 import { fmtDate } from "../lib/format";
 import { Icon, IconName } from "../lib/icons";
 import { AgentCommandCenter } from "./invite/agent/AgentCommandCenter";
@@ -65,7 +65,10 @@ const DATE_FIELDS = new Set(["close_of_escrow", "acceptance_date"]);
 
 export function InviteView({ token }: { token: string }) {
   const [ws, setWs] = useState<Workspace | null>(null);
+  const wsRef = useRef<Workspace | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Transient action failures (task tap, upload) — shown inline, never fatal.
+  const [actionError, setActionError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [docType, setDocType] = useState("other");
   const [dark, setDark] = useState(() => document.documentElement.getAttribute("data-theme") === "dark");
@@ -94,9 +97,18 @@ export function InviteView({ token }: { token: string }) {
 
   const load = useCallback(async () => {
     try {
-      setWs(await papi<Workspace>("/party/workspace"));
+      const next = await papi<Workspace>("/party/workspace");
+      wsRef.current = next;
+      setWs(next);
+      setError(null);
+      setActionError(null);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "This invite link is invalid or has expired.");
+      // Fatal only before first load: a flaky poll must never replace a
+      // working workspace with the "invite isn't available" dead end.
+      setError((prev) => {
+        if (wsRef.current) return prev;
+        return e instanceof Error ? e.message : "This invite link is invalid or has expired.";
+      });
     }
   }, [papi]);
   useEffect(() => { void load(); }, [load]);
@@ -108,7 +120,7 @@ export function InviteView({ token }: { token: string }) {
       await papi(`/party/tasks/${t.id}/status`, { method: "POST", body: JSON.stringify({ status: TASK_NEXT[t.status] ?? "in_progress" }) });
       await load();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Couldn't update that task.");
+      setActionError(e instanceof Error ? e.message : "Couldn't update that task. Please try again.");
     } finally {
       setBusy(false);
     }
@@ -125,10 +137,14 @@ export function InviteView({ token }: { token: string }) {
         await papi("/party/documents", { method: "POST", body: JSON.stringify({ filename: file.name, content_base64: b64, doc_type: docType }) });
         await load();
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Upload failed.");
+        setActionError(err instanceof Error ? err.message : "Upload failed. Please try again.");
       } finally {
         setBusy(false);
       }
+    };
+    reader.onerror = () => {
+      setActionError("Could not read that file. Please try again.");
+      setBusy(false);
     };
     reader.readAsDataURL(file);
   }
@@ -390,6 +406,13 @@ export function InviteView({ token }: { token: string }) {
           <button className="kbtn icon" title="Toggle theme" onClick={toggleTheme}>{dark ? "☀" : "☾"}</button>
         </div>
       </header>
+
+      {actionError && (
+        <div className="inv2-actionerr" role="alert">
+          {actionError}
+          <button className="kbtn" onClick={() => setActionError(null)}>Dismiss</button>
+        </div>
+      )}
 
       {ROLE_VIEWS[ws.archetype] ? (
         (() => {

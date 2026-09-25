@@ -121,11 +121,33 @@ class InMemoryOrgsRepo:
         )
         if inv is None:
             return None
-        return {"id": inv["id"], "org_id": inv["org_id"], "email": inv["email"], "role": inv["role"]}
+        return {
+            "id": inv["id"],
+            "org_id": inv["org_id"],
+            "email": inv["email"],
+            "role": inv["role"],
+            "created_at": inv["created_at"],
+        }
 
     def accept_member_invite(
         self, *, invite_id: str, org_id: str, user_id: str, email: str, role: str
-    ) -> dict[str, Any]:
+    ) -> dict[str, Any] | None:
+        # Claim-first CAS, mirroring the Supabase impl: only a still-pending
+        # invite can be claimed; a racing revoke/accept loses cleanly.
+        inv = next(
+            (
+                i
+                for i in self.invites
+                if i["id"] == invite_id
+                and i["accepted_at"] is None
+                and i["revoked_at"] is None
+            ),
+            None,
+        )
+        if inv is None:
+            return None
+        inv["accepted_at"] = _now()
+        inv["accepted_by"] = user_id
         member = {
             "org_id": org_id,
             "user_id": user_id,
@@ -134,10 +156,6 @@ class InMemoryOrgsRepo:
             "created_at": _now(),
         }
         self.member_rows.append(member)
-        for inv in self.invites:
-            if inv["id"] == invite_id:
-                inv["accepted_at"] = _now()
-                inv["accepted_by"] = user_id
         return member
 
     def remove_member(self, *, org_id: str, user_id: str) -> bool:
@@ -149,6 +167,11 @@ class InMemoryOrgsRepo:
         if target["role"] == "owner" and len(owners) <= 1:
             return False
         self.member_rows.remove(target)
+        if target["role"] == "owner" and not any(
+            m["role"] == "owner" for m in self.member_rows if m["org_id"] == org_id
+        ):
+            self.member_rows.append(target)  # compensate: never orphan an org
+            return False
         return True
 
     def sync_member_email(self, *, org_id: str, user_id: str, email: str) -> None:

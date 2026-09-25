@@ -45,12 +45,14 @@ function seatsForTier(tier: (typeof TIERS)[number], views: DashboardPartyView[])
  *  on hover so you can click. Ring radii are derived so nodes never overlap. */
 export function PartyOrbit({
   views,
+  address,
   onSelect,
   onAddRole,
   dragging = false,
   onDropTask,
 }: {
   views: DashboardPartyView[];
+  address?: string | null;
   onSelect: (pv: DashboardPartyView) => void;
   onAddRole: (role: string) => void;
   dragging?: boolean;
@@ -129,7 +131,7 @@ export function PartyOrbit({
       <svg className="orb-lines" aria-hidden="true" />
       <div className="orb-center" aria-hidden="true">
         <Icon name="home" size={30} />
-        <div className="orb-addr">1057 Foxglove Pl</div>
+        <div className="orb-addr">{(address ?? "").split(",")[0] || "This deal"}</div>
         <div className="orb-sub">the deal</div>
       </div>
 

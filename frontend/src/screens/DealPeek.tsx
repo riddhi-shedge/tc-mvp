@@ -29,19 +29,23 @@ export function DealPeek({
   onReviewFields: (id: string) => void;
 }) {
   const [state, setState] = useState<FullState | null>(null);
+  const [loadFailed, setLoadFailed] = useState(false);
   const [body, setBody] = useState("");
+  // Short-lived per-open cache: cleared whenever the peek acts on a deal so a
+  // just-approved draft can't show a stale digest.
   const cache = useRef(new Map<string, FullState>());
   const dealId = item?.dealId ?? null;
 
   useEffect(() => {
     if (!dealId) return setState(null);
+    setLoadFailed(false);
     const hit = cache.current.get(dealId);
     if (hit) { setState(hit); return; }
     setState(null);
     let live = true;
     api.get<FullState>(`/transactions/${dealId}`)
       .then((s) => { cache.current.set(dealId, s); if (live) setState(s); })
-      .catch(() => { if (live) setState(null); });
+      .catch(() => { if (live) { setState(null); setLoadFailed(true); } });
     return () => { live = false; };
   }, [dealId]);
 
@@ -72,7 +76,11 @@ export function DealPeek({
 
       <div className="pk-card">
         <div className="pk-sect">Deadline runway · next 10 business days</div>
-        {state ? <Runway items={state.deadlines ?? []} /> : <div className="pk-load">Loading…</div>}
+        {state ? (
+          <Runway items={state.deadlines ?? []} />
+        ) : (
+          <div className="pk-load">{loadFailed ? "Couldn't load this deal. Open it to retry." : "Loading…"}</div>
+        )}
       </div>
 
       {item.kind === "draft" && (

@@ -38,14 +38,27 @@ export function ListingCommandCenter({ papi }: { papi: Papi }) {
       const p = await papi<ListingPortfolio & { approvalItems?: ApprovalItem[] }>("/listing/portfolio");
       setPf(p);
       if (p.approvalItems) setApprovals(p.approvalItems);
+      setErr(null); // a recovered poll clears the sticky banner
     } catch (e) { setErr(e instanceof Error ? e.message : "Couldn't load your book."); }
   }, [papi]);
   useEffect(() => { void loadAll(); }, [loadAll]);
   usePoll(() => { void loadAll(); }); // §7 live-sync
   useEffect(() => {
-    if (view === "sellers" && sellers === null) papi<{ sellers: SellerRow[] }>("/listing/sellers").then((d) => setSellers(d.sellers)).catch(() => setSellers([]));
-    if (view === "schedule" && schedule === null) papi<{ items: ScheduleItem[] }>("/listing/schedule").then((d) => setSchedule(d.items)).catch(() => setSchedule([]));
-    if (view === "earnings" && earnings === null) papi<EarningsData>("/listing/earnings").then(setEarnings).catch(() => setEarnings(null));
+    if (view === "sellers" && sellers === null)
+      papi<{ sellers: SellerRow[] }>("/listing/sellers")
+        .then((d) => setSellers(d.sellers))
+        .catch((e) => { setSellers([]); setErr(e instanceof Error ? e.message : "Couldn't load sellers."); });
+    if (view === "schedule" && schedule === null)
+      papi<{ items: ScheduleItem[] }>("/listing/schedule")
+        .then((d) => setSchedule(d.items))
+        .catch((e) => { setSchedule([]); setErr(e instanceof Error ? e.message : "Couldn't load the schedule."); });
+    if (view === "earnings" && earnings === null)
+      papi<EarningsData>("/listing/earnings")
+        .then(setEarnings)
+        .catch((e) => {
+          setEarnings({ rows: [], totals: { inEscrowCents: 0, closingSoonCents: 0, closedCents: 0 }, rateNote: "" });
+          setErr(e instanceof Error ? e.message : "Couldn't load earnings.");
+        });
   }, [view, sellers, schedule, earnings, papi]);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setDetail(null); };

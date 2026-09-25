@@ -144,24 +144,40 @@ def _referenced_message_ids(headers: list[PostmarkHeader]) -> list[str]:
     return out
 
 
-def _match_inbound_recipient(recipients: set[str], deal_address: str) -> tuple[bool, str | None]:
+def _match_inbound_recipient(
+    original_recipient: str, header_recipients: set[str], deal_address: str
+) -> tuple[bool, str | None]:
     """Was this mail addressed to our inbound mailbox, and with which org tag?
 
     Accepts the bare address (deal@dom) and plus-addressed forms
-    (deal+<inbound_key>@dom). Returns (matched, tag): tag is the plus-suffix
-    that names the org, or None for the bare address. A tagged match wins over
-    a bare one when both appear (forwarding chains)."""
-    local, _, domain = deal_address.lower().partition("@")
-    matched, tag = False, None
-    for recipient in recipients:
-        r_local, _, r_domain = (recipient or "").partition("@")
-        if r_domain != domain:
-            continue
-        if r_local == local:
-            matched = True
-        elif r_local.startswith(local + "+") and len(r_local) > len(local) + 1:
-            matched, tag = True, r_local[len(local) + 1 :]
-    return matched, tag
+    (deal+<inbound_key>@dom). Returns (matched, tag).
+
+    TENANCY: only OriginalRecipient — the ENVELOPE address Postmark actually
+    delivered to — may select the org tag. To/ToFull are message headers the
+    sender writes freely; a forged `To: deal+<victim-key>@dom` must never route
+    a document into another workspace's inbox. Header recipients are consulted
+    only as a bare-address fallback (BCC/forwarding chains where the envelope
+    field is empty), and never carry a tag."""
+
+    def parse(addr: str) -> tuple[bool, str | None]:
+        local, _, domain = deal_address.lower().partition("@")
+        a_local, _, a_domain = (addr or "").lower().partition("@")
+        if a_domain != domain:
+            return False, None
+        if a_local == local:
+            return True, None
+        if a_local.startswith(local + "+") and len(a_local) > len(local) + 1:
+            return True, a_local[len(local) + 1 :]
+        return False, None
+
+    matched, tag = parse(original_recipient)
+    if matched:
+        return True, tag
+    for recipient in header_recipients:
+        bare_match, header_tag = parse(recipient)
+        if bare_match and header_tag is None:
+            return True, None  # bare only — a header can never choose a tenant
+    return False, None
 
 
 def _resolve_inbound_org(tag: str | None) -> str | None:
@@ -250,13 +266,21 @@ def postmark_inbound_webhook(
     # recipients (deal+<inbound_key>@...) route the delivery to that org;
     # untagged mail falls back to the default/sole org. Unroutable mail is
     # absorbed — never stored against a guessed tenant.
-    recipients = {r.Email.lower() for r in body.ToFull}
-    recipients.add(body.To.lower())
-    recipients.add(body.OriginalRecipient.lower())
-    matched, org_tag = _match_inbound_recipient(recipients, deal_address)
+    header_recipients = {r.Email.lower() for r in body.ToFull}
+    header_recipients.add(body.To.lower())
+    matched, org_tag = _match_inbound_recipient(
+        body.OriginalRecipient, header_recipients, deal_address
+    )
     if not matched:
         return {"ignored": True}
-    org_id = _resolve_inbound_org(org_tag)
+    try:
+        org_id = _resolve_inbound_org(org_tag)
+    except orgs.OrgDirectoryUnavailable:
+        # Infra failure ≠ unknown tag: 503 so Postmark redelivers later —
+        # a real document must never be absorbed because the DB blinked.
+        raise HTTPException(
+            status_code=503, detail="Tenant directory unavailable; retry delivery"
+        ) from None
     if org_id is None:
         _log.info("ingestion.webhook.unroutable_org tag=%s", org_tag or "<none>")
         return {"ignored": True}
@@ -272,7 +296,9 @@ def postmark_inbound_webhook(
     replied: list[dict[str, Any]] = []
     if refs:
         try:
-            replied = master_repo.record_reply_detected(provider_message_ids=refs)
+            replied = master_repo.record_reply_detected(
+                provider_message_ids=refs, org_id=org_id
+            )
         except Exception:
             _log.info("reply detection failed (non-fatal)")
 
@@ -399,7 +425,7 @@ def classify_inbox_item(
     if item is None or item.get("org_id") != tc.org_id:
         # Cross-org item ids read as not-found: existence is never confirmed.
         raise HTTPException(status_code=404, detail="Inbox item not found")
-    if item["status"] != "pending":
+    if item.get("status") != "pending":
         raise HTTPException(status_code=409, detail="Only pending items can be classified")
     detected, guess, signals = _classify_document(item, inbox, extractor)
     identified = detected != OTHER_DOC_TYPE
@@ -977,7 +1003,7 @@ def confirm_inbox_item(
     if item is None or item.get("org_id") != tc.org_id:
         # Cross-org item ids read as not-found: existence is never confirmed.
         raise HTTPException(status_code=404, detail="Inbox item not found")
-    if item["status"] == "needs_manual":
+    if item.get("status") == "needs_manual":
         raise HTTPException(
             status_code=409,
             detail=(
@@ -986,7 +1012,7 @@ def confirm_inbox_item(
                 "document via /ingestion/manual-upload, then confirm that item."
             ),
         )
-    if item["status"] == "processing":
+    if item.get("status") == "processing":
         raise HTTPException(status_code=409, detail="Inbox item is being processed")
     if item["status"] != "pending":
         raise HTTPException(status_code=409, detail="Inbox item already handled")

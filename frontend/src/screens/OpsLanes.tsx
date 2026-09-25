@@ -26,7 +26,7 @@ const LANES: LaneDef[] = [
   { key: "warranty", name: "Home warranty", icon: "shield",
     orderedLabel: "Ordered", doneLabel: "Confirmed", askRole: "listing_agent", purpose: "general",
     hint: "Order per the contract and confirm the invoice" },
-  { key: "nhd", name: "NHD report", icon: "map" as IconName,
+  { key: "nhd", name: "NHD report", icon: "pin",
     orderedLabel: "Ordered", doneLabel: "Delivered", askRole: "listing_agent", purpose: "disclosure_reminder",
     hint: "Natural hazard disclosure report" },
   { key: "utilities", name: "Utilities transfer", icon: "spark",

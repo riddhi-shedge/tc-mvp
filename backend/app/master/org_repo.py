@@ -61,8 +61,9 @@ class OrgsRepo(Protocol):
 
     def accept_member_invite(
         self, *, invite_id: str, org_id: str, user_id: str, email: str, role: str
-    ) -> dict[str, Any]:
-        """Write the membership and mark the invite accepted."""
+    ) -> dict[str, Any] | None:
+        """Atomically claim the still-pending invite and write the membership.
+        None if the invite was revoked/accepted meanwhile (caller 404s)."""
         ...
 
     def remove_member(self, *, org_id: str, user_id: str) -> bool:
@@ -187,7 +188,7 @@ class SupabaseOrgsRepo:
     def resolve_member_invite(self, token_hash: str) -> dict[str, Any] | None:
         rows = (
             self._db.table("org_member_invites")
-            .select("id, org_id, email, role")
+            .select("id, org_id, email, role, created_at")
             .eq("token_hash", token_hash)
             .is_("accepted_at", "null")
             .is_("revoked_at", "null")
@@ -199,17 +200,35 @@ class SupabaseOrgsRepo:
 
     def accept_member_invite(
         self, *, invite_id: str, org_id: str, user_id: str, email: str, role: str
-    ) -> dict[str, Any]:
-        member = (
-            self._db.table("org_members")
-            .insert({"org_id": org_id, "user_id": user_id, "email": email, "role": role})
+    ) -> dict[str, Any] | None:
+        """Claim-first compare-and-swap: the invite row is atomically marked
+        accepted ONLY while still pending, and membership is written after the
+        claim. A revoke or a second accept racing this one loses cleanly (the
+        conditional update claims no row → None). If the membership insert then
+        fails, the claim is released so the invite is usable again."""
+        claimed = (
+            self._db.table("org_member_invites")
+            .update({"accepted_at": _now(), "accepted_by": user_id})
+            .eq("id", invite_id)
+            .is_("accepted_at", "null")
+            .is_("revoked_at", "null")
             .execute()
-            .data[0]
+            .data
         )
-        self._db.table("org_member_invites").update(
-            {"accepted_at": _now(), "accepted_by": user_id}
-        ).eq("id", invite_id).execute()
-        return member
+        if not claimed:
+            return None
+        try:
+            return (
+                self._db.table("org_members")
+                .insert({"org_id": org_id, "user_id": user_id, "email": email, "role": role})
+                .execute()
+                .data[0]
+            )
+        except Exception:
+            self._db.table("org_member_invites").update(
+                {"accepted_at": None, "accepted_by": None}
+            ).eq("id", invite_id).execute()
+            raise
 
     def remove_member(self, *, org_id: str, user_id: str) -> bool:
         rows = self.members(org_id)
@@ -222,6 +241,21 @@ class SupabaseOrgsRepo:
         self._db.table("org_members").delete().eq("org_id", org_id).eq(
             "user_id", user_id
         ).execute()
+        if target["role"] == "owner":
+            # Two owners removing each other concurrently can both pass the
+            # snapshot check above; verify and compensate so an org can never
+            # end up ownerless (there is no recovery path without a DB edit).
+            remaining = self.members(org_id)
+            if not any(m["role"] == "owner" for m in remaining):
+                self._db.table("org_members").insert(
+                    {
+                        "org_id": org_id,
+                        "user_id": user_id,
+                        "email": target.get("email"),
+                        "role": "owner",
+                    }
+                ).execute()
+                return False
         return True
 
     def sync_member_email(self, *, org_id: str, user_id: str, email: str) -> None:

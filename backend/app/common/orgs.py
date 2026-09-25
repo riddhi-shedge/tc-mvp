@@ -22,6 +22,12 @@ _CACHE_MAX_ENTRIES = 4096
 DEMO_ORG_ID = "00000000-0000-4000-8000-000000000001"
 
 
+class OrgDirectoryUnavailable(Exception):
+    """The org directory could not be read (DB outage / misconfig). Callers on
+    the ingestion path convert this to a 503 so the provider RETRIES the
+    delivery — an infra blip must never silently absorb a real document."""
+
+
 class OrgDirectory(Protocol):
     def membership(self, user_id: str) -> dict[str, Any] | None:
         """{"org_id", "role"} for the user's org, or None (no membership)."""
@@ -110,15 +116,18 @@ def invalidate_membership(user_id: str) -> None:
         _membership_cache.pop(user_id, None)
 
 
-def membership_for_user(user_id: str) -> dict[str, Any] | None:
-    """The user's org membership, TTL-cached. None ⇒ no org ⇒ caller rejects."""
+def membership_for_user(user_id: str, *, fresh: bool = False) -> dict[str, Any] | None:
+    """The user's org membership, TTL-cached. None ⇒ no org ⇒ caller rejects.
+    fresh=True skips the cache — the onboarding routes use it so a just-created
+    membership (or a double-submit) is seen immediately, not after the TTL."""
     if not user_id:
         return None
     now = time.time()
-    with _lock:
-        hit = _membership_cache.get(user_id)
-        if hit is not None and now - hit[0] < _CACHE_TTL_SECONDS:
-            return hit[1]
+    if not fresh:
+        with _lock:
+            hit = _membership_cache.get(user_id)
+            if hit is not None and now - hit[0] < _CACHE_TTL_SECONDS:
+                return dict(hit[1]) if hit[1] is not None else None
     directory = _get_directory()
     if directory is None:
         return None
@@ -130,24 +139,26 @@ def membership_for_user(user_id: str) -> dict[str, Any] | None:
         if len(_membership_cache) >= _CACHE_MAX_ENTRIES:
             _membership_cache.clear()
         _membership_cache[user_id] = (now, row)
-    return row
+    return dict(row) if row is not None else None
 
 
 def org_for_inbound_key(key: str) -> str | None:
+    """None means the key genuinely matches no org; an infra failure RAISES."""
     directory = _get_directory()
     if directory is None:
-        return None
+        raise OrgDirectoryUnavailable("org directory is not configured")
     try:
         return directory.org_for_inbound_key(key)
-    except Exception:
-        return None
+    except Exception as exc:
+        raise OrgDirectoryUnavailable(f"org lookup failed ({type(exc).__name__})") from exc
 
 
 def sole_org_id() -> str | None:
+    """None means zero-or-several orgs exist; an infra failure RAISES."""
     directory = _get_directory()
     if directory is None:
-        return None
+        raise OrgDirectoryUnavailable("org directory is not configured")
     try:
         return directory.sole_org_id()
-    except Exception:
-        return None
+    except Exception as exc:
+        raise OrgDirectoryUnavailable(f"org lookup failed ({type(exc).__name__})") from exc

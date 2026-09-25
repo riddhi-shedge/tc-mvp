@@ -30,6 +30,7 @@ function fmtM(n: number): string {
 export function Quarter() {
   const [deals, setDeals] = useState<DealSummary[]>([]);
   const [loaded, setLoaded] = useState(false);
+  const [loadError, setLoadError] = useState(false);
   // BUG-26: don't hardcode a stale quarter. Figures are all-time until quarter
   // history lands; label the CURRENT quarter rather than a fixed past one.
   const now = new Date();
@@ -38,10 +39,11 @@ export function Quarter() {
   const load = useCallback(async () => {
     try {
       setDeals(await api.get<DealSummary[]>("/transactions/board"));
-    } catch (err) {
-      toast(err instanceof Error ? err.message : "Failed to load", { error: true });
-    } finally {
+      setLoadError(false);
       setLoaded(true);
+    } catch (err) {
+      setLoadError(true);
+      toast(err instanceof Error ? err.message : "Failed to load", { error: true });
     }
   }, []);
   useEffect(() => {
@@ -60,13 +62,6 @@ export function Quarter() {
   const pipeline = active.reduce((s, d) => s + money(d.purchase_price), 0);
   const closedVol = closed.reduce((s, d) => s + money(d.purchase_price), 0);
 
-  // Illustrative month-split for the closed count (real monthly history TBD).
-  const months = [
-    { m: "Two months ago", n: Math.max(0, Math.round(closed.length * 0.3)), sample: true },
-    { m: "Last month", n: Math.max(0, Math.round(closed.length * 0.35)), sample: true },
-    { m: "This month", n: closed.length - Math.round(closed.length * 0.3) - Math.round(closed.length * 0.35), sample: false },
-  ];
-  const maxN = Math.max(1, ...months.map((x) => x.n));
 
   return (
     <div className="qtr">
@@ -75,23 +70,17 @@ export function Quarter() {
           <h1>Your quarter</h1>
           <div className="muted">{quarterLabel} · your personal performance, visible only to you</div>
         </div>
-        <div className="seg-static">
-          <span className="on">This quarter</span>
-          <span>Last quarter</span>
-          <span>Year</span>
-        </div>
       </div>
 
       <div className="qtr-note">
         <div className="qtr-note-lab"><Icon name="sparkle" size={14} /> Quarter in review</div>
         <h2>
-          {loaded ? `${closed.length} deal${closed.length === 1 ? "" : "s"} closed` : "Loading your quarter…"}
+          {loadError ? "Couldn't load your quarter" : loaded ? `${closed.length} deal${closed.length === 1 ? "" : "s"} closed` : "Loading your quarter…"}
           {loaded && ` · ${active.length} active in your pipeline`}
         </h2>
         <p>
           You have {active.length} active deal{active.length === 1 ? "" : "s"} worth {fmtM(pipeline)} in your pipeline,
-          with {closingWk} closing this week. You've completed {doneTasks} of {totalTasks} tasks ({taskRate}%). Trend and
-          on-time figures below are illustrative until closed-deal history is connected.
+          with {closingWk} closing this week. You've completed {doneTasks} of {totalTasks} tasks ({taskRate}%).
         </p>
       </div>
 
@@ -105,55 +94,12 @@ export function Quarter() {
       <div className="qtr-cols">
         <div className="card">
           <div className="card-h">
-            <h3>Deals closed by month</h3>
-            <span className="chip-sample">sample split</span>
+            <h3>Trends</h3>
           </div>
-          <div className="qtr-bars">
-            {months.map((m) => (
-              <div key={m.m} className="qtr-bcol">
-                <div className={`qtr-bar ${m.sample ? "dim" : ""}`} style={{ height: `${(m.n / maxN) * 100}%` }}>
-                  <span className="qtr-cap tnum">{m.n}</span>
-                </div>
-                <div className="qtr-lb">{m.m}</div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div className="card">
-          <div className="card-h">
-            <h3>On-time deadline rate</h3>
-            <span className="chip-sample">sample</span>
-          </div>
-          <div className="qtr-ring-row">
-            <div className="qtr-ring" style={{ ["--p" as string]: 93 }}>
-              <b className="tnum">93%</b>
-            </div>
-            <div>
-              <div className="qtr-ring-t">97 of 104 deadlines hit</div>
-              <div className="muted qtr-ring-s">
-                Once closed-deal history is wired, this tracks the contractual dates you met vs. slipped, split into
-                controllable and outside-party delays.
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div className="card">
-        <div className="card-h"><h3>Breakdown</h3><span className="chip-sample">sample</span></div>
-        <div className="qtr-tbl-wrap">
-          <table className="qtr-tbl">
-            <thead>
-              <tr><th>Metric</th><th>Buyer side</th><th>Listing side</th><th>Total</th><th>vs last quarter</th></tr>
-            </thead>
-            <tbody>
-              <tr><td>Closed</td><td className="tnum">—</td><td className="tnum">—</td><td className="tnum">{loaded ? closed.length : "—"}</td><td className="muted">needs history</td></tr>
-              <tr><td>Avg cycle time</td><td className="tnum">—</td><td className="tnum">—</td><td className="tnum">—</td><td className="muted">needs history</td></tr>
-              <tr><td>Tasks completed</td><td className="tnum">—</td><td className="tnum">—</td><td className="tnum">{loaded ? doneTasks : "—"}</td><td className="muted">needs history</td></tr>
-              <tr><td>AI recs approved</td><td className="tnum">—</td><td className="tnum">—</td><td className="tnum">—</td><td className="muted">needs history</td></tr>
-            </tbody>
-          </table>
+          <p className="muted qtr-ring-s">
+            Monthly closings and your on-time deadline rate build here as deals close.
+            Nothing to chart yet.
+          </p>
         </div>
       </div>
     </div>

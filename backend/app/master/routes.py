@@ -1290,6 +1290,10 @@ def create_task(
         party_id=body.assigned_party_id, transaction_id=transaction_id
     ):
         raise HTTPException(status_code=404, detail="Party not found on this transaction")
+    if body.deadline_id is not None:
+        state = repo.get_full_state(transaction_id) or {}
+        if not any(d.get("id") == body.deadline_id for d in state.get("deadlines", [])):
+            raise HTTPException(status_code=404, detail="Deadline not found on this transaction")
     priority = body.priority if body.priority in _TASK_PRIORITIES else "normal"
     return repo.create_task(
         transaction_id=transaction_id,
@@ -1371,7 +1375,8 @@ def draft_lender(
             detail="No lender contact on this deal — add one (POST /parties) before drafting.",
         )
     state = repo.get_full_state(transaction_id)
-    assert state is not None
+    if state is None:
+        raise HTTPException(status_code=404, detail="Transaction not found")
     prop = state.get("property") or {}
     ctx = DraftContext(
         property_address=prop.get("address"),
@@ -1455,7 +1460,8 @@ def draft_message(
             detail="This recipient has no email yet — add one on the Parties tab first.",
         )
     state = repo.get_full_state(transaction_id)
-    assert state is not None
+    if state is None:
+        raise HTTPException(status_code=404, detail="Transaction not found")
     ctx = _message_context(state, party, body.purpose, tc)
     try:
         draft = drafter.draft_message(ctx)
@@ -1901,6 +1907,18 @@ def _require_party_write(repo: MasterRepo, party: PartyUser, write: str) -> None
 # ---- Buyer's-agent command center: cross-deal portfolio (the whole book) ------
 # The agent's token authenticates; aggregation runs service-role across every deal.
 
+def _require_deal_in_agents_org(
+    repo: MasterRepo, agent: PartyUser, transaction_id: str
+) -> None:
+    """Tenancy for the per-deal agent/listing routes. The agent's credential
+    binds them to ONE home deal; their book is that deal's ORG. Any transaction
+    id arriving in a path or request body is untrusted until it resolves to the
+    same org — otherwise 404 (existence is never confirmed across tenants)."""
+    home_org = repo.transaction_org(agent.transaction_id)
+    if home_org is None or repo.transaction_org(transaction_id) != home_org:
+        raise HTTPException(status_code=404, detail="Deal not found")
+
+
 def _all_deal_states(repo: MasterRepo, agent: PartyUser) -> list[dict[str, Any]]:
     # Batch-loaded: one IN-query per table for the whole book, not 13 per deal.
     # "The whole book" is the ORG's book: the agent's credential binds them to
@@ -2071,6 +2089,7 @@ def agent_draft_client_update(
     """The weekly 'where things stand' note to the buyer client — drafted by the
     co-pilot from deal state, landing in the approval queue (Rule 3: the agent
     reviews recipient + full body before anything sends)."""
+    _require_deal_in_agents_org(repo, agent, transaction_id)
     st = repo.get_full_state(transaction_id)
     if not st:
         raise HTTPException(status_code=404, detail="Deal not found")
@@ -2111,6 +2130,7 @@ def agent_deal_detail(
     agent: PartyUser = Depends(require_agent_portfolio),
     repo: MasterRepo = Depends(get_repo),
 ) -> dict[str, Any]:
+    _require_deal_in_agents_org(repo, agent, transaction_id)
     st = repo.get_full_state(transaction_id)
     if not st:
         raise HTTPException(status_code=404, detail="Deal not found")
@@ -2154,6 +2174,8 @@ def agent_copilot_refresh(
             )
             try:
                 draft = drafter.draft_message(ctx)
+            except ZdrNotConfirmed as exc:
+                raise HTTPException(status_code=503, detail=str(exc)) from None
             except DraftFailed:
                 errors += 1
                 continue
@@ -2185,6 +2207,7 @@ def agent_approve(
 ) -> dict[str, Any]:
     """Rule #3: the agent's explicit approval of an AI draft — logged to the deal
     (not silently sent; the command center isn't wired to outbound delivery)."""
+    _require_deal_in_agents_org(repo, agent, body.transaction_id)
     try:
         msg = repo.record_message_approved(
             transaction_id=body.transaction_id, message_id=message_id,
@@ -2208,6 +2231,7 @@ def agent_dismiss(
     agent: PartyUser = Depends(require_agent_portfolio),
     repo: MasterRepo = Depends(get_repo),
 ) -> dict[str, Any]:
+    _require_deal_in_agents_org(repo, agent, body.transaction_id)
     result = repo.delete_message(transaction_id=body.transaction_id, message_id=message_id, actor=agent.actor)
     if result is None:
         raise HTTPException(status_code=404, detail="Draft not found")
@@ -2285,6 +2309,7 @@ def listing_draft_seller_update(
 ) -> dict[str, Any]:
     """The weekly where-things-stand note to the SELLER — co-pilot drafted,
     approval-queue gated (Rule 3)."""
+    _require_deal_in_agents_org(repo, agent, transaction_id)
     st = repo.get_full_state(transaction_id)
     if not st:
         raise HTTPException(status_code=404, detail="Listing not found")
@@ -2325,6 +2350,7 @@ def listing_offers(
     agent: PartyUser = Depends(require_agent_portfolio),
     repo: MasterRepo = Depends(get_repo),
 ) -> dict[str, Any]:
+    _require_deal_in_agents_org(repo, agent, transaction_id)
     st = repo.get_full_state(transaction_id)
     if not st:
         raise HTTPException(status_code=404, detail="Listing not found")
@@ -2350,6 +2376,7 @@ def listing_draft_comparison(
 ) -> dict[str, Any]:
     """Draft a plain-language, neutral offer summary FOR THE SELLER (rule #3: goes to
     the approval queue; the AI never picks a winner — the seller decides)."""
+    _require_deal_in_agents_org(repo, agent, transaction_id)
     st = repo.get_full_state(transaction_id)
     if not st:
         raise HTTPException(status_code=404, detail="Listing not found")
@@ -2378,6 +2405,8 @@ def listing_draft_comparison(
     )
     try:
         draft = drafter.draft_message(ctx)
+    except ZdrNotConfirmed as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from None
     except DraftFailed:
         raise HTTPException(status_code=502, detail="Co-pilot drafting is unavailable") from None
     repo.create_message(

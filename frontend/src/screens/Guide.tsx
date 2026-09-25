@@ -47,7 +47,7 @@ const SECTIONS: { id: string; title: string; blurb: string; features: Feature[] 
     title: "Across all your deals",
     blurb: "Some surfaces pull work together from every transaction so nothing slips between deals.",
     features: [
-      { icon: "calendar", term: "Calendar", what: "Every contractual deadline and your scheduled work in one grid. Drag unscheduled work onto a day, or let auto-schedule place it around fixed dates.", can: ["See all deadlines at once", "Drag work onto a day", "Preview an auto-schedule before applying it"] },
+      { icon: "calendar", term: "Calendar", what: "Every contractual deadline and your scheduled work in one grid. Drag unscheduled work onto a day, or let auto-schedule place it around fixed dates.", can: ["See all deadlines at once", "Drag work onto a day", "Auto-schedule work around fixed dates"] },
       { icon: "inbox", term: "Deals & Inbox", what: "The pipeline board of active deals plus incoming documents waiting to be filed to the right transaction.", can: ["Scan the pipeline by stage", "Confirm an inbound document into a deal", "Open any deal"] },
       { icon: "board", term: "My quarter", what: "Your personal metrics: deals closed, on-time rate, and cycle time. Visible only to you.", can: ["See how you're trending", "Spot your slowest recurring task", "Review the quarter at a glance"] },
     ],
@@ -66,7 +66,7 @@ const SECTIONS: { id: string; title: string; blurb: string; features: Feature[] 
 
 const STEPS = [
   { icon: "home" as IconName, title: "Welcome to Terra", body: "Your transaction workspace: everything needed to run a deal from contract to close." },
-  { icon: "deals" as IconName, title: "Navigate on the left", body: "Home shows what needs attention today. Transactions, Tasks, Calendar, Documents and Parties pull work together across every deal you're running." },
+  { icon: "deals" as IconName, title: "Navigate on the left", body: "Home shows what needs attention today. Calendar, Deals & Inbox, and My quarter pull work together across every deal you're running." },
   { icon: "doc" as IconName, title: "Each deal is its own workspace", body: "Open a transaction for its timeline, tasks, documents, parties, communication, and notes." },
   { icon: "sparkle" as IconName, title: "Terra prepares, you approve", body: "Terra reads your documents and suggests next steps with evidence attached. Nothing is sent or changed without your approval." },
   { icon: "search" as IconName, title: "Ask anything with ⌘K", body: "Press ⌘K to search a deal or ask a plain-English question. You can reopen this guide any time from Help in the sidebar." },

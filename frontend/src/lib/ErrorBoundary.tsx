@@ -8,39 +8,40 @@ import { Icon } from "./icons";
  * like from the user's side; the reference id also flows to Help & support. */
 
 type Props = { children: ReactNode };
-type State = { ref: string | null };
+type State = { crashed: boolean; ref: string | null };
 
 export class ErrorBoundary extends Component<Props, State> {
-  state: State = { ref: null };
+  state: State = { crashed: false, ref: null };
 
   static getDerivedStateFromError(): Partial<State> {
-    return {}; // ref is set in componentDidCatch where we have the message
+    // Flip to the fallback IN the error render pass — waiting for
+    // componentDidCatch would re-render the throwing children first.
+    return { crashed: true };
   }
 
   componentDidCatch(error: Error, info: ErrorInfo) {
     const screen = window.location.hash || "app";
     const entry = captureError(error.message || "Unhandled render error", screen, "sent");
     this.setState({ ref: entry.ref });
-    // Surface for local debugging; in prod this is where a Sentry POST would go.
     console.error("Terra captured error", entry.ref, error, info.componentStack);
   }
 
   reset = () => {
-    this.setState({ ref: null });
+    this.setState({ crashed: false, ref: null });
   };
 
   render() {
-    if (this.state.ref) {
+    if (this.state.crashed) {
       return (
         <div className="crash">
           <div className="crash-card">
             <div className="crash-ic"><Icon name="warning" size={26} /></div>
             <h2>Something went wrong on this screen</h2>
             <p>
-              Your work is saved. The error was logged and sent to engineering. No action is needed from
-              you.
+              Your work is saved. The error was captured with a reference you can include
+              when reporting it under Help &amp; support.
             </p>
-            <div className="crash-ref">Error reference · {this.state.ref}</div>
+            {this.state.ref && <div className="crash-ref">Error reference · {this.state.ref}</div>}
             <div className="crash-btns">
               <button className="kbtn pri" onClick={this.reset}>Reload this screen</button>
               <button className="kbtn" onClick={() => { window.location.hash = ""; this.reset(); }}>
@@ -48,7 +49,7 @@ export class ErrorBoundary extends Component<Props, State> {
               </button>
             </div>
             <p className="crash-note">
-              Every crash becomes a tracked ticket. You can review it any time under Help &amp; support.
+              Captured errors from this session are listed under Help &amp; support.
             </p>
           </div>
         </div>

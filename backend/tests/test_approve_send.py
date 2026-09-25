@@ -58,7 +58,9 @@ def test_guarded_postmark_blocks_when_send_disabled(client, tc_headers, repo, mo
     from app.main import app
 
     monkeypatch.delenv("SEND_ENABLED", raising=False)
-    app.dependency_overrides[get_mailer] = lambda: PostmarkMailer()
+    # settings_lookup=None-row: the org has no send settings, so the env
+    # allowlist governs (a bare PostmarkMailer would need Supabase env).
+    app.dependency_overrides[get_mailer] = lambda: PostmarkMailer(settings_lookup=lambda org_id: None)
     txn_id, msg_id = _deal_with_draft(client, tc_headers)
     r = client.post(
         f"/transactions/{txn_id}/messages/{msg_id}/approve-and-send", headers=tc_headers
@@ -79,7 +81,9 @@ def test_guarded_postmark_blocks_recipient_not_allowlisted(client, tc_headers, m
 
     monkeypatch.setenv("SEND_ENABLED", "true")
     monkeypatch.setenv("SEND_ALLOWLIST", "someone-else@example.test")
-    app.dependency_overrides[get_mailer] = lambda: PostmarkMailer()
+    # settings_lookup=None-row: the org has no send settings, so the env
+    # allowlist governs (a bare PostmarkMailer would need Supabase env).
+    app.dependency_overrides[get_mailer] = lambda: PostmarkMailer(settings_lookup=lambda org_id: None)
     txn_id, msg_id = _deal_with_draft(client, tc_headers, email="not-allowed@example.test")
     r = client.post(
         f"/transactions/{txn_id}/messages/{msg_id}/approve-and-send", headers=tc_headers
@@ -111,7 +115,9 @@ def test_approved_but_unsent_can_be_retried_without_new_approval(client, tc_head
 
     # First attempt: guard off -> 503, message stuck 'approved'.
     monkeypatch.delenv("SEND_ENABLED", raising=False)
-    app.dependency_overrides[get_mailer] = lambda: PostmarkMailer()
+    # settings_lookup=None-row: the org has no send settings, so the env
+    # allowlist governs (a bare PostmarkMailer would need Supabase env).
+    app.dependency_overrides[get_mailer] = lambda: PostmarkMailer(settings_lookup=lambda org_id: None)
     txn_id, msg_id = _deal_with_draft(client, tc_headers)
     url = f"/transactions/{txn_id}/messages/{msg_id}/approve-and-send"
     assert client.post(url, headers=tc_headers).status_code == 503

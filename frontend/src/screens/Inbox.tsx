@@ -10,6 +10,7 @@ import { DealsBoard } from "./DealsBoard";
 import { BatchDrop } from "./BatchDrop";
 import { UploadOverlay } from "../lib/UploadOverlay";
 import { Icon } from "../lib/icons";
+import { toast } from "../lib/ui";
 
 const DOC_TYPE_LABELS: Record<string, string> = {
   purchase_agreement: "Purchase agreement",
@@ -150,6 +151,11 @@ export function Inbox({ onOpenDeal }: { onOpenDeal: (id: string) => void }) {
       const dataUrl = reader.result as string;
       setUploadB64(dataUrl.split(",", 2)[1] ?? null);
       setUploadName(file.name);
+    };
+    reader.onerror = () => {
+      toast("Could not read that file. Please try again.", { error: true });
+      setUploadB64(null);
+      setUploadName(null);
     };
     reader.readAsDataURL(file);
   }
@@ -426,7 +432,7 @@ export function Inbox({ onOpenDeal }: { onOpenDeal: (id: string) => void }) {
       <div className="card">
         <h2><Icon name="attach" size={17} /> Manual upload</h2>
         <div className="dropzone">
-          <input type="file" accept="application/pdf" onChange={onFilePicked} />
+          <input type="file" accept="application/pdf" aria-label="Choose a PDF to upload" onChange={onFilePicked} />
           <div style={{ marginTop: "0.7rem" }}>
             <button disabled={!uploadB64 || busy === "upload"} onClick={() => void uploadManual()}>
               {busy === "upload" ? (

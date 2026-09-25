@@ -54,8 +54,13 @@ export function BrokerFile({ state }: { state: FullState }) {
             title="Print the close-out packet (browser print → save as PDF)"
             onClick={() => {
               document.body.classList.add("printing-packet");
+              // Remove the class only once printing finishes — some engines
+              // return from print() before rasterizing, which would print the
+              // normal screen layout instead of the packet.
+              const cleanup = () => document.body.classList.remove("printing-packet");
+              window.addEventListener("afterprint", cleanup, { once: true });
               window.print();
-              document.body.classList.remove("printing-packet");
+              setTimeout(cleanup, 2000); // fallback if afterprint never fires
             }}
           >
             Print close-out packet

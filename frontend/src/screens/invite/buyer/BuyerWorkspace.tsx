@@ -92,6 +92,10 @@ export function BuyerWorkspace({ ws, papi, reload, busy, cycle }: Props) {
         setUploading(false);
       }
     };
+    reader.onerror = () => {
+      setUploadMsg("Could not read that file. Please try again.");
+      setUploading(false);
+    };
     reader.readAsDataURL(file);
   }
 

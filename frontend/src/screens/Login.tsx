@@ -171,7 +171,7 @@ export function Login({ onSignedIn }: { onSignedIn: () => void }) {
           await afterPassword(); // confirmations off: straight to MFA setup
         } else {
           setMode("signin");
-          setNotice("Almost there — confirm your email from the message we sent, then sign in.");
+          setNotice("Almost there. Confirm your email from the message we sent, then sign in.");
         }
         return;
       }

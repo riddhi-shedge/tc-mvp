@@ -86,7 +86,20 @@ export function Recommendations({ onOpenDeal, onClose }: { onOpenDeal: (id: stri
   const [deals, setDeals] = useState<DealSummary[]>([]);
   const [cal, setCal] = useState<CalendarDeadline[]>([]);
   const [loaded, setLoaded] = useState(false);
-  const [states, setStates] = useState<Record<string, CardState>>({});
+  const [states, setStates] = useState<Record<string, CardState>>(() => {
+    try {
+      return JSON.parse(localStorage.getItem("rec_states") ?? "{}") as Record<string, CardState>;
+    } catch {
+      return {};
+    }
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem("rec_states", JSON.stringify(states));
+    } catch {
+      /* storage blocked — verdicts just won't persist */
+    }
+  }, [states]);
 
   const load = useCallback(async () => {
     try {

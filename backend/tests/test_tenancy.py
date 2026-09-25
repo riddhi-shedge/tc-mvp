@@ -8,8 +8,11 @@ known bucket:
   * TC inbox routes naming an {item_id} — attacked the same way.
   * TC routes with no resource in the path — must appear in EXPECTED_GLOBAL_TC,
     each verified org-scoped by the list-emptiness assertions below.
-  * Party/agent routes — skipped: the credential itself binds one party to one
-    deal (require_party), and the portfolio aggregates only the home deal's org.
+  * Party routes — skipped by the walker: the credential itself binds one
+    party to one deal (require_party). Agent/listing PER-DEAL routes accept a
+    transaction id from the path or body, so they are NOT safe by construction:
+    they run _require_deal_in_agents_org, and the dedicated cross-org agent
+    tests below attack every one of them.
   * Service/public endpoints — must appear in EXPECTED_UNSCOPED exactly.
 
 Any route that fits no bucket FAILS this test. That is the point: a new
@@ -19,8 +22,10 @@ endpoint added without tenancy classification breaks CI until it is scoped
 
 from __future__ import annotations
 
+import time
 import uuid
 
+import jwt as _jwt
 from fastapi.routing import APIRoute
 
 from app.common.auth import (
@@ -31,7 +36,8 @@ from app.common.auth import (
 )
 from app.main import app
 from app.master.routes import require_compliance_service, require_scoped_tc
-from tests.conftest import ORG_B_SUB, SYNTHETIC_PA_B64, make_token
+from tests.conftest import ORG_B_SUB, SYNTHETIC_PA_B64, TEST_JWT_SECRET, make_token
+from tests.fake_repo import TEST_ORG_B_ID, TEST_ORG_ID
 
 # TC-authenticated routes with no {transaction_id}/{item_id} in the path. Each
 # is org-scoped inside its handler (org comes from the token, never the client):
@@ -245,3 +251,114 @@ def test_second_org_lives_alongside_the_first(client):
     # And the cross-org 404 in both directions, for good measure.
     assert client.get(f"/transactions/{b_txn}/notes", headers=headers_a).status_code == 404
     assert client.get(f"/transactions/{a_txn}/notes", headers=headers_b).status_code == 404
+
+
+# ---- Agent/listing per-deal routes: the credential's org is the boundary --------
+
+
+def _party_jwt(party_id: str, transaction_id: str, tier: str = "collaborator") -> str:
+    now = int(time.time())
+    return _jwt.encode(
+        {
+            "sub": f"party-{party_id}", "role": "authenticated", "aud": "authenticated",
+            "aal": "aal1", "iat": now, "exp": now + 3600,
+            "app_metadata": {"party_id": party_id, "transaction_id": transaction_id, "tier": tier},
+        },
+        TEST_JWT_SECRET, algorithm="HS256",
+    )
+
+
+def test_agent_routes_cannot_cross_orgs(client, repo):
+    """A collaborator invite from org B must never read org A's deals, seed
+    drafts into org A's approval queue, or approve/dismiss org A's messages via
+    the body-supplied transaction_id (the classic body-parameter bypass)."""
+    headers_a = _headers()
+    headers_b = _headers(sub=ORG_B_SUB, email="tc-b@example.test")
+
+    txn_a = client.post(
+        "/transactions", json={"property_address": "7 Victim Way, Vista"}, headers=headers_a
+    ).json()["id"]
+    draft_a = repo.create_message(
+        transaction_id=txn_a, subject="s", body="b", party_id=None, actor="tc@example.test"
+    )
+
+    txn_b = client.post(
+        "/transactions", json={"property_address": "9 Attacker Ave, Alta"}, headers=headers_b
+    ).json()["id"]
+    party_b = client.post(
+        f"/transactions/{txn_b}/parties",
+        json={"name": "Org B Agent", "role": "buyer_agent", "email": "ba@b.test"},
+        headers=headers_b,
+    ).json()["id"]
+    agent_headers = {"Authorization": f"Bearer {_party_jwt(party_b, txn_b)}"}
+
+    # Reads
+    assert client.get(f"/agent/deals/{txn_a}", headers=agent_headers).status_code == 404
+    assert client.get(f"/listing/offers/{txn_a}", headers=agent_headers).status_code == 404
+    # Draft-seeding writes
+    assert (
+        client.post(f"/agent/clients/{txn_a}/draft-update", headers=agent_headers).status_code
+        == 404
+    )
+    assert (
+        client.post(f"/listing/sellers/{txn_a}/draft-update", headers=agent_headers).status_code
+        == 404
+    )
+    assert (
+        client.post(
+            f"/listing/offers/{txn_a}/draft-comparison", headers=agent_headers
+        ).status_code
+        == 404
+    )
+    # Body-parameter bypass on the approval queue
+    assert (
+        client.post(
+            f"/agent/approvals/{draft_a['id']}/approve",
+            json={"transaction_id": txn_a},
+            headers=agent_headers,
+        ).status_code
+        == 404
+    )
+    assert (
+        client.post(
+            f"/agent/approvals/{draft_a['id']}/dismiss",
+            json={"transaction_id": txn_a},
+            headers=agent_headers,
+        ).status_code
+        == 404
+    )
+    # Org A's draft is untouched: still a pending draft, no forged approval.
+    assert repo.messages[draft_a["id"]]["status"] == "draft"
+    assert all(a["message_id"] != draft_a["id"] for a in repo.approvals)
+
+    # Positive control: the same agent CAN read a deal in their own org's book.
+    txn_b2 = client.post(
+        "/transactions", json={"property_address": "11 Same Book Blvd"}, headers=headers_b
+    ).json()["id"]
+    assert client.get(f"/agent/deals/{txn_b2}", headers=agent_headers).status_code == 200
+
+
+# ---- Inbound webhook: the envelope, not the headers, picks the tenant ----------
+
+
+def test_inbound_org_tag_comes_from_envelope_not_headers(client, inbox):
+    from tests.conftest import DEAL_ADDRESS, WEBHOOK_TOKEN, postmark_inbound
+
+    local, _, dom = DEAL_ADDRESS.partition("@")
+
+    # Forged To: header claims org B; the envelope is the bare address ->
+    # routes to the sole/default org (A), never to the header's tenant.
+    forged = postmark_inbound(attachment_name="forged-header.pdf")
+    forged["To"] = f"{local}+org-b@{dom}"
+    forged["ToFull"] = [{"Email": f"{local}+org-b@{dom}", "Name": ""}]
+    r = client.post(f"/ingestion/webhooks/postmark?token={WEBHOOK_TOKEN}", json=forged)
+    assert r.status_code == 200 and r.json().get("ignored") is False
+    assert inbox.items[r.json()["id"]]["org_id"] == TEST_ORG_ID
+
+    # A genuinely plus-addressed ENVELOPE does route to its org.
+    tagged = postmark_inbound(
+        to=f"{local}+org-b@{dom}", attachment_name="real-envelope.pdf"
+    )
+    r2 = client.post(f"/ingestion/webhooks/postmark?token={WEBHOOK_TOKEN}", json=tagged)
+    assert r2.status_code == 200 and r2.json().get("ignored") is False
+    assert inbox.items[r2.json()["id"]]["org_id"] == TEST_ORG_B_ID
