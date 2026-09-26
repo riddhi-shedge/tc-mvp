@@ -8,7 +8,9 @@ services:
     rootDir: backend
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
-    healthCheckPath: /openapi.json
+    # /health, NOT /openapi.json: the schema is deliberately disabled in
+    # production, so probing it would fail every deploy (happened 2026-09-25).
+    healthCheckPath: /health
     envVars:
       - key: PYTHON_VERSION
         value: "3.13"
