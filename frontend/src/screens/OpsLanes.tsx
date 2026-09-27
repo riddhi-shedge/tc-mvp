@@ -45,7 +45,9 @@ export function OpsLanes({
 }) {
   const [busy, setBusy] = useState<string | null>(null);
   const items = new Map((state.ops_items ?? []).map((o) => [o.lane, o]));
-  const warrantyWaived = /waived/i.test(state.effective_fields?.home_warranty?.value ?? "");
+  const warrantyWaived = /waived/i.test(
+    `${state.effective_fields?.home_warranty_paid_by?.value ?? ""} ${state.effective_fields?.home_warranty_issued_by?.value ?? ""}`,
+  );
 
   async function advance(lane: string, status: "ordered" | "done") {
     setBusy(lane);
@@ -97,12 +99,12 @@ export function OpsLanes({
             </span>
             {item?.status === "done" ? (
               <span className="dl-st ok">
-                {lane.doneLabel} {fmtDate(item.completed_on ?? "").replace(/,\s*\d{4}$/, "")}
+                {lane.doneLabel} {item.completed_on ? fmtDate(item.completed_on).replace(/,\s*\d{4}$/, "") : ""}
               </span>
             ) : item ? (
               <>
                 <span className="dl-st warn">
-                  {lane.orderedLabel} {fmtDate(item.ordered_on ?? "").replace(/,\s*\d{4}$/, "")}
+                  {lane.orderedLabel} {item.ordered_on ? fmtDate(item.ordered_on).replace(/,\s*\d{4}$/, "") : ""}
                 </span>
                 <button className="dl-mini pri" disabled={busy === lane.key}
                   onClick={() => void advance(lane.key, "done")}>

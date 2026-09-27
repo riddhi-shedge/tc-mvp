@@ -739,7 +739,7 @@ class InMemoryRepo:
             "external_ref": f"party:{party_id}",
             "doc_type": doc_type,
             "storage_path": f"fake/{party_id}/{filename}",
-            "status": "uploaded",
+            "status": "pending",
             "created_at": _now(),
         }
         self.documents[doc["id"]] = doc
@@ -970,7 +970,7 @@ class InMemoryRepo:
             "external_ref": payload.document_id,
             "doc_type": payload.document_type,
             "storage_path": payload.document_storage_ref,
-            "status": "pending",
+            "status": "confirmed",
             "label": payload.document_label,
             "facts": payload.document_facts,
         }

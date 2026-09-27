@@ -106,7 +106,7 @@ export function DealTimeline({
   const model = useMemo(() => {
     const byDate = new Map<string, Milestone>();
     for (const d of deadlines) {
-      const t = Date.parse(d.due_date);
+      const t = new Date(d.due_date + "T00:00:00").getTime(); // local midnight, not UTC
       if (Number.isNaN(t)) continue;
       const g = byDate.get(d.due_date) ?? {
         key: d.due_date, t, dateIso: d.due_date, names: [], deadlineIds: [],

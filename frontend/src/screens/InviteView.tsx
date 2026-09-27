@@ -89,7 +89,15 @@ export function InviteView({ token }: { token: string }) {
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}`, ...init?.headers },
       });
       const body = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error((body as { detail?: string }).detail ?? "Request failed");
+      if (!res.ok) {
+        const detail = (body as { detail?: unknown }).detail;
+        const msg = typeof detail === "string"
+          ? detail
+          : Array.isArray(detail)
+            ? detail.map((d) => (d as { msg?: string })?.msg).filter(Boolean).join(" · ")
+            : "";
+        throw new Error(msg || "Request failed");
+      }
       return body as T;
     },
     [token],
@@ -353,7 +361,7 @@ export function InviteView({ token }: { token: string }) {
                 <div className="doc-name">{humanize(d.doc_type ?? "document")}</div>
                 {d.created_at && <div className="muted" style={{ fontSize: "0.76rem" }}>Uploaded {fmtDate(d.created_at)}</div>}
               </div>
-              <span className="badge ok">{d.status}</span>
+              <span className="badge ok">{humanize(d.status)}</span>
             </div>
           ))}
         </div>

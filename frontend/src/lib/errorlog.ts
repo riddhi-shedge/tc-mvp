@@ -17,7 +17,8 @@ const MAX = 12;
 function load(): CapturedError[] {
   try {
     const raw = localStorage.getItem(KEY);
-    return raw ? (JSON.parse(raw) as CapturedError[]) : [];
+    const parsed: unknown = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? (parsed as CapturedError[]) : [];
   } catch {
     return [];
   }

@@ -87,7 +87,7 @@ export function BrokerFile({ state }: { state: FullState }) {
         <h2>Parties</h2>
         <table><tbody>
           {state.parties.map((p) => (
-            <tr key={p.id}><td>{p.role.replace(/_/g, " ")}</td><td>{p.name}</td><td>{p.email ?? ""}</td></tr>
+            <tr key={p.id}><td>{p.role.replace(/_/g, " ")}</td><td>{p.name ?? "—"}</td><td>{p.email ?? ""}</td></tr>
           ))}
         </tbody></table>
         <h2>Final terms</h2>
@@ -116,7 +116,7 @@ export function BrokerFile({ state }: { state: FullState }) {
             <h2>Repairs</h2>
             <table><tbody>
               {repairs.map((r) => (
-                <tr key={r.id}><td>{r.description}</td><td>{r.status}</td></tr>
+                <tr key={r.id}><td>{r.description}</td><td>{r.status.replace(/_/g, " ")}</td></tr>
               ))}
             </tbody></table>
           </>

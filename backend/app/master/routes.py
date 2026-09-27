@@ -926,10 +926,14 @@ def add_field(
     state = repo.get_full_state(transaction_id)
     if state is None:
         raise HTTPException(status_code=404, detail="Transaction not found")
-    if any(f["name"] == name for f in state["extracted_fields"]):
+    # Only a CONFIRMED value blocks re-entry. An unconfirmed extraction is
+    # exactly what the ledger's "Verify & correct" flow re-types: the manual
+    # row lands confirmed on the newest payload and wins effective-field
+    # resolution over the unconfirmed guess.
+    if any(f["name"] == name and f.get("confirmed") for f in state["extracted_fields"]):
         raise HTTPException(
             status_code=409,
-            detail=f"'{name}' is already on this deal — confirm it instead of re-adding.",
+            detail=f"'{name}' is already confirmed on this deal. Edit it from the ledger instead.",
         )
     try:
         field = repo.add_manual_field(
@@ -1927,7 +1931,13 @@ def _all_deal_states(repo: MasterRepo, agent: PartyUser) -> list[dict[str, Any]]
     org_id = repo.transaction_org(agent.transaction_id)
     if org_id is None:
         return []
-    return repo.list_full_states(org_id=org_id)
+    states = repo.list_full_states(org_id=org_id)
+    # Fold task metadata (due_date/priority live in audit details, not task
+    # columns) — without this the agent schedule's `not t.get("due_date")`
+    # filter dropped EVERY task and the view read as "nothing to do".
+    for st in states:
+        _merge_task_meta(st)
+    return states
 
 
 def _agent_me(states: list[dict[str, Any]], party_id: str) -> dict[str, Any]:

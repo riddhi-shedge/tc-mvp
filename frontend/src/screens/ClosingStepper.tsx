@@ -32,7 +32,9 @@ function tridEarliestSigning(cdDelivered: string): string {
   let counted = 0;
   while (counted < 3) {
     d.setDate(d.getDate() + 1);
-    const iso = d.toISOString().slice(0, 10);
+    // Local calendar day, matching the local getDay() above (toISOString
+    // slices the UTC day, one off for viewers far east of UTC).
+    const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
     if (d.getDay() !== 0 && !FEDERAL_HOLIDAYS.has(iso)) counted++;
   }
   return d.toISOString().slice(0, 10);
@@ -54,9 +56,9 @@ export function ClosingStepper({
   const coe = state.deadlines.find((d) => /escrow/i.test(d.name));
   // Only surface once closing is real: a COE exists and it's near, or the
   // chain has started, or the deal is staged as closing.
-  const stage = (state.transaction as { stage?: string }).stage ?? "";
+  const stage = state.transaction.stage ?? "";
   const coeDays = coe
-    ? Math.round((Date.parse(coe.due_date) - Date.now()) / 86_400_000)
+    ? Math.round((new Date(coe.due_date + "T00:00:00").getTime() - Date.now()) / 86_400_000)
     : null;
   const started = events.size > 0;
   if (!started && stage !== "closing" && (coeDays === null || coeDays > 14)) return null;

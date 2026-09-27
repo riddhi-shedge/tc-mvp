@@ -94,10 +94,15 @@ export function Home({
   }
   const approveDraft = (it: AttentionItem, edited?: { subject?: string; body?: string }) =>
     act(() => api.post(`/transactions/${it.dealId}/messages/${it.id}/approve-and-send`, edited ?? {}), "Approved and sent.");
-  const dismissReminder = (it: AttentionItem) =>
-    it.kind === "risk"
-      ? resolveRisk(it)
-      : act(() => api.del(`/transactions/${it.dealId}/reminders/${it.id}`), "Dismissed");
+  // Dismiss routes by kind: a draft's id is a MESSAGE id (deleting the draft),
+  // a reminder's is a reminder id, a gate has nothing server-side to dismiss.
+  const dismissReminder = (it: AttentionItem) => {
+    if (it.kind === "risk") return resolveRisk(it);
+    if (it.kind === "draft")
+      return act(() => api.del(`/transactions/${it.dealId}/messages/${it.id}`), "Draft discarded");
+    if (it.kind === "gate") return onOpenDeal(it.dealId); // resolve it on the deal
+    return act(() => api.del(`/transactions/${it.dealId}/reminders/${it.id}`), "Dismissed");
+  };
   const draftChase = (it: AttentionItem) =>
     act(() => api.post(`/transactions/${it.dealId}/messages/${it.messageId}/draft-chase`, {}), "Follow-up drafted. See the Drafts filter.");
   const resolveRisk = (it: AttentionItem) =>

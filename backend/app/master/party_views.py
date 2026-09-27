@@ -47,6 +47,10 @@ _SECTIONS: dict[str, list[str]] = {
     "inspector": ["property_card", "my_tasks", "key_dates", "my_documents"],
     "lender": ["loan_summary", "key_dates", "my_tasks", "my_documents"],
     "agent": ["property_card", "money_milestones", "key_dates", "deal_progress", "roster", "my_tasks", "my_documents"],
+    # Title and appraiser are granted specific fields in _FIELD_ALLOW — give
+    # them sections that actually render those fields.
+    "title": ["closing_summary", "key_dates", "my_tasks", "my_documents", "roster"],
+    "appraiser": ["property_card", "closing_summary", "key_dates", "my_tasks", "my_documents"],
     "default": ["key_dates", "my_tasks", "my_documents", "roster"],
 }
 

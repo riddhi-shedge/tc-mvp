@@ -460,7 +460,7 @@ export function DocumentLedger({
             <div>
               <div className="dl-title">{docName(d)}</div>
               <div className="dl-meta">
-                Received {d.created_at ? fmtDate(d.created_at) : "—"} · {d.status}
+                Received {d.created_at ? fmtDate(d.created_at) : "—"} · {humanize(d.status)}
                 {d.doc_type === "other" && d.label ? " · labeled by Terra" : ""}
               </div>
             </div>
@@ -527,7 +527,7 @@ export function DocumentLedger({
                 <div className="dl-fr" key={i}>
                   <span className="dl-fn">{f.label}</span>
                   <span className="dl-fv" title={f.value}>{f.value}</span>
-                  <span className="dl-kind">{f.kind}</span>
+                  <span className="dl-kind">{humanize(f.kind)}</span>
                   <span className={`dl-conf ${f.confidence < 0.7 ? "low" : ""}`}>
                     {f.confidence.toFixed(2)}
                   </span>

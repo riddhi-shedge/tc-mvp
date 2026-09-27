@@ -116,7 +116,7 @@ export function EscrowView({ ws, busy, docType, setDocType, cycle, onFile }: Rol
                 <div key={d.id} className="inv-doc">
                   <div className="doc-ic sm" style={{ background: "#4f5a6a1a", color: "#4f5a6a" }}><Icon name="doc" size={16} /></div>
                   <div style={{ flex: 1, minWidth: 0 }}><div className="doc-name">{humanize(d.doc_type ?? "document")}</div>{d.created_at && <div className="muted" style={{ fontSize: ".76rem" }}>Uploaded {fmtDate(d.created_at)}</div>}</div>
-                  <span className="badge ok">{d.status}</span>
+                  <span className="badge ok">{humanize(d.status)}</span>
                 </div>
               ))}
             </div>

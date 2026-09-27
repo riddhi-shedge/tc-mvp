@@ -22,7 +22,9 @@ export function LenderView({ ws, busy, docType, setDocType, cycle, onFile }: Rol
   const find = (re: RegExp) => ws.deadlines.find((d) => re.test(d.name)) ?? null;
   const loan = money(fv("loan_amount"));
   const price = money(fv("purchase_price"));
-  const ltv = loan && price ? Math.min(100, Math.round((loan / price) * 100)) : null;
+  // Sanity floor: a text value like "80% of purchase price" parses as 80,
+  // which would render a meaningless 0% gauge.
+  const ltv = loan && price && loan > 10_000 ? Math.min(100, Math.round((loan / price) * 100)) : null;
   const shownLtv = useCountUp(ltv, 900);
   const past = (iso?: string | null) => (daysTo(iso ?? null) ?? 1) < 0;
 
@@ -93,7 +95,7 @@ export function LenderView({ ws, busy, docType, setDocType, cycle, onFile }: Rol
                 <div key={d.id} className="inv-doc">
                   <div className="doc-ic sm" style={{ background: "#2563a81a", color: "#2563a8" }}><Icon name="doc" size={16} /></div>
                   <div style={{ flex: 1, minWidth: 0 }}><div className="doc-name">{humanize(d.doc_type ?? "document")}</div>{d.created_at && <div className="muted" style={{ fontSize: ".76rem" }}>Uploaded {fmtDate(d.created_at)}</div>}</div>
-                  <span className="badge ok">{d.status}</span>
+                  <span className="badge ok">{humanize(d.status)}</span>
                 </div>
               ))}
             </div>

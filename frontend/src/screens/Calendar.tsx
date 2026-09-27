@@ -306,7 +306,7 @@ export function Calendar({ onOpenDeal }: { onOpenDeal: (id: string) => void }) {
                   Nothing planned for this day. Drag tasks from the work queue or use Auto-schedule.
                 </div>
               ) : (
-                planned
+                [...planned]
                   .sort((a, b) => estMinutes(b) - estMinutes(a))
                   .map((t) => (
                     <div key={t.id} className="day-item task">

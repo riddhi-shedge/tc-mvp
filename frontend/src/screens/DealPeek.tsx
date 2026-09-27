@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { api, AttentionItem, FullState } from "../lib/api";
 import { fmtDate } from "../lib/format";
 import { Icon } from "../lib/icons";
@@ -31,20 +31,17 @@ export function DealPeek({
   const [state, setState] = useState<FullState | null>(null);
   const [loadFailed, setLoadFailed] = useState(false);
   const [body, setBody] = useState("");
-  // Short-lived per-open cache: cleared whenever the peek acts on a deal so a
-  // just-approved draft can't show a stale digest.
-  const cache = useRef(new Map<string, FullState>());
   const dealId = item?.dealId ?? null;
 
   useEffect(() => {
     if (!dealId) return setState(null);
+    // Always fetch fresh: a cache here kept showing pre-approval state after
+    // the TC acted on a draft from the queue.
     setLoadFailed(false);
-    const hit = cache.current.get(dealId);
-    if (hit) { setState(hit); return; }
     setState(null);
     let live = true;
     api.get<FullState>(`/transactions/${dealId}`)
-      .then((s) => { cache.current.set(dealId, s); if (live) setState(s); })
+      .then((s) => { if (live) setState(s); })
       .catch(() => { if (live) { setState(null); setLoadFailed(true); } });
     return () => { live = false; };
   }, [dealId]);
@@ -55,7 +52,7 @@ export function DealPeek({
 
   const eff = state?.effective_fields ?? {};
   const price = eff.purchase_price?.value ?? null;
-  const stage = state ? (STAGE_LABEL[(state as unknown as { transaction: { stage?: string } }).transaction.stage ?? ""] ?? null) : null;
+  const stage = state ? (STAGE_LABEL[state.transaction.stage ?? ""] ?? null) : null;
   const coe = state?.deadlines?.find((x) => x.name.toLowerCase().includes("escrow"))?.due_date ?? null;
   const parties = state?.parties ?? [];
   const digest = (state?.digest ?? []).slice(0, 5);

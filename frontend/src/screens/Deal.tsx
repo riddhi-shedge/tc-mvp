@@ -277,14 +277,19 @@ export function Deal({ id, onBack }: { id: string; onBack: () => void }) {
   }
 
   const coe = state.deadlines.find((d) => d.name.toLowerCase().includes("escrow"));
+  // Date-only strings must parse as LOCAL midnight — bare new Date("YYYY-MM-DD")
+  // is UTC, which reads "closed 1d ago" all afternoon on the actual closing day.
   const coeDays =
-    coe != null ? Math.round((new Date(coe.due_date).getTime() - Date.now()) / 86_400_000) : null;
+    coe != null
+      ? Math.round((new Date(coe.due_date + "T00:00:00").getTime() - Date.now()) / 86_400_000)
+      : null;
+  const coeDaysValid = coeDays != null && Number.isFinite(coeDays);
   const openTasks = state.tasks.filter((t) => !["done", "complete"].includes(t.status)).length;
   const unresolvedRisks = state.risk_flags.filter((f) => !f.resolved).length;
 
   // Stage-adaptive default tab (P-E): early deals open on the document work,
   // mid-deal on comms, closing/closed on overview.
-  const stage = (state.transaction as { stage?: string }).stage ?? "new";
+  const stage = state.transaction.stage ?? "new";
   const initialTab = stage === "new" ? "documents" : stage === "cont" ? "comms" : "overview";
   // The Documents ledger claims the full page: the big timeline collapses to a
   // one-line strip while that tab is open.
@@ -392,7 +397,7 @@ export function Deal({ id, onBack }: { id: string; onBack: () => void }) {
           </div>
           <div className="kpi">
             <div className="k-label">COE countdown</div>
-            <div className="k-value">{coeDays != null ? <CountUp value={coeDays} suffix="d" /> : "—"}</div>
+            <div className="k-value">{coeDaysValid ? <CountUp value={coeDays!} suffix="d" /> : "—"}</div>
           </div>
           <div className="kpi">
             <div className="k-label">Open tasks</div>
@@ -554,7 +559,7 @@ export function Deal({ id, onBack }: { id: string; onBack: () => void }) {
       {state.deadlines.length > 0 && onDocsTab && (
         <div className="tl-strip">
           <Icon name="clock" size={13} />
-          {coeDays != null && <span>{coeDays < 0 ? `Closed ${-coeDays}d ago` : `Closing in ${coeDays}d`}</span>}
+          {coeDaysValid && <span>{coeDays! < 0 ? `Closed ${-coeDays!}d ago` : `Closing in ${coeDays}d`}</span>}
           {nextDeadline && (
             <span className="muted">
               Next: {nextDeadline.name.replace(/ (ends|due|delivery).*$/i, "")} · {fmtDate(nextDeadline.due_date).replace(/,\s*\d{4}$/, "")}
@@ -673,7 +678,7 @@ export function Deal({ id, onBack }: { id: string; onBack: () => void }) {
                     <select value={recipientId} onChange={(e) => setRecipientId(e.target.value)}>
                       <option value="">Select a recipient</option>
                       {recipients.map((p) => (
-                        <option key={p.id} value={p.id}>{p.name} · {humanize(p.role)} ({p.email})</option>
+                        <option key={p.id} value={p.id}>{p.name ?? "Unnamed"} · {humanize(p.role)} ({p.email})</option>
                       ))}
                     </select>
                     <label>Purpose</label>
@@ -849,7 +854,7 @@ export function Deal({ id, onBack }: { id: string; onBack: () => void }) {
             </thead>
             <tbody>
               {[...state.audit_log].reverse().map((a, i) => (
-                <tr key={i}>
+                <tr key={`${a.created_at}-${a.action}-${a.entity_id ?? i}`}>
                   <td className="log-when tnum">{fmtDateTime(a.created_at)}</td>
                   <td className="log-who">{a.actor}</td>
                   <td>

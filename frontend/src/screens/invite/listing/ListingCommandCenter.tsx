@@ -56,7 +56,7 @@ export function ListingCommandCenter({ papi }: { papi: Papi }) {
       papi<EarningsData>("/listing/earnings")
         .then(setEarnings)
         .catch((e) => {
-          setEarnings({ rows: [], totals: { inEscrowCents: 0, closingSoonCents: 0, closedCents: 0 }, rateNote: "" });
+          setEarnings({ rows: [], totals: { activeCents: 0, inEscrowCents: 0, closingSoonCents: 0, closedCents: 0 } as unknown as EarningsData["totals"], rateNote: "" });
           setErr(e instanceof Error ? e.message : "Couldn't load earnings.");
         });
   }, [view, sellers, schedule, earnings, papi]);

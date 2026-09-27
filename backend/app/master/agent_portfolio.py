@@ -335,9 +335,19 @@ def _cents(value: Any) -> int | None:
         return None
 
 
-def _synth_dom(tid: str) -> int:
-    """Deterministic illustrative days-on-market (no list date in the SOR)."""
-    return 6 + (abs(hash(tid)) % 58)
+def _days_in_terra(txn: dict[str, Any]) -> int | None:
+    """Days since the deal entered Terra — a real number (record age). The SOR
+    has no list date, so this is the honest stand-in for days-on-market."""
+    iso = txn.get("created_at")
+    if not iso:
+        return None
+    try:
+        from datetime import datetime
+
+        opened = datetime.fromisoformat(str(iso).replace("Z", "+00:00")).date()
+    except ValueError:
+        return None
+    return max(0, (ca_today() - opened).days)
 
 
 def _financing(fields: dict[str, Any]) -> str:
@@ -357,7 +367,8 @@ def listing_summary(state: dict[str, Any]) -> dict[str, Any]:
     prop = state.get("property") or {}
     status = _LISTING_STATUS.get(txn.get("stage") or "", "in_escrow")
     price = _cents(fields.get("purchase_price"))
-    dom = _synth_dom(tid) if status == "active" else None
+    dom = _days_in_terra(txn) if status == "active" else None
+    offers = build_offer_comparison(state) if status == "active" else []
 
     dated = [
         {"id": d.get("id"), "label": d.get("name"), "date": d.get("due_date"), "days": _days_to(d.get("due_date"))}
@@ -369,7 +380,12 @@ def listing_summary(state: dict[str, Any]) -> dict[str, Any]:
 
     if status == "active":
         risk = "at_risk" if (dom or 0) > _STALE_DOM else "watch" if (dom or 0) > 20 else "ok"
-        peek = {"line1": f"List {fields.get('purchase_price') or '—'}", "line2": "3 offers in", "line3": f"{dom} days on market"}
+        n_off = len(offers)
+        peek = {
+            "line1": f"List {fields.get('purchase_price') or '—'}",
+            "line2": f"{n_off} offer{'s' if n_off != 1 else ''} on record" if n_off else "No offers on record",
+            "line3": f"In Terra {dom} days" if dom is not None else "",
+        }
     elif status == "in_escrow":
         risk = _risk(nxt["days"]) if nxt else "ok"
         peek = {"line1": f"EMD {fields.get('initial_deposit_amount') or '—'}",
@@ -386,7 +402,7 @@ def listing_summary(state: dict[str, Any]) -> dict[str, Any]:
         "status": status,
         "listPriceCents": price,
         "daysOnMarket": dom,
-        "offerCount": 3 if status == "active" else 0,  # illustrative pending offers
+        "offerCount": len(offers),  # real offers on record (PA + counters)
         "nextDeadline": ({"label": nxt["label"], "date": nxt["date"], "risk": _risk(nxt["days"])} if (status == "in_escrow" and nxt) else None),
         "closeDate": close["date"] if close else None,
         "risk": risk,
@@ -485,7 +501,7 @@ def seller_context(st: dict[str, Any]) -> dict[str, Any]:
     )
     return {
         "status": status,
-        "daysOnMarket": _synth_dom(tid) if status == "active" else None,
+        "daysOnMarket": _days_in_terra(st.get("transaction") or {}) if status == "active" else None,
         "offerCount": 3 if status == "active" else 0,  # matches listing_summary's illustrative offers
         "priceCents": _cents(fields.get("purchase_price")),
         "nextDeadline": ({"label": nxt["name"], "date": nxt["due_date"], "risk": _risk(_days_to(nxt["due_date"]))} if nxt else None),

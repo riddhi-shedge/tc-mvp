@@ -107,10 +107,25 @@ function TcApp() {
     const t = setInterval(pull, 60_000);
     return () => { alive = false; clearInterval(t); };
   }, []);
-  const [collapsed, setCollapsed] = useState(() => localStorage.getItem("sidebar_collapsed") === "1");
+  const [collapsed, setCollapsed] = useState(() => {
+    try {
+      if (localStorage.getItem("sidebar_collapsed") === "1") return true;
+    } catch {
+      /* storage blocked */
+    }
+    // Phone-width first visit: start collapsed so the fixed 230px sidebar
+    // doesn't crush the content column; the ☰ button brings it back.
+    return window.matchMedia("(max-width: 700px)").matches;
+  });
   const [supportOpen, setSupportOpen] = useState(false);
   const [showGuide, setShowGuide] = useState(false);
-  const [railOpen, setRailOpen] = useState(() => localStorage.getItem("rail_open") !== "0");
+  const [railOpen, setRailOpen] = useState(() => {
+    try {
+      return localStorage.getItem("rail_open") !== "0";
+    } catch {
+      return true;
+    }
+  });
   const [cmdOpen, setCmdOpen] = useState(false);
 
   useEffect(() => {
@@ -126,7 +141,7 @@ function TcApp() {
 
   function toggleRail() {
     setRailOpen((r) => {
-      localStorage.setItem("rail_open", r ? "0" : "1");
+      try { localStorage.setItem("rail_open", r ? "0" : "1"); } catch { /* ignore */ }
       return !r;
     });
   }
@@ -138,14 +153,14 @@ function TcApp() {
     setDark((d) => {
       const next = !d;
       document.documentElement.setAttribute("data-theme", next ? "dark" : "light");
-      localStorage.setItem("theme", next ? "dark" : "light");
+      try { localStorage.setItem("theme", next ? "dark" : "light"); } catch { /* ignore */ }
       return next;
     });
   }
 
   function toggleSidebar() {
     setCollapsed((c) => {
-      localStorage.setItem("sidebar_collapsed", c ? "0" : "1");
+      try { localStorage.setItem("sidebar_collapsed", c ? "0" : "1"); } catch { /* ignore */ }
       return !c;
     });
   }
@@ -445,6 +460,7 @@ function TcApp() {
         </div>
         {railOpen && view.name !== "deal" && (
           <aside className="ctx-rail">
+            <ErrorBoundary>
             <Recommendations
               onOpenDeal={(id) => {
                 setView({ name: "deal", id });
@@ -452,12 +468,14 @@ function TcApp() {
               }}
               onClose={() => setRailOpen(false)}
             />
+            </ErrorBoundary>
           </aside>
         )}
         </div>
       </main>
 
       {cmdOpen && (
+        <ErrorBoundary>
         <CommandPalette
           onClose={() => setCmdOpen(false)}
           onOpenDeal={(id) => { setView({ name: "deal", id }); setCollapsed(true); }}
@@ -465,8 +483,13 @@ function TcApp() {
           onGoDeals={() => setView({ name: "inbox" })}
           onToggleTheme={toggleTheme}
         />
+        </ErrorBoundary>
       )}
-      {supportOpen && <Support onClose={() => setSupportOpen(false)} />}
+      {supportOpen && (
+        <ErrorBoundary>
+          <Support onClose={() => setSupportOpen(false)} />
+        </ErrorBoundary>
+      )}
       {showGuide && (
         <GuideModal
           onClose={() => setShowGuide(false)}

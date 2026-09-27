@@ -11,6 +11,13 @@ import { recentErrors } from "../lib/errorlog";
 
 const DAY_FMT = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 
+// Intl.format THROWS on an invalid Date (unlike toLocaleString) — a corrupt
+// stored entry must never blank the support drawer.
+function fmtWhen(at: string): string {
+  const d = new Date(at);
+  return Number.isNaN(d.getTime()) ? "" : DAY_FMT.format(d);
+}
+
 const SUPPORT_EMAIL: string = (import.meta.env.VITE_SUPPORT_EMAIL as string | undefined) ?? "";
 
 export function Support({ onClose }: { onClose: () => void }) {
@@ -62,7 +69,7 @@ export function Support({ onClose }: { onClose: () => void }) {
                 <span className="sup-err-id">{e.ref}</span>
                 <div className="sup-err-main">
                   <div className="sup-err-msg">{e.message}</div>
-                  <div className="muted sup-err-when">{DAY_FMT.format(new Date(e.at))}</div>
+                  <div className="muted sup-err-when">{fmtWhen(e.at)}</div>
                 </div>
               </div>
             ))

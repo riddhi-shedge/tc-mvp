@@ -1263,7 +1263,8 @@ class SupabaseRepo:
             "external_ref": payload.document_id,
             "doc_type": payload.document_type,
             "storage_path": payload.document_storage_ref,
-            "status": "pending",
+            # Filed via the TC's explicit confirm (HITL) — that IS confirmation.
+            "status": "confirmed",
         }
         if payload.document_label:
             doc_row["label"] = payload.document_label
@@ -2212,7 +2213,9 @@ class SupabaseRepo:
                     "external_ref": f"party:{party_id}",
                     "doc_type": doc_type,
                     "storage_path": path,
-                    "status": "uploaded",
+                    # document_status enum is ('pending','confirmed') — a party
+                    # upload awaits the TC's review, so it lands pending.
+                    "status": "pending",
                 }
             )
             .execute()

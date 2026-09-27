@@ -37,7 +37,9 @@ def test_valid_payload_persists_document_and_fields(client, tc_headers, repo):
     assert len(state["payloads"]) == 1
     assert len(state["documents"]) == 1
     assert state["documents"][0]["external_ref"] == "synthetic-doc-1"
-    assert state["documents"][0]["status"] == "pending"
+    # Filed via the TC's explicit confirm — that IS confirmation (dashboard
+    # doc counters were permanently 0 while this landed "pending").
+    assert state["documents"][0]["status"] == "confirmed"
     names = {f["name"] for f in state["extracted_fields"]}
     assert names == {"close_of_escrow", "purchase_price"}
     assert all(f["confirmed"] is False for f in state["extracted_fields"])

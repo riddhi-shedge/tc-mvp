@@ -30,7 +30,7 @@ def _state(*, tid: str, stage: str = "cont", deadlines=None, parties=None, messa
                    "loan_amount": "$1,100,000", "property_address": "21989 McClellan Rd"}
     base_fields.update(fields or {})
     return {
-        "transaction": {"id": tid, "stage": stage},
+        "transaction": {"id": tid, "stage": stage, "created_at": "2026-09-01T10:00:00+00:00"},
         "property": {"address": "21989 McClellan Rd"},
         "effective_fields": {k: {"value": v} for k, v in base_fields.items()},
         "deadlines": deadlines or [],

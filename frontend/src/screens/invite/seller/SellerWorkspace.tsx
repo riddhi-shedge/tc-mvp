@@ -213,7 +213,7 @@ export function SellerWorkspace({ ws, papi, reload, busy, cycle }: Props) {
             {deal.requests.length === 0
               ? <div className="bw-empty">No requests from the buyer yet. If they ask for repairs or a credit after their inspection, it will appear here with its impact on your proceeds.</div>
               : deal.requests.map((r) => (
-                  <RequestCard key={r.id} r={r} currentProceeds={deal.netSheet?.estimatedNetProceedsCents ?? 0} />
+                  <RequestCard key={r.id} r={r} currentProceeds={deal.netSheet?.estimatedNetProceedsCents ?? null} />
                 ))}
           </section>
 
@@ -487,15 +487,17 @@ function NetProceeds({ net, escrowPhone, papi, reload }: { net: NetSheet; escrow
   );
 }
 
-function RequestCard({ r, currentProceeds }: { r: import("./types").BuyerRequest; currentProceeds: number }) {
+function RequestCard({ r, currentProceeds }: { r: import("./types").BuyerRequest; currentProceeds: number | null }) {
   const resolved = r.state !== "pending";
   return (
     <div className="bw-req">
       <div className="bw-req-h"><Icon name="inbox" size={16} /> {r.kind === "credit" ? "Credit request" : "Repair request"} · {r.summary}</div>
       {r.amountCents != null && <div className="bw-req-amt">{usd(r.amountCents)}</div>}
-      <div className="bw-req-impact">
-        Accepting would reduce your estimated net proceeds from <b>{usd(currentProceeds)}</b> to <b>{usd(r.proceedsAfterAcceptCents)}</b>.
-      </div>
+      {currentProceeds != null && (
+        <div className="bw-req-impact">
+          Accepting would reduce your estimated net proceeds from <b>{usd(currentProceeds)}</b> to <b>{usd(r.proceedsAfterAcceptCents)}</b>.
+        </div>
+      )}
       {resolved ? (
         <div className="bw-req-state"><Icon name="check" size={15} /> {r.state === "accepted" ? "Accepted. Amendment sent to your agent for signature." : humanize(r.state)}</div>
       ) : (

@@ -2,16 +2,24 @@ import { supabase } from "./supabase";
 
 const API_BASE: string = import.meta.env.VITE_API_BASE ?? "http://localhost:8000";
 
+function detailToMessage(detail: unknown): string {
+  if (typeof detail === "string") return detail;
+  // FastAPI validation errors: [{ loc, msg, type }, ...]
+  if (Array.isArray(detail)) {
+    const msgs = detail
+      .map((d) => (d as { msg?: string })?.msg)
+      .filter((m): m is string => typeof m === "string");
+    if (msgs.length) return msgs.join(" · ");
+  }
+  return (detail as { message?: string })?.message ?? "Request failed";
+}
+
 export class ApiError extends Error {
   constructor(
     public status: number,
     public detail: unknown,
   ) {
-    super(
-      typeof detail === "string"
-        ? detail
-        : ((detail as { message?: string })?.message ?? "Request failed"),
-    );
+    super(detailToMessage(detail));
   }
 }
 
@@ -218,6 +226,17 @@ export const S5_FIELD_NAMES = [
   "escrow_holder",
   "title_company",
   "lender_contact",
+  "buyer_agent_email",
+  "buyer_agent_phone",
+  "listing_agent_email",
+  "listing_agent_phone",
+  "lender_contact_email",
+  "lender_contact_phone",
+  "home_warranty_issued_by",
+  "home_warranty_paid_by",
+  "items_included",
+  "items_excluded",
+  "other_terms",
 ] as const;
 
 export interface Deadline {
@@ -365,7 +384,13 @@ export interface TimelineGate {
 }
 
 export interface FullState {
-  transaction: { id: string; status: string };
+  transaction: {
+    id: string;
+    status: string;
+    stage?: string | null;
+    canceled_on?: string | null;
+    deposit_disposition?: string | null;
+  };
   property: { address: string } | null;
   timeline_gate?: TimelineGate;
   // Provenance chain: extracted_fields.payload_id -> payloads.document_id -> signed URL.

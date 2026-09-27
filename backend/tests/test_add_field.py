@@ -93,14 +93,27 @@ def test_add_field_money_guard_on_value(client, tc_headers):
     assert r.status_code == 422
 
 
-def test_add_field_rejects_duplicate(client, tc_headers):
-    txn_id = _deal(client, tc_headers)  # acceptance_date already extracted
+def test_add_field_corrects_unconfirmed_but_rejects_confirmed(client, tc_headers):
+    """An UNCONFIRMED extraction may be corrected by hand (that's the ledger's
+    Verify flow — the typed value lands confirmed and wins effective-field
+    resolution); a CONFIRMED value still 409s."""
+    txn_id = _deal(client, tc_headers)  # acceptance_date extracted, unconfirmed
     r = client.post(
         f"/transactions/{txn_id}/fields",
         json={"name": "acceptance_date", "value": "2026-07-10"},
         headers=tc_headers,
     )
-    assert r.status_code == 409
+    assert r.status_code == 201
+    state = client.get(f"/transactions/{txn_id}", headers=tc_headers).json()
+    assert state["effective_fields"]["acceptance_date"]["value"] == "2026-07-10"
+
+    # Now it's confirmed — a second re-add is refused.
+    r2 = client.post(
+        f"/transactions/{txn_id}/fields",
+        json={"name": "acceptance_date", "value": "2026-07-11"},
+        headers=tc_headers,
+    )
+    assert r2.status_code == 409
 
 
 def test_add_field_needs_a_document(client, tc_headers):

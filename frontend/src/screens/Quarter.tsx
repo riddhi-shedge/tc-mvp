@@ -18,7 +18,10 @@ function daysTo(iso: string | null): number | null {
 }
 function money(s: string | null): number {
   if (!s) return 0;
-  const n = Number(String(s).replace(/[^0-9.]/g, ""));
+  // First money-looking run wins (matches DealsBoard) — free-text like
+  // "$650,000 (approx. 3.5% down)" must not NaN out and drop the deal.
+  const m = String(s).match(/[\d,]+(?:\.\d+)?/);
+  const n = m ? parseFloat(m[0].replace(/,/g, "")) : NaN;
   return Number.isFinite(n) ? n : 0;
 }
 function fmtM(n: number): string {
