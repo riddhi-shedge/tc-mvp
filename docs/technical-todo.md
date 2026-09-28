@@ -50,6 +50,10 @@ the webhook fail-closed posture, evidence-first extraction, the eval harness.
 - [ ] Prove the password-reset redirect end to end: invite `rshedge22@g.ucla.edu` as a
       member, create the account, then run "Forgot password?" on it — the emailed link
       should land on Terra's "Choose a new password" screen.
+- [ ] Add the `workflow` scope to the GitHub personal access token (github.com →
+      Settings → Developer settings → Personal access tokens): pushes touching
+      `.github/workflows/` are rejected without it. The CI wiring for the new
+      UI-integrity check is sitting locally uncommitted until then.
 - [ ] Send the ZDR/DPA inquiry to Anthropic (gates real client documents on the deployed
       instance; long lead time, start early).
 
